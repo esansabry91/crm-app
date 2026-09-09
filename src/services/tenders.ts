@@ -125,15 +125,19 @@ export async function moveTenderStage(
   const historyTimestamp = isClosed && closedDate ? closedDateToMillis(closedDate) : Date.now();
   const becomingWon = newStage === 'Won';
 
+  // Becoming Won turns this into an Active Project — default its operational branch to wherever
+  // it was submitted, EXCEPT when it was submitted by HQ: HQ doesn't run active projects itself
+  // (see the doc comment on Tender.activeBranch), so an HQ-won tender is left unassigned
+  // (activeBranch null) and shows an empty "Select branch" placeholder in Active Projects,
+  // forcing an admin to explicitly pick which branch will actually run it rather than silently
+  // defaulting to "HQ". Moving away from Won (including to Lost) always clears it.
+  const defaultActiveBranch = tender.department === 'HQ' ? null : tender.department;
   await updateDoc(doc(db, 'tenders', tender.id), {
     stage: newStage,
     updatedAt: Date.now(),
     // Clear closedDate when moving back to an open stage, so stale dates don't linger.
     closedDate: isClosed ? (closedDate ?? null) : null,
-    // Becoming Won turns this into an Active Project — default its branch to wherever it was
-    // submitted (activeBranch may be reassigned separately later by an admin). Moving away from
-    // Won (including to Lost) clears it — it's no longer an active project.
-    activeBranch: becomingWon ? tender.activeBranch || tender.department : null,
+    activeBranch: becomingWon ? tender.activeBranch || defaultActiveBranch : null,
   });
   await addHistoryEntry(
     tender.id,
@@ -191,9 +195,12 @@ export async function setActiveBranch(tenderId: string, activeBranch: string) {
  * so have no `activeBranch` set yet. Called opportunistically (not destructively — only touches
  * tenders missing the field) whenever an admin loads the Active Projects page, so branch-scoped
  * staff queries (which filter on activeBranch) start finding historical Won tenders too.
+ * Skips HQ-submitted tenders — same reasoning as moveTenderStage's default: HQ doesn't run
+ * active projects, so those are left unassigned for an admin to pick a branch explicitly rather
+ * than being silently backfilled to "HQ".
  */
 export async function backfillActiveBranch(tender: Tender) {
-  if (tender.stage !== 'Won' || tender.activeBranch) return;
+  if (tender.stage !== 'Won' || tender.activeBranch || tender.department === 'HQ') return;
   await updateDoc(doc(db, 'tenders', tender.id), { activeBranch: tender.department });
 }
 

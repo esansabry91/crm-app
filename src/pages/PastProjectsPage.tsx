@@ -120,7 +120,7 @@ export default function PastProjectsPage() {
                         </td>
                         <td className="px-4 py-3 text-slate-500">{t.brandName}</td>
                         {seesAllBranches && (
-                          <td className="px-4 py-3 text-slate-500">{t.activeBranch || t.department}</td>
+                          <td className="px-4 py-3 text-slate-500">{t.activeBranch || 'Unassigned'}</td>
                         )}
                         <td className="px-4 py-3 text-slate-500">{formatDate(t.contractStart)}</td>
                         <td className="px-4 py-3 text-slate-500">{formatDate(t.contractEnd)}</td>

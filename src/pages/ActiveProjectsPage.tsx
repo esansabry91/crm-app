@@ -110,12 +110,14 @@ export default function ActiveProjectsPage() {
       : branchFilter;
 
   const handleBranchChange = (t: Tender, newBranch: string) => {
-    const current = t.activeBranch || t.department;
+    const current = t.activeBranch;
     if (newBranch === current) return;
-    const confirmed = window.confirm(
-      `Reassign "${t.clientName}" from ${current} to ${newBranch}?\n\n` +
-        `It will move out of ${current}'s Active Projects list and into ${newBranch}'s.`
-    );
+    const confirmed = current
+      ? window.confirm(
+          `Reassign "${t.clientName}" from ${current} to ${newBranch}?\n\n` +
+            `It will move out of ${current}'s Active Projects list and into ${newBranch}'s.`
+        )
+      : window.confirm(`Assign "${t.clientName}" to ${newBranch}'s Active Projects?`);
     if (!confirmed) return;
     setActiveBranch(t.id, newBranch);
   };
@@ -224,10 +226,17 @@ export default function ActiveProjectsPage() {
                           <td className="px-4 py-3">
                             {isAdmin ? (
                               <select
-                                value={t.activeBranch || t.department}
+                                value={t.activeBranch || ''}
                                 onChange={(e) => handleBranchChange(t, e.target.value)}
-                                className="input w-36 text-xs py-1"
+                                className={
+                                  t.activeBranch
+                                    ? 'input w-36 text-xs py-1'
+                                    : 'input w-36 text-xs py-1 border-amber-300 text-amber-700'
+                                }
                               >
+                                <option value="" disabled>
+                                  Select branch
+                                </option>
                                 {branchNames.map((b) => (
                                   <option key={b} value={b}>
                                     {b}
@@ -235,7 +244,7 @@ export default function ActiveProjectsPage() {
                                 ))}
                               </select>
                             ) : (
-                              <span className="text-slate-500">{t.activeBranch || t.department}</span>
+                              <span className="text-slate-500">{t.activeBranch || 'Unassigned'}</span>
                             )}
                           </td>
                         )}
