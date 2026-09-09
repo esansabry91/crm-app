@@ -6,6 +6,7 @@ import { backfillActiveBranch, setActiveBranch } from '../services/tenders';
 import { formatDate, formatRM } from '../utils/format';
 import StatCard from '../components/analytics/StatCard';
 import ProjectDetailsModal from '../components/active-projects/ProjectDetailsModal';
+import { BrandBreakdown, BranchBreakdown } from '../components/active-projects/ActiveProjectBreakdown';
 import { VIZ } from '../utils/vizColors';
 import type { Tender } from '../types';
 
@@ -101,6 +102,12 @@ export default function ActiveProjectsPage() {
     return d !== null && d < 0;
   }).length;
 
+  const brandScopeLabel = !seesAllBranches
+    ? profile?.department || ''
+    : branchFilter === 'all'
+      ? 'all branches'
+      : branchFilter;
+
   const handleBranchChange = (t: Tender, newBranch: string) => {
     const current = t.activeBranch || t.department;
     if (newBranch === current) return;
@@ -160,6 +167,11 @@ export default function ActiveProjectsPage() {
               sub="needs follow-up"
               accent={VIZ.status.critical}
             />
+          </div>
+
+          <div className={seesAllBranches ? 'grid md:grid-cols-2 gap-4' : ''}>
+            <BrandBreakdown items={visible} scopeLabel={brandScopeLabel} />
+            {seesAllBranches && <BranchBreakdown items={projects} />}
           </div>
 
           {sorted.length === 0 ? (
