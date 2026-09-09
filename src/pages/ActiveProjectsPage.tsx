@@ -6,7 +6,7 @@ import { backfillActiveBranch, closeOutProject, setActiveBranch } from '../servi
 import { formatDate, formatRM } from '../utils/format';
 import StatCard from '../components/analytics/StatCard';
 import ProjectDetailsModal from '../components/active-projects/ProjectDetailsModal';
-import { BrandBreakdown, BranchBreakdown } from '../components/active-projects/ActiveProjectBreakdown';
+import { BrandBreakdown } from '../components/active-projects/ActiveProjectBreakdown';
 import { VIZ } from '../utils/vizColors';
 import type { Tender } from '../types';
 
@@ -101,6 +101,7 @@ export default function ActiveProjectsPage() {
     const d = daysUntil(t.contractEnd);
     return d !== null && d < 0;
   }).length;
+  const totalGuards = visible.reduce((sum, t) => sum + (t.guardsDeployed || 0), 0);
 
   const brandScopeLabel = !seesAllBranches
     ? profile?.department || ''
@@ -158,7 +159,7 @@ export default function ActiveProjectsPage() {
         <p className="px-6 py-8 text-sm text-slate-400">Loading active projects…</p>
       ) : (
         <div className="px-6 py-6 space-y-6 max-w-6xl">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard
               label="Active Project Value"
               value={formatRM(totalValue)}
@@ -177,12 +178,10 @@ export default function ActiveProjectsPage() {
               sub="needs follow-up"
               accent={VIZ.status.critical}
             />
+            <StatCard label="Guards Deployed" value={String(totalGuards)} sub="across shown projects" />
           </div>
 
-          <div className={seesAllBranches ? 'grid md:grid-cols-2 gap-4' : ''}>
-            <BrandBreakdown items={visible} scopeLabel={brandScopeLabel} />
-            {seesAllBranches && <BranchBreakdown items={projects} />}
-          </div>
+          <BrandBreakdown items={visible} scopeLabel={brandScopeLabel} />
 
           {sorted.length === 0 ? (
             <p className="text-sm text-slate-400 py-8 text-center">No active projects yet.</p>
