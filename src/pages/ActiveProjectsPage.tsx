@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useActiveProjects } from '../hooks/useActiveProjects';
 import { useBranches } from '../hooks/useBranches';
-import { backfillActiveBranch, setActiveBranch } from '../services/tenders';
+import { backfillActiveBranch, closeOutProject, setActiveBranch } from '../services/tenders';
 import { formatDate, formatRM } from '../utils/format';
 import StatCard from '../components/analytics/StatCard';
 import ProjectDetailsModal from '../components/active-projects/ProjectDetailsModal';
@@ -117,6 +117,16 @@ export default function ActiveProjectsPage() {
     );
     if (!confirmed) return;
     setActiveBranch(t.id, newBranch);
+  };
+
+  const handleCloseOut = (t: Tender) => {
+    const confirmed = window.confirm(
+      `Close out "${t.clientName}"?\n\n` +
+        `It will move out of Active Projects and into Past Projects. Its value keeps counting in ` +
+        `Performance Analysis as Won revenue — this only affects the Active Projects view.`
+    );
+    if (!confirmed) return;
+    closeOutProject(t.id);
   };
 
   if (!profile) return null;
@@ -239,12 +249,21 @@ export default function ActiveProjectsPage() {
                           {formatRM(t.tenderValue)}
                         </td>
                         <td className="px-4 py-3">
-                          <button
-                            onClick={() => setDetailsTender(t)}
-                            className="text-xs font-medium text-blue-600 hover:text-blue-700"
-                          >
-                            {hasDetails ? 'Edit' : '+ Add'}
-                          </button>
+                          <div className="flex items-center gap-2.5">
+                            <button
+                              onClick={() => setDetailsTender(t)}
+                              className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                            >
+                              {hasDetails ? 'Edit' : '+ Add'}
+                            </button>
+                            <span className="text-slate-300">·</span>
+                            <button
+                              onClick={() => handleCloseOut(t)}
+                              className="text-xs font-medium text-slate-500 hover:text-rose-600"
+                            >
+                              Close out
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

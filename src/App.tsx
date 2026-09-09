@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage';
 import PipelinePage from './pages/PipelinePage';
 import AnalysisPage from './pages/AnalysisPage';
 import ActiveProjectsPage from './pages/ActiveProjectsPage';
+import PastProjectsPage from './pages/PastProjectsPage';
 import AdminPage from './pages/AdminPage';
 
 function LoginRoute() {
@@ -47,6 +48,16 @@ export default function App() {
               <ProtectedRoute>
                 <AppLayout>
                   <ActiveProjectsPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/past-projects"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <PastProjectsPage />
                 </AppLayout>
               </ProtectedRoute>
             }

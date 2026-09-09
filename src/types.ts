@@ -84,6 +84,16 @@ export interface Tender {
   contactPerson?: string; // on-site or client contact (free text: name, phone, email, etc.)
   guardsDeployed?: number; // number of security guards currently deployed
   tenderDocNumber?: string; // official tender submission document number/ID
+  /**
+   * Marks a Won tender's project as finished/closed out — it stops appearing in Active Projects
+   * (the list, its value totals, and the By Brand / By Branch breakdowns) and shows up in Past
+   * Projects instead. Deliberately does NOT touch `stage` or `tenderValue`, and closing out never
+   * writes a history entry — so the tender keeps counting as Won revenue forever in Performance
+   * Analysis, staff performance, brand breakdown, and the sales race charts. Only the Active
+   * Projects "which branch is currently running work" view (and its breakdowns) is affected.
+   */
+  closedOut?: boolean;
+  closedOutAt?: number;
   createdAt: number;
   updatedAt: number;
 }

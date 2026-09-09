@@ -37,6 +37,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <NavLink to="/active-projects" className={navItemClass}>
             <span aria-hidden>🏗️</span> Active Projects
           </NavLink>
+          <NavLink to="/past-projects" className={navItemClass}>
+            <span aria-hidden>📦</span> Past Projects
+          </NavLink>
           {profile?.role === 'admin' && (
             <NavLink to="/admin" className={navItemClass}>
               <span aria-hidden>⚙️</span> Admin Settings
