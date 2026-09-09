@@ -86,7 +86,7 @@ export default function PipelinePage() {
               setModalOpen(true);
             }}
             onDropStage={(tender, newStage) =>
-              moveTenderStage(tender, newStage, { uid: profile.uid, name: profile.name })
+              moveTenderStage(tender, newStage, { uid: profile.uid, name: profile.name, role: profile.role })
             }
           />
         )}

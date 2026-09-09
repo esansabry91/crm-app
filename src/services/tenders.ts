@@ -8,7 +8,25 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { Stage, Tender } from '../types';
+import type { Role, Stage, Tender } from '../types';
+
+/** Actor performing an action — `role` is optional only for call-site back-compat; every real
+ *  caller passes it. */
+type Actor = { uid: string; name: string; role?: Role };
+
+/**
+ * What `activeBranch` should default to the moment a tender becomes Won. Won by an admin gets
+ * left unassigned (null) — an admin isn't tied to one branch, so there's no branch to guess, and
+ * the Active Projects list should force an explicit pick rather than silently defaulting to
+ * whatever `department` happens to hold. Same for a tender submitted under "HQ" itself, since HQ
+ * doesn't run active projects (see the doc comment on Tender.activeBranch). Otherwise, default to
+ * the submitting branch (`department`) as a convenience.
+ */
+function defaultActiveBranchOnWin(department: string, actorRole: Role | undefined): string | null {
+  if (actorRole === 'admin') return null;
+  if (department === 'HQ') return null;
+  return department;
+}
 
 export interface NewTenderInput {
   clientName: string;
@@ -54,7 +72,7 @@ function closedDateToMillis(closedDate: string): number {
 
 export async function createTender(
   input: NewTenderInput,
-  actor: { uid: string; name: string }
+  actor: Actor
 ): Promise<string> {
   const now = Date.now();
   const isClosed = input.stage === 'Won' || input.stage === 'Lost';
@@ -67,6 +85,10 @@ export async function createTender(
   const docRef = await addDoc(collection(db, 'tenders'), {
     ...rest,
     ...(closedDate ? { closedDate } : {}),
+    // A tender can be created directly in the Won stage (not just moved there later) — give it
+    // the same activeBranch default moveTenderStage would, so it doesn't rely on the opportunistic
+    // backfill (which has no idea who created it) to fill this in afterwards.
+    ...(input.stage === 'Won' ? { activeBranch: defaultActiveBranchOnWin(input.department, actor.role) } : {}),
     createdAt: now,
     updatedAt: now,
   });
@@ -89,7 +111,7 @@ export async function createTender(
 export async function updateTender(
   tenderId: string,
   patch: Partial<NewTenderInput>,
-  actor: { uid: string; name: string },
+  actor: Actor,
   current: Tender
 ) {
   await updateDoc(doc(db, 'tenders', tenderId), {
@@ -117,7 +139,7 @@ export async function updateTender(
 export async function moveTenderStage(
   tender: Tender,
   newStage: Stage,
-  actor: { uid: string; name: string },
+  actor: Actor,
   closedDate?: string
 ) {
   if (newStage === tender.stage) return;
@@ -125,19 +147,17 @@ export async function moveTenderStage(
   const historyTimestamp = isClosed && closedDate ? closedDateToMillis(closedDate) : Date.now();
   const becomingWon = newStage === 'Won';
 
-  // Becoming Won turns this into an Active Project — default its operational branch to wherever
-  // it was submitted, EXCEPT when it was submitted by HQ: HQ doesn't run active projects itself
-  // (see the doc comment on Tender.activeBranch), so an HQ-won tender is left unassigned
-  // (activeBranch null) and shows an empty "Select branch" placeholder in Active Projects,
-  // forcing an admin to explicitly pick which branch will actually run it rather than silently
-  // defaulting to "HQ". Moving away from Won (including to Lost) always clears it.
-  const defaultActiveBranch = tender.department === 'HQ' ? null : tender.department;
+  // Becoming Won turns this into an Active Project — see defaultActiveBranchOnWin's doc comment
+  // for when it's left unassigned instead of defaulting to the submitting branch. Moving away
+  // from Won (including to Lost) always clears it.
   await updateDoc(doc(db, 'tenders', tender.id), {
     stage: newStage,
     updatedAt: Date.now(),
     // Clear closedDate when moving back to an open stage, so stale dates don't linger.
     closedDate: isClosed ? (closedDate ?? null) : null,
-    activeBranch: becomingWon ? tender.activeBranch || defaultActiveBranch : null,
+    activeBranch: becomingWon
+      ? tender.activeBranch || defaultActiveBranchOnWin(tender.department, actor.role)
+      : null,
   });
   await addHistoryEntry(
     tender.id,

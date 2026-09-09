@@ -128,7 +128,7 @@ export default function TenderFormModal({
           await moveTenderStage(
             { ...editing, tenderValue: value },
             stage,
-            { uid: profile.uid, name: profile.name },
+            { uid: profile.uid, name: profile.name, role: profile.role },
             isClosedStage ? closedDate : undefined
           );
         } else if (isClosedStage && closedDate !== (editing.closedDate || '')) {
@@ -151,7 +151,7 @@ export default function TenderFormModal({
             notes,
             closedDate: isClosedStage ? closedDate : undefined,
           },
-          { uid: profile.uid, name: profile.name }
+          { uid: profile.uid, name: profile.name, role: profile.role }
         );
       }
       onClose();
