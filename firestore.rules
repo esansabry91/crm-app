@@ -105,8 +105,11 @@ service cloud.firestore {
         allow create: if isActiveUser()
           && (isAdmin() || request.resource.data.ownerUid == request.auth.uid);
 
-        // Immutable audit log — nobody edits or deletes a history entry once written.
-        allow update, delete: if false;
+        // Immutable audit log — nobody can ever edit a history entry once written. Deletion is
+        // still admin-only (not staff, not even the entry's own owner), reserved for legitimate
+        // data cleanup (e.g. scripts/purge-test-data.mjs) rather than routine use.
+        allow update: if false;
+        allow delete: if isAdmin();
       }
     }
   }
