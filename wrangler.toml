@@ -1,0 +1,6 @@
+# Optional: only needed if you deploy via the Wrangler CLI instead of the
+# Cloudflare dashboard's Git integration. See README.md "Deploy to Cloudflare
+# Pages" for both options.
+name = "global-density-crm"
+compatibility_date = "2026-01-01"
+pages_build_output_dir = "dist"

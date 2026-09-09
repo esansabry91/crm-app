@@ -1,0 +1,113 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    // True only for a signed-in user whose /users/{uid} profile exists, has role "admin",
+    // and has not been deactivated.
+    function isAdmin() {
+      return isSignedIn()
+        && userDoc(request.auth.uid).data.role == 'admin'
+        && userDoc(request.auth.uid).data.active != false;
+    }
+
+    // True for any signed-in user whose profile exists and is still active (staff or admin).
+    function isActiveUser() {
+      return isSignedIn()
+        && userDoc(request.auth.uid).data.active != false;
+    }
+
+    // This user's own department (branch name, or "HQ").
+    function myDepartment() {
+      return userDoc(request.auth.uid).data.department;
+    }
+
+    // ---- Team member profiles ----
+    // Staff can read only their own profile; admins can read/write everyone's.
+    // Nobody but an admin can create or change a profile — this is what stops a staff
+    // account from promoting itself to admin or reassigning its own department.
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---- Branches & brands (admin-editable lookup lists) ----
+    match /branches/{branchId} {
+      allow read: if isActiveUser();
+      allow create, update, delete: if isAdmin();
+    }
+    match /brands/{brandId} {
+      allow read: if isActiveUser();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---- Tenders ----
+    // Admins (HQ / Superior) see and manage every tender. Staff can only manage tenders where
+    // they are the owner, and can never reassign a tender away from themselves nor create one
+    // owned by someone else.
+    //
+    // Reading is a bit wider than managing, to support Active Projects: once a tender is Won,
+    // anyone in the branch it's currently assigned to (`activeBranch`) can also read it — not
+    // just its original owner — since Active Projects lists everyone's won work for that
+    // branch, not just what any one person personally submitted. Anyone whose own department
+    // is "HQ" can read every Won tender firm-wide (HQ holds no active projects of its own, but
+    // oversees all of them). Non-Won tenders remain visible only to their owner and to admins.
+    match /tenders/{tenderId} {
+      allow read: if isActiveUser()
+        && (
+          isAdmin()
+          || resource.data.ownerUid == request.auth.uid
+          || (resource.data.stage == 'Won' && myDepartment() == 'HQ')
+          || (resource.data.stage == 'Won' && resource.data.activeBranch == myDepartment())
+        );
+
+      allow create: if isActiveUser()
+        && (isAdmin() || request.resource.data.ownerUid == request.auth.uid);
+
+      // Non-owners can additionally update JUST the Active Project detail fields (location,
+      // contact person, guards deployed, tender doc number) on a Won tender they can see in
+      // Active Projects — branch-mates in its activeBranch, or anyone in HQ — mirroring the read
+      // rule above. affectedKeys().hasOnly([...]) is what keeps this narrow: any write that also
+      // touches stage, value, ownerUid, department, etc. falls through and is rejected unless
+      // the caller is the owner or an admin.
+      allow update: if isActiveUser()
+        && (
+          isAdmin()
+          || (resource.data.ownerUid == request.auth.uid
+              && request.resource.data.ownerUid == request.auth.uid)
+          || (
+            resource.data.stage == 'Won'
+            && (resource.data.activeBranch == myDepartment() || myDepartment() == 'HQ')
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['location', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'updatedAt'])
+          )
+        );
+
+      // Staff can delete a tender they own (matches the create/update scoping above); admins
+      // can delete any tender.
+      allow delete: if isActiveUser() && (isAdmin() || resource.data.ownerUid == request.auth.uid);
+
+      // ---- Change history (audit trail that powers the pipeline-value trend chart) ----
+      // Denormalized `ownerUid` on each entry keeps this rule self-contained (no extra
+      // get() on the parent tender), which is also what lets the collectionGroup query
+      // in useTenderHistory.ts validate for staff (see the .where('ownerUid', ...) there).
+      match /history/{historyId} {
+        allow read: if isActiveUser() && (isAdmin() || resource.data.ownerUid == request.auth.uid);
+
+        allow create: if isActiveUser()
+          && (isAdmin() || request.resource.data.ownerUid == request.auth.uid);
+
+        // Immutable audit log — nobody edits or deletes a history entry once written.
+        allow update, delete: if false;
+      }
+    }
+  }
+}
