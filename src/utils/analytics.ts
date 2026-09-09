@@ -273,24 +273,31 @@ export function buildRaceFrames(
   return buildRaceFramesFromData(data, departments, timeView);
 }
 
+export type ActiveProjectRaceMetric = 'value' | 'guards';
+
 /**
  * Builds frame-by-frame data for the Active Projects "branch race" chart — which branch is
  * currently RUNNING the awarded work. Only Won tenders count (that's what "active project"
  * means here), grouped by `activeBranch` (falling back to `department` for any tender that
  * predates the Active Projects feature and hasn't been backfilled yet), bucketed by
  * `contractStart` — the date the awarded contract begins.
+ *
+ * `metric` picks what's summed per branch per bucket: contract value (RM), or how many security
+ * guards are deployed there — same "who's running what, over time" shape, different unit.
  */
 export function buildActiveProjectRaceFrames(
   tenders: Tender[],
   departments: string[],
-  timeView: RaceTimeView
+  timeView: RaceTimeView,
+  metric: ActiveProjectRaceMetric = 'value'
 ): RaceFrame[] {
   const data: RaceDatum[] = [];
   for (const t of tenders) {
     if (t.stage !== 'Won' || !t.contractStart) continue;
     const d = new Date(`${t.contractStart}T12:00:00`);
     if (Number.isNaN(d.getTime())) continue;
-    data.push({ department: t.activeBranch || t.department, dateMillis: d.getTime(), value: t.tenderValue || 0 });
+    const value = metric === 'guards' ? t.guardsDeployed || 0 : t.tenderValue || 0;
+    data.push({ department: t.activeBranch || t.department, dateMillis: d.getTime(), value });
   }
   return buildRaceFramesFromData(data, departments, timeView);
 }

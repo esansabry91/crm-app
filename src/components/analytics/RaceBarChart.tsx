@@ -14,26 +14,32 @@ const TIME_VIEWS: { value: RaceTimeView; label: string }[] = [
   { value: 'yearly', label: 'Yearly' },
 ];
 
-const METRICS: { value: RaceMetric; label: string }[] = [
+interface MetricOption<M extends string> {
+  value: M;
+  label: string;
+}
+
+const DEFAULT_METRICS: MetricOption<RaceMetric>[] = [
   { value: 'won', label: 'Won value' },
   { value: 'submitted', label: 'Total submitted' },
 ];
 
-export default function RaceBarChart({
+export default function RaceBarChart<M extends string = RaceMetric>({
   frames,
   metric,
   timeView,
   onMetricChange,
   onTimeViewChange,
   colorDomain,
+  metricOptions,
+  valueFormatter = formatRM,
 }: {
   frames: RaceFrame[];
-  // Metric toggle is optional — charts with only one metric (e.g. Active Projects, which
-  // always ranks by active project value) simply omit these two props and the toggle row
-  // is left out entirely.
-  metric?: RaceMetric;
+  // Metric toggle is optional — charts with only one metric (e.g. a chart that always ranks by
+  // a single fixed value) simply omit these props and the toggle row is left out entirely.
+  metric?: M;
   timeView: RaceTimeView;
-  onMetricChange?: (m: RaceMetric) => void;
+  onMetricChange?: (m: M) => void;
   onTimeViewChange: (v: RaceTimeView) => void;
   // A fixed, shared ordering of every department (e.g. ['HQ', ...branch names]) used to pick
   // each bar's color by that department's position in THIS list rather than its rank in the
@@ -41,7 +47,14 @@ export default function RaceBarChart({
   // (or even every frame) purely because its ranking shifted — pass a stable domain so a branch
   // always renders in the same color everywhere it appears.
   colorDomain?: string[];
+  // Custom metric toggle options — pass this whenever the metric type isn't RaceMetric (e.g.
+  // 'value' | 'guards' for the Active Projects race). Falls back to the won/submitted toggle.
+  metricOptions?: MetricOption<M>[];
+  // How each bar's number is displayed — defaults to RM currency; pass a plain formatter (e.g.
+  // String) for a chart whose metric isn't a monetary value.
+  valueFormatter?: (v: number) => string;
 }) {
+  const metrics = metricOptions ?? (DEFAULT_METRICS as unknown as MetricOption<M>[]);
   const [frameIndex, setFrameIndex] = useState(Math.max(frames.length - 1, 0));
   const [playing, setPlaying] = useState(false);
   const timerRef = useRef<number | null>(null);
@@ -101,7 +114,7 @@ export default function RaceBarChart({
         </div>
         {onMetricChange && (
           <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-            {METRICS.map((mtc) => (
+            {metrics.map((mtc) => (
               <button
                 key={mtc.value}
                 onClick={() => onMetricChange(mtc.value)}
@@ -135,7 +148,7 @@ export default function RaceBarChart({
               >
                 {bar.value > 0 && (
                   <span className="text-[10px] font-semibold text-white whitespace-nowrap">
-                    {formatRM(bar.value)}
+                    {valueFormatter(bar.value)}
                   </span>
                 )}
               </div>

@@ -12,10 +12,16 @@ import {
   pipelineValueTrend,
   stageBreakdown,
   staffPerformance,
+  type ActiveProjectRaceMetric,
   type RaceMetric,
   type RaceTimeView,
 } from '../utils/analytics';
 import { formatRM } from '../utils/format';
+
+const ACTIVE_RACE_METRICS = [
+  { value: 'value' as ActiveProjectRaceMetric, label: 'Value' },
+  { value: 'guards' as ActiveProjectRaceMetric, label: 'Guards deployed' },
+];
 import StatCard from '../components/analytics/StatCard';
 import PipelineTrendChart from '../components/analytics/PipelineTrendChart';
 import StageBarChart from '../components/analytics/StageBarChart';
@@ -48,6 +54,7 @@ export default function AnalysisPage() {
   const [raceMetric, setRaceMetric] = useState<RaceMetric>('won');
   const [raceTimeView, setRaceTimeView] = useState<RaceTimeView>('alltime');
   const [activeRaceTimeView, setActiveRaceTimeView] = useState<RaceTimeView>('alltime');
+  const [activeRaceMetric, setActiveRaceMetric] = useState<ActiveProjectRaceMetric>('value');
 
   const filtered = useMemo(
     () =>
@@ -85,8 +92,8 @@ export default function AnalysisPage() {
   // excluded from the field here (unlike raceDepartments above, which includes it).
   const branchNames = useMemo(() => branches.map((b) => b.name), [branches]);
   const activeRaceFrames = useMemo(
-    () => buildActiveProjectRaceFrames(activeProjects, branchNames, activeRaceTimeView),
-    [activeProjects, branchNames, activeRaceTimeView]
+    () => buildActiveProjectRaceFrames(activeProjects, branchNames, activeRaceTimeView, activeRaceMetric),
+    [activeProjects, branchNames, activeRaceTimeView, activeRaceMetric]
   );
 
   if (!profile) return null;
@@ -189,12 +196,20 @@ export default function AnalysisPage() {
                 />
               </Card>
 
-              <Card title="Active Projects Race — Branch Value Over Time">
+              <Card
+                title={`Active Projects Race — Branch ${
+                  activeRaceMetric === 'guards' ? 'Guards Deployed' : 'Value'
+                } Over Time`}
+              >
                 <RaceBarChart
                   frames={activeRaceFrames}
+                  metric={activeRaceMetric}
                   timeView={activeRaceTimeView}
+                  onMetricChange={setActiveRaceMetric}
                   onTimeViewChange={setActiveRaceTimeView}
                   colorDomain={departmentOptions}
+                  metricOptions={ACTIVE_RACE_METRICS}
+                  valueFormatter={activeRaceMetric === 'guards' ? (v) => String(v) : formatRM}
                 />
               </Card>
 
