@@ -1,6 +1,16 @@
-# Optional: only needed if you deploy via the Wrangler CLI instead of the
-# Cloudflare dashboard's Git integration. See README.md "Deploy to Cloudflare
-# Pages" for both options.
-name = "global-density-crm"
+# Deploys this app as a Cloudflare Worker serving static assets (the modern
+# replacement for the classic separate "Pages" product/API). This is what
+# lets the Cloudflare dashboard's auto-provisioned build token — which is
+# scoped for Workers deploys, not the classic Pages REST API — actually
+# publish the build. Deploy command (Cloudflare dashboard → Settings →
+# Build configuration → Deploy command) must be plain `npx wrangler deploy`.
+# `name` must match the project name shown in the Cloudflare dashboard.
+name = "crm-app"
 compatibility_date = "2026-01-01"
-pages_build_output_dir = "dist"
+
+[assets]
+directory = "./dist"
+# Client-side routed SPA (React Router-less, but still path-based nav) — any
+# path with no matching static file falls back to index.html instead of a
+# raw 404, equivalent to what public/_redirects did for classic Pages.
+not_found_handling = "single-page-application"
