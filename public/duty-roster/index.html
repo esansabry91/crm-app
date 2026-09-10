@@ -1,0 +1,2040 @@
+<title>Duty Roster Console</title>
+<!--
+  ============================================================================
+  EMBEDDED BUILD — served from this CRM's own public/duty-roster/ folder and
+  opened inside an <iframe> by src/pages/DutyRosterPage.tsx. It shares the
+  CRM's own Firebase project ("ipsb-crm") rather than a separate one:
+  firebase-config.js (sitting next to this file) carries that project's real
+  web app config, and initDb() below calls firebase.auth() to pick up the
+  CRM's already-signed-in user (Firebase Auth's persisted session is shared
+  across app instances pointed at the same project, in the same browser) so
+  Firestore's security rules can see request.auth. Every signed-in, active
+  CRM team member — any role — can read/write the `sites` collection and its
+  `months` subcollection this app uses; see firestore.rules.
+
+  Because it now depends on being embedded in the CRM (for sign-in) and on
+  that shared project, this file is no longer meant to be opened standalone
+  or duplicated per team the way the original build was — see git history
+  before this comment for that version, and firebase-setup-guide.md for the
+  now-superseded multi-team instructions.
+  ============================================================================
+-->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<!-- Powers the "Export to Excel" button (Roster tab). Loaded from a CDN, so
+     that button needs an internet connection to work; everything else in
+     the app keeps working without it. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  /* System font stacks only — no external stylesheet. A render-blocking
+     cross-origin font request was leaving this page blank/unresponsive
+     for many seconds (or longer) on slower or restricted networks. */
+  :root{
+    --bg:#F6F7F5;
+    --surface:#FFFFFF;
+    --surface-2:#EEF1EE;
+    --ink:#1C2420;
+    --muted:#5C665F;
+    --line:#DCE3DE;
+    --accent:#2F6F5E;
+    --accent-ink:#FFFFFF;
+    --accent-soft:#DEEBE5;
+    --good:#2E7D4F;
+    --good-soft:#E1F0E6;
+    --warn:#9A6A15;
+    --warn-soft:#F7ECD8;
+    --critical:#B23A2C;
+    --critical-soft:#F8E4E1;
+    --shift-a:#DCEAFB; --shift-a-ink:#1B3A5C;
+    --shift-b:#E1F3E6; --shift-b-ink:#1E4F2E;
+    --shift-c:#FBF0D9; --shift-c-ink:#5C4413;
+    --shift-d:#F6E4FA; --shift-d-ink:#5A2D63;
+    --shadow: 0 1px 2px rgba(20,30,26,0.06), 0 4px 14px rgba(20,30,26,0.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#101512;
+      --surface:#171E1B;
+      --surface-2:#1E2622;
+      --ink:#E8EDEA;
+      --muted:#94A19A;
+      --line:#2A332E;
+      --accent:#56B79A;
+      --accent-ink:#0B1512;
+      --accent-soft:#1C332C;
+      --good:#4FBE7C;
+      --good-soft:#173226;
+      --warn:#D6A54B;
+      --warn-soft:#332911;
+      --critical:#E2685C;
+      --critical-soft:#3A1F1C;
+      --shift-a:#1E3350; --shift-a-ink:#BFE0FF;
+      --shift-b:#1E3A28; --shift-b-ink:#B9F0C9;
+      --shift-c:#4A3B14; --shift-c-ink:#F5DE9E;
+      --shift-d:#3B2440; --shift-d-ink:#EFC9F7;
+      --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#101512;
+    --surface:#171E1B;
+    --surface-2:#1E2622;
+    --ink:#E8EDEA;
+    --muted:#94A19A;
+    --line:#2A332E;
+    --accent:#56B79A;
+    --accent-ink:#0B1512;
+    --accent-soft:#1C332C;
+    --good:#4FBE7C;
+    --good-soft:#173226;
+    --warn:#D6A54B;
+    --warn-soft:#332911;
+    --critical:#E2685C;
+    --critical-soft:#3A1F1C;
+    --shift-a:#1E3350; --shift-a-ink:#BFE0FF;
+    --shift-b:#1E3A28; --shift-b-ink:#B9F0C9;
+    --shift-c:#4A3B14; --shift-c-ink:#F5DE9E;
+    --shift-d:#3B2440; --shift-d-ink:#EFC9F7;
+    --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.35);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size:14px; line-height:1.5;
+  }
+  h1,h2,h3{ font-family:ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; text-wrap:balance; margin:0; }
+  .mono{ font-family:ui-monospace, "SF Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+  button{ font-family:inherit; }
+  ::selection{ background:var(--accent-soft); }
+  a{ color:var(--accent); }
+
+  .app{ max-width:1180px; margin:0 auto; padding:20px 20px 64px; }
+
+  /* Top bar */
+  .topbar{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:18px; }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand-mark{ width:34px; height:34px; border-radius:8px; background:var(--accent); color:var(--accent-ink);
+    display:flex; align-items:center; justify-content:center; font-family:ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-weight:800; font-size:15px; flex:none; }
+  .brand-text h1{ font-size:18px; font-weight:700; letter-spacing:-0.01em; }
+  .brand-text p{ margin:2px 0 0; font-size:12px; color:var(--muted); }
+
+  .sync{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); padding:6px 10px; border:1px solid var(--line); border-radius:999px; background:var(--surface); }
+  .sync .dot{ width:7px; height:7px; border-radius:50%; background:var(--muted); flex:none; }
+  .sync.ok .dot{ background:var(--good); }
+  .sync.local .dot{ background:var(--warn); }
+
+  /* Site bar */
+  .sitebar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:10px 12px; box-shadow:var(--shadow); }
+  .sitebar select{ min-width:200px; }
+  .sitebar .btn.danger:disabled{ opacity:0.4; }
+
+  /* Tabs */
+  .tabs{ display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:18px; }
+  .tab{ appearance:none; border:none; background:transparent; color:var(--muted); font-weight:600; font-size:13.5px;
+    padding:10px 14px; border-radius:8px 8px 0 0; cursor:pointer; position:relative; top:1px; }
+  .tab:hover{ color:var(--ink); }
+  .tab.active{ color:var(--accent); border-bottom:2px solid var(--accent); }
+  .tab:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  /* Banner */
+  .banner{ display:flex; align-items:center; justify-content:space-between; gap:12px; background:var(--accent-soft); border:1px solid var(--line);
+    border-radius:10px; padding:10px 14px; margin-bottom:16px; font-size:13px; color:var(--ink); }
+  .banner button{ flex:none; }
+
+  /* Stat tiles */
+  .stats{ display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-bottom:18px; }
+  .stat{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:14px 16px; box-shadow:var(--shadow); }
+  .stat .k{ font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted); font-weight:600; }
+  .stat .v{ font-family:ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-weight:700; font-size:24px; margin-top:4px; }
+  .stat .v.critical{ color:var(--critical); }
+  .stat .v.good{ color:var(--good); }
+  .stat .v.warn{ color:var(--warn); }
+
+  /* Month nav */
+  .monthnav{ display:flex; align-items:center; gap:8px; margin-bottom:14px; }
+  .monthnav .lbl{ font-family:ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-weight:700; font-size:15px; min-width:150px; text-align:center; }
+  .iconbtn{ width:30px; height:30px; border-radius:8px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer; font-size:14px; }
+  .iconbtn:hover{ background:var(--surface-2); }
+
+  /* Roster calendar */
+  .tablewrap{ overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--surface); box-shadow:var(--shadow); padding:14px; }
+  .calendar-weekdays{ display:grid; grid-template-columns:repeat(7, minmax(136px,1fr)); gap:8px; margin-bottom:8px; min-width:980px; }
+  .calendar-weekdays span{ display:block; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); font-weight:600; text-align:center; }
+  .calendar-grid{ display:grid; grid-template-columns:repeat(7, minmax(136px,1fr)); gap:8px; min-width:980px; }
+  .daycell{ background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:8px; min-height:110px; display:flex; flex-direction:column; gap:7px; }
+  .daycell.pad{ background:transparent; border-color:transparent; }
+  .daycell .datenum{ display:flex; align-items:center; justify-content:space-between; gap:4px; font-family:ui-monospace, "SF Mono", Consolas, monospace; font-weight:600; font-size:12.5px; }
+  .daycell.weekend .datenum{ color:var(--accent); }
+
+  .slotrow{ display:flex; flex-direction:column; gap:2px; }
+  .slotrow .shiftlabel{ font-size:9.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); font-weight:600; }
+  select.slotselect{ width:100%; font-size:11.5px; padding:4px 5px; border-radius:6px; border:1px solid var(--line); background:var(--surface); color:var(--ink); }
+  select.slotselect.unfilled{ border-color:var(--critical); color:var(--critical); background:var(--critical-soft); }
+  select.slotselect.flagged{ border-color:var(--warn); background:var(--warn-soft); }
+  .leavetag{ font-size:9.5px; background:var(--warn-soft); color:var(--warn); border-radius:5px; padding:1px 5px; font-weight:600; white-space:nowrap; }
+  .leaveline{ font-size:10.5px; color:var(--warn); background:var(--warn-soft); border-radius:5px; padding:2px 6px; margin-bottom:4px; }
+
+  /* View toggle */
+  .viewtoggle{ margin-left:auto; display:flex; gap:2px; background:var(--surface-2); border:1px solid var(--line); border-radius:9px; padding:2px; }
+  .vt{ appearance:none; border:none; background:transparent; color:var(--muted); font-family:inherit; font-weight:600; font-size:12.5px; padding:6px 12px; border-radius:7px; cursor:pointer; }
+  .vt.active{ background:var(--surface); color:var(--accent); box-shadow:var(--shadow); }
+
+  /* Roster sheet (guards x days grid) */
+  .rtitle{ font-family:ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-weight:700; font-size:13.5px; margin-bottom:8px; }
+  .legend{ display:flex; flex-wrap:wrap; gap:6px 16px; margin-bottom:12px; }
+  .lg{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+  .lg .sw{ width:12px; height:12px; border-radius:3px; flex:none; border:1px solid var(--line); }
+  .gt-wrap{ overflow:auto; max-width:100%; border:1px solid var(--line); border-radius:10px; }
+  table.gt{ border-collapse:separate; border-spacing:0; font-size:11.5px; width:100%; }
+  table.gt th, table.gt td{ padding:5px 7px; text-align:center; border-bottom:1px solid var(--line); border-right:1px solid var(--line); white-space:nowrap; font-variant-numeric:tabular-nums; }
+  table.gt thead th{ position:sticky; top:0; z-index:2; background:var(--surface-2); font-size:10px; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted); font-weight:700; }
+  table.gt th.wkend{ background:var(--accent-soft); color:var(--accent); }
+  table.gt td.g, table.gt th.g0{ position:sticky; left:0; z-index:1; background:var(--surface); text-align:left; font-weight:600; }
+  table.gt thead th.g0{ z-index:3; }
+  table.gt td.tot{ font-weight:700; background:var(--surface-2); }
+  table.gt td.off{ color:var(--muted); }
+  table.gt td.off.leave{ color:var(--warn); background:var(--warn-soft); font-weight:700; }
+  table.gt td.restday{ box-shadow:inset 0 0 0 2px var(--warn); }
+  table.gt td.shift-a, .lg .sw.shift-a{ background:var(--shift-a); color:var(--shift-a-ink); }
+  table.gt td.shift-b, .lg .sw.shift-b{ background:var(--shift-b); color:var(--shift-b-ink); }
+  table.gt td.shift-c, .lg .sw.shift-c{ background:var(--shift-c); color:var(--shift-c-ink); }
+  table.gt td.shift-d, .lg .sw.shift-d{ background:var(--shift-d); color:var(--shift-d-ink); }
+
+  /* Panels / forms */
+  .grid2{ display:grid; grid-template-columns:1.1fr 1fr; gap:16px; align-items:start; }
+  @media (max-width:820px){ .grid2{ grid-template-columns:1fr; } }
+  .panel{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px; box-shadow:var(--shadow); margin-bottom:16px; }
+  .panel h2{ font-size:14px; margin-bottom:2px; }
+  .panel .sub{ font-size:12px; color:var(--muted); margin:0 0 12px; }
+  .fieldrow{ display:flex; gap:8px; margin-bottom:10px; }
+  .fieldrow input, .fieldrow select{ flex:1; }
+  input[type=text], input[type=number], input[type=date], input[type=time], select{
+    font-family:inherit; font-size:13px; padding:7px 9px; border-radius:8px; border:1px solid var(--line);
+    background:var(--surface); color:var(--ink);
+  }
+  label.small{ font-size:11.5px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em; display:block; margin-bottom:4px; }
+  .btn{ appearance:none; border:1px solid var(--line); background:var(--surface); color:var(--ink); padding:7px 13px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .btn:hover{ background:var(--surface-2); }
+  .btn.primary{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .btn.primary:hover{ filter:brightness(1.06); }
+  .btn.danger{ color:var(--critical); border-color:var(--critical); background:transparent; }
+  .btn.danger:hover{ background:var(--critical-soft); }
+  .btn:disabled{ opacity:0.5; cursor:not-allowed; }
+  .btn.sm{ padding:4px 9px; font-size:12px; }
+
+  .fullh-cat{ margin-bottom:14px; }
+  .fullh-rows{ display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+  .fullh-row{ display:flex; align-items:center; gap:6px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:6px 8px; }
+  .fullh-row input[type=number]{ width:70px; flex:none; }
+  .fullh-row .fullh-unit{ font-size:12px; color:var(--muted); }
+  .fullh-remove{ margin-left:auto; appearance:none; border:1px solid var(--line); background:var(--surface); color:var(--muted); width:24px; height:24px; border-radius:6px; cursor:pointer; font-size:14px; line-height:1; flex:none; }
+  .fullh-remove:hover{ background:var(--critical-soft); color:var(--critical); border-color:var(--critical); }
+
+  table.simple{ width:100%; border-collapse:collapse; }
+  table.simple th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--line); }
+  table.simple td{ padding:7px 8px; border-bottom:1px solid var(--line); font-size:13px; }
+  table.simple tr:last-child td{ border-bottom:none; }
+  .pill{ display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:600; padding:2px 8px; border-radius:999px; }
+  .pill.active{ background:var(--good-soft); color:var(--good); }
+  .pill.inactive{ background:var(--critical-soft); color:var(--critical); }
+  .pill.warn{ background:var(--warn-soft); color:var(--warn); }
+
+  .loglist{ display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto; }
+  .logitem{ font-size:12.5px; padding:8px 10px; background:var(--surface-2); border-radius:8px; border-left:3px solid var(--accent); }
+  .logitem .ts{ color:var(--muted); font-family:ui-monospace, "SF Mono", Consolas, monospace; font-size:11px; display:block; margin-bottom:2px; }
+
+  .conflictlist{ display:flex; flex-direction:column; gap:6px; }
+  .conflictitem{ font-size:12.5px; padding:7px 10px; background:var(--critical-soft); color:var(--critical); border-radius:8px; }
+
+  .empty{ color:var(--muted); font-size:13px; padding:10px 2px; }
+  .fairbar-row{ display:grid; grid-template-columns:120px 1fr 34px; align-items:center; gap:8px; margin-bottom:7px; font-size:12.5px; }
+  .fairbar-track{ height:8px; background:var(--surface-2); border-radius:5px; overflow:hidden; }
+  .fairbar-fill{ height:100%; background:var(--accent); border-radius:5px; }
+
+  /* Toasts + in-page dialogs (no window.alert/confirm/prompt — those are
+     unreliable inside a sandboxed artifact iframe) */
+  .toaststack{ position:fixed; top:14px; right:14px; z-index:1000; display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
+  .toast{ background:var(--ink); color:var(--bg); font-size:13px; font-weight:600; padding:10px 16px; border-radius:9px; box-shadow:var(--shadow); max-width:320px; }
+  .toast.err{ background:var(--critical); color:#fff; }
+  .modalveil{ position:fixed; inset:0; background:rgba(20,30,26,0.45); display:flex; align-items:center; justify-content:center; z-index:999; }
+  .modalcard{ background:var(--surface); border-radius:12px; padding:20px 22px; box-shadow:var(--shadow); width:340px; max-width:90vw; }
+  .modalcard h3{ font-size:14.5px; margin-bottom:10px; }
+  .modalcard p.msg{ font-size:13px; color:var(--muted); margin:0 0 14px; }
+  .modalcard input[type=text]{ width:100%; margin-bottom:14px; }
+  .modalcard .modalbtns{ display:flex; justify-content:flex-end; gap:8px; }
+</style>
+
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">DR</div>
+      <div class="brand-text">
+        <h1>Duty Roster Console</h1>
+        <p>Global Density &mdash; security guard scheduling</p>
+      </div>
+    </div>
+    <div class="sync" id="syncIndicator"><span class="dot"></span><span id="syncLabel">Connecting&hellip;</span></div>
+  </div>
+
+  <div class="sitebar">
+    <label class="small" style="margin:0;">Client site</label>
+    <select id="siteSelect"></select>
+    <button class="btn sm" id="newSiteBtn" type="button">+ New site</button>
+    <button class="btn sm" id="renameSiteBtn" type="button">Rename</button>
+    <button class="btn sm danger" id="deleteSiteBtn" type="button">Delete site</button>
+  </div>
+
+  <div class="banner" id="sampleBanner" hidden>
+    <span>This roster is loaded with example guards and shifts so you can see how scheduling works. Add your own guards in <strong>Guards &amp; Shifts</strong> when ready.</span>
+    <button class="btn sm" id="clearSampleBtn">Clear sample data</button>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="roster" role="tab">Roster</button>
+    <button class="tab" data-tab="setup" role="tab">Guards &amp; Shifts</button>
+    <button class="tab" data-tab="adjust" role="tab">Adjustments</button>
+  </div>
+
+  <!-- ROSTER VIEW -->
+  <div class="view active" id="view-roster">
+    <div class="stats" id="rosterStats"></div>
+
+    <div class="monthnav">
+      <button class="iconbtn" id="prevMonth" aria-label="Previous month">&larr;</button>
+      <div class="lbl" id="monthLabel"></div>
+      <button class="iconbtn" id="nextMonth" aria-label="Next month">&rarr;</button>
+      <div class="viewtoggle" id="viewToggle">
+        <button class="vt active" data-view="calendar" type="button">Calendar</button>
+        <button class="vt" data-view="grid" type="button">Roster sheet</button>
+      </div>
+      <button class="btn sm" id="exportExcelBtn" type="button">Export to Excel</button>
+    </div>
+
+    <div class="tablewrap" id="calendarView">
+      <div class="calendar-weekdays" id="calendarWeekdays"></div>
+      <div class="calendar-grid" id="calendarGrid"></div>
+    </div>
+
+    <div class="tablewrap" id="gridView" hidden>
+      <div class="rtitle" id="gridTitle"></div>
+      <div class="legend" id="gridLegend"></div>
+      <div class="gt-wrap">
+        <table class="gt" id="gridTable">
+          <thead><tr id="gridHeadRow"></tr></thead>
+          <tbody id="gridBody"></tbody>
+        </table>
+      </div>
+      <p class="sub" id="gridNote" style="margin-top:10px;"></p>
+    </div>
+
+    <div class="grid2" style="margin-top:16px;">
+      <div class="panel">
+        <h2>Monthly work-day summary</h2>
+        <p class="sub" id="workdaySub">Normal work days fixed at 26/month; any day worked beyond that counts as work on a rest day.</p>
+        <table class="simple">
+          <thead><tr><th>Guard</th><th>Worked</th><th>Normal</th><th>Rest</th><th>Work on rest day</th></tr></thead>
+          <tbody id="fairnessList"></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h2>Unfilled &amp; flagged shifts</h2>
+        <p class="sub">Slots with no eligible guard, or manual overrides that break a rule</p>
+        <div class="conflictlist" id="conflictList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETUP VIEW -->
+  <div class="view" id="view-setup">
+    <div class="grid2">
+      <div>
+        <div class="panel">
+          <h2>Guard roster</h2>
+          <p class="sub">Add a guard by name &mdash; no ID or paperwork needed</p>
+          <div class="fieldrow">
+            <input type="text" id="newGuardName" placeholder="e.g. Ahmad Faiz">
+            <button class="btn primary" id="addGuardBtn">Add guard</button>
+          </div>
+          <table class="simple">
+            <thead><tr><th>Name</th><th>Status</th><th></th></tr></thead>
+            <tbody id="guardTableBody"></tbody>
+          </table>
+          <p class="empty" id="guardEmpty" hidden>No guards yet &mdash; add your first one above.</p>
+        </div>
+      </div>
+      <div>
+        <div class="panel">
+          <h2>Client site requirement</h2>
+          <p class="sub">Same scenario model as the cost-per-manhour calculator &mdash; posts drive the roster directly</p>
+          <div class="fieldrow">
+            <div style="flex:1;">
+              <label class="small">Post requirement pattern</label>
+              <select id="sitePattern">
+                <option value="U">Same posts at all times</option>
+                <option value="DN">Different posts for day &amp; night shift</option>
+                <option value="WW">Different posts for weekday &amp; weekend (day = night)</option>
+                <option value="FULL">Different posts for weekday/weekend and day/night</option>
+                <option value="FULLH">Different posts AND shift hours — weekday/weekend, day/night</option>
+              </select>
+            </div>
+          </div>
+          <div id="sitePostsFields"></div>
+          <div class="fieldrow">
+            <div><label class="small">Coverage hours/day</label><input type="number" id="siteHoursDay" min="0" step="0.5"></div>
+            <div><label class="small">Coverage days/week</label><input type="number" id="siteDaysWeek" min="0" max="7" step="1"></div>
+          </div>
+          <div class="fieldrow">
+            <div><label class="small">Hours per shift</label><input type="number" id="siteShiftHrs" min="0.5" step="0.5"></div>
+            <div><label class="small">Roster start hour (0&ndash;23)</label><input type="number" id="siteRosterStart" min="0" max="23" step="1"></div>
+          </div>
+          <button class="btn primary sm" id="saveSiteBtn">Save site requirement</button>
+          <p class="empty" id="siteSummary" style="margin-top:10px;"></p>
+        </div>
+        <div class="panel">
+          <h2>Rest rules</h2>
+          <p class="sub">Applied automatically when the roster is generated</p>
+          <div class="fieldrow">
+            <div>
+              <label class="small">Rest days per guard per week</label>
+              <input type="number" id="restDaysWeek" min="0" max="6">
+            </div>
+            <div>
+              <label class="small">Min rest between shifts (hours)</label>
+              <input type="number" id="restMinHours" min="0" max="48">
+            </div>
+          </div>
+          <p class="empty" id="restSummary" style="margin:0 0 10px;"></p>
+          <button class="btn primary sm" id="saveRestBtn">Save rules</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADJUSTMENTS VIEW -->
+  <div class="view" id="view-adjust">
+    <div class="grid2">
+      <div>
+        <div class="panel">
+          <h2>Mark a guard on leave</h2>
+          <p class="sub">The roster will auto-assign another eligible guard to cover — even one who'd otherwise be resting — and will note it on the roster</p>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">Guard</label><select id="leaveGuard"></select></div>
+            <div style="flex:1;"><label class="small">Date</label><input type="date" id="leaveDate"></div>
+          </div>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">Reason</label><select id="leaveReason"></select></div>
+          </div>
+          <button class="btn primary sm" id="addLeaveBtn">Add leave</button>
+          <table class="simple" style="margin-top:12px;">
+            <thead><tr><th>Date</th><th>Guard(s) on leave</th><th></th></tr></thead>
+            <tbody id="leaveTableBody"></tbody>
+          </table>
+          <p class="empty" id="leaveEmpty" hidden>No leave recorded for this month.</p>
+        </div>
+
+        <div class="panel">
+          <h2>Replace a guard</h2>
+          <p class="sub">Take a guard out of the rotation from a chosen date, optionally adding a replacement to the pool</p>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">Guard leaving</label><select id="replaceGuard"></select></div>
+            <div style="flex:1;"><label class="small">Effective from</label><input type="date" id="replaceDate"></div>
+          </div>
+          <div class="fieldrow">
+            <input type="text" id="replaceNewName" placeholder="New guard's name (optional)">
+            <button class="btn primary" id="replaceBtn">Replace</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel">
+          <h2>Swap two shifts</h2>
+          <p class="sub">Exchange the guards assigned to two shift slots</p>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">Date A</label><input type="date" id="swapDateA"></div>
+            <div style="flex:1;"><label class="small">Shift A</label><select id="swapShiftA"></select></div>
+            <div style="flex:1;"><label class="small">Slot A</label><select id="swapSlotA"></select></div>
+          </div>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">Date B</label><input type="date" id="swapDateB"></div>
+            <div style="flex:1;"><label class="small">Shift B</label><select id="swapShiftB"></select></div>
+            <div style="flex:1;"><label class="small">Slot B</label><select id="swapSlotB"></select></div>
+          </div>
+          <button class="btn primary sm" id="swapBtn">Swap</button>
+        </div>
+
+        <div class="panel">
+          <h2>Change log</h2>
+          <p class="sub">Every leave, swap and replacement, most recent first</p>
+          <div class="loglist" id="logList"></div>
+          <p class="empty" id="logEmpty" hidden>No changes logged yet.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toaststack" id="toastStack"></div>
+<div id="modalRoot"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------- date helpers (calendar-day arithmetic, UTC-based) ---------------- */
+  function ymd(y,m,d){ return y+"-"+String(m).padStart(2,"0")+"-"+String(d).padStart(2,"0"); }
+  function daysInMonth(y,m){ return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
+  function parseYM(key){ const [y,m] = key.split("-").map(Number); return {y,m}; }
+  function todayYM(){ const n = new Date(); return {y:n.getUTCFullYear(), m:n.getUTCMonth()+1}; }
+  function monthKey(y,m){ return y+"-"+String(m).padStart(2,"0"); }
+  function addMonths(y,m,delta){ let idx = (y*12 + (m-1)) + delta; let ny = Math.floor(idx/12); let nm = idx%12+1; return {y:ny,m:nm}; }
+  function monthLabel(y,m){ const names=["January","February","March","April","May","June","July","August","September","October","November","December"]; return names[m-1]+" "+y; }
+  function weekdayShort(y,m,d){ const names=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]; return names[new Date(Date.UTC(y,m-1,d)).getUTCDay()]; }
+  function isWeekend(y,m,d){ const wd = new Date(Date.UTC(y,m-1,d)).getUTCDay(); return wd===0 || wd===6; }
+  function prevDateStr(dateStr){ const [y,m,d] = dateStr.split("-").map(Number); const dt = new Date(Date.UTC(y,m-1,d-1)); return ymd(dt.getUTCFullYear(), dt.getUTCMonth()+1, dt.getUTCDate()); }
+  function shiftStartEnd(dateStr, shiftType){
+    const [y,m,d] = dateStr.split("-").map(Number);
+    const start = new Date(Date.UTC(y, m-1, d, shiftType.startHour, 0, 0));
+    const end = new Date(start.getTime() + shiftType.hours*3600000);
+    return {start, end};
+  }
+  // Monday=0 .. Sunday=6 (matches the client-site-requirement "weekday/weekend" convention)
+  function dowMon(dateStr){
+    const [y,m,d] = dateStr.split("-").map(Number);
+    const jsDay = new Date(Date.UTC(y,m-1,d)).getUTCDay();
+    return (jsDay+6)%7;
+  }
+
+  /* ---------------- client site requirement (mirrors the cost-per-manhour calculator) ---------------- */
+  function computeShiftDefs(site){
+    const shiftHrs = Number(site.shiftHrs) || 0;
+    const count = shiftHrs>0 ? Math.max(0, Math.round((Number(site.hoursDay)||0)/shiftHrs)) : 0;
+    const defs = [];
+    for(let s=0; s<count; s++){
+      const startHour = ((Number(site.rosterStart)||0) + s*shiftHrs) % 24;
+      const startHourNorm = ((startHour % 24) + 24) % 24;
+      const night = !(startHourNorm >= 6 && startHourNorm < 18);
+      let label;
+      if(count <= 2) label = night ? "Night" : "Day";
+      else label = "Shift "+(s+1)+(night ? " (Night)" : " (Day)");
+      defs.push({ id:"shift"+s, idx:s, label, startHour:startHourNorm, hours:shiftHrs, night });
+    }
+    return defs;
+  }
+  function postsAt(site, dm, night){
+    const we = dm >= 5; // Sat(5), Sun(6)
+    switch(site.pattern){
+      case "DN": return Number(night ? site.postsNight : site.postsDay) || 0;
+      case "WW": return Number(we ? site.postsWe : site.postsWd) || 0;
+      case "FULL": return Number(we ? (night ? site.postsWeNight : site.postsWeDay) : (night ? site.postsWdNight : site.postsWdDay)) || 0;
+      // Under FULLH every individual guard post — even several sharing the
+      // same weekday/weekend × day/night category — is its own entry from
+      // computeShiftDefsForDay(), so each shift def here already represents
+      // exactly one post.
+      case "FULLH": return 1;
+      default: return Number(site.postsU) || 0;
+    }
+  }
+  // The four FULLH guard-post lists (one hour-length per post — e.g. [12,16]
+  // means two posts side by side, a 12h one and a 16h one). Always returns a
+  // non-empty array, falling back to a single 12h post so a freshly-switched
+  // or not-yet-configured category never disappears from the roster.
+  function fullHList(site, key){
+    const v = site[key];
+    return (Array.isArray(v) && v.length) ? v : [12];
+  }
+  const FULLH_CATEGORIES = [
+    { key:"shiftsWdDay",   we:false, night:false },
+    { key:"shiftsWdNight", we:false, night:true },
+    { key:"shiftsWeDay",   we:true,  night:false },
+    { key:"shiftsWeNight", we:true,  night:true }
+  ];
+  // Like computeShiftDefs, but lets the "different posts AND shift hours for
+  // weekday/weekend and day/night" pattern (FULLH) give every guard post its
+  // own shift length — e.g. a 12h post and a 16h post both covering the
+  // weekday day shift, while weekends run a single 12h post. Every other
+  // pattern's shift structure never varies by date, so this just delegates
+  // to computeShiftDefs for them. `dm` is Monday=0..Sunday=6.
+  function computeShiftDefsForDay(site, dm){
+    if(site.pattern !== "FULLH") return computeShiftDefs(site);
+    const we = dm >= 5;
+    const dayStart = ((Number(site.rosterStart)||0) % 24 + 24) % 24;
+    const nightStart = ((Number(site.nightStart)||0) % 24 + 24) % 24;
+    const dayList = fullHList(site, we ? "shiftsWeDay" : "shiftsWdDay");
+    const nightList = fullHList(site, we ? "shiftsWeNight" : "shiftsWdNight");
+    const defs = [];
+    dayList.forEach((hours, i) => {
+      const h = Number(hours) || 0;
+      if(h <= 0) return;
+      defs.push({ id:"day"+i, idx:defs.length, label:"Day"+(dayList.length>1?" #"+(i+1):""), startHour: dayStart, hours: h, night:false });
+    });
+    nightList.forEach((hours, i) => {
+      const h = Number(hours) || 0;
+      if(h <= 0) return;
+      defs.push({ id:"night"+i, idx:defs.length, label:"Night"+(nightList.length>1?" #"+(i+1):""), startHour: nightStart, hours: h, night:true });
+    });
+    return defs;
+  }
+  function coverageDaysPerWeek(site){
+    return Math.min(7, Math.max(0, Math.round(Number(site.daysWeek)||0)));
+  }
+  function suggestedGuardCount(config){
+    const site = config.site;
+    const cov = coverageDaysPerWeek(site);
+    let slotsWeek = 0, maxDaySlots = 0;
+    for(let dm=0; dm<cov; dm++){
+      let daySlots = 0;
+      computeShiftDefsForDay(site, dm).forEach(sd => { const p = Math.max(0, postsAt(site, dm, sd.night)); daySlots += p; slotsWeek += p; });
+      if(daySlots > maxDaySlots) maxDaySlots = daySlots;
+    }
+    const restDaysWeek = Math.max(0, Math.min(6, Math.round(Number(config.restRule.restDaysPerWeek)||0)));
+    const workDaysWeek = 7 - restDaysWeek;
+    const byRoster = workDaysWeek>0 ? Math.ceil(slotsWeek/workDaysWeek) : 0;
+    return { slotsWeek, maxDaySlots, workDaysWeek, suggested: Math.max(byRoster, maxDaySlots) };
+  }
+  function maxConsecutiveDaysFor(config){
+    const restDaysWeek = Math.max(0, Math.min(6, Math.round(Number(config.restRule.restDaysPerWeek)||0)));
+    return Math.max(1, 7 - restDaysWeek);
+  }
+
+  /* ---------------- id helpers ---------------- */
+  function newId(prefix){ return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+  function deepClone(obj){
+    // Snapshot data returned by the db capability's d.data() comes back
+    // frozen/non-extensible. We treat cached config/month docs as mutable
+    // working copies (push, direct property assignment) all over this app,
+    // so every doc coming FROM a snapshot must be deep-cloned into a plain
+    // object first — otherwise every mutation (Array.push, `obj.x = y`)
+    // throws a silent, uncaught TypeError and the whole action appears to
+    // do nothing.
+    if(obj === null || typeof obj !== "object") return obj;
+    try{ if(typeof structuredClone === "function") return structuredClone(obj); }catch(e){}
+    return JSON.parse(JSON.stringify(obj));
+  }
+  function nowIso(){ return new Date().toISOString(); }
+  function fmtLogTime(iso){
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
+  }
+
+  /* ---------------- default / sample state ---------------- */
+  function defaultSite(){
+    return {
+      pattern:"DN",
+      postsU:1,
+      postsDay:1, postsNight:1,
+      postsWd:1, postsWe:1,
+      postsWdDay:1, postsWdNight:1, postsWeDay:1, postsWeNight:1,
+      // FULLH ("different posts AND shift hours") keeps its own guard posts
+      // as a variable-length list of hour lengths per weekday/weekend ×
+      // day/night category, so e.g. weekday day can have a 12h post AND a
+      // 16h post side by side. See fullHList()/computeShiftDefsForDay().
+      shiftsWdDay:[12], shiftsWdNight:[12], shiftsWeDay:[12], shiftsWeNight:[12],
+      nightStart:19,
+      hoursDay:24, daysWeek:7,
+      shiftHrs:12, rosterStart:7
+    };
+  }
+  function sampleGuardNames(){
+    return ["Ahmad Faiz","Kumaravel Muthu","Siti Aminah","Wei Jian Tan","Nur Hidayah","Rajesh Kumar"];
+  }
+  function makeSampleConfig(){
+    return {
+      guards: sampleGuardNames().map(n => ({ id:newId("g"), name:n, active:true, inactiveFrom:null })),
+      site: defaultSite(),
+      restRule: { restDaysPerWeek:1, minRestHours:12 },
+      isSample: true,
+      updatedAt: nowIso()
+    };
+  }
+  function emptyMonthState(key){
+    return { month:key, overrides:{}, leaves:{}, log:[], updatedAt: nowIso() };
+  }
+
+  /* ---------------- app state ---------------- */
+  const state = {
+    sites: [],              // [{id, name}], display order
+    currentSiteId: null,
+    configsCache: {},       // siteId -> config doc {id,name,guards,site,restRule,isSample,updatedAt}
+    monthsCache: {},        // "siteId::monthKey" -> month-state doc
+    currentMonth: monthKey(todayYM().y, todayYM().m),
+    dbMode: "connecting", // "connecting" | "on" | "off"
+    rosterViewMode: "calendar" // "calendar" | "grid"
+  };
+  function currentConfig(){
+    if(!state.currentSiteId){
+      // Self-heal: the app must stay usable even if the db handshake in
+      // initDb() is slow, stuck, or fails outright — never leave every
+      // action silently writing into a config nobody keeps a reference to.
+      const id = newId("site");
+      const cfg = makeSampleConfig();
+      cfg.id = id; cfg.name = "Site 1"; cfg.createdAt = nowIso();
+      state.sites = [{ id, name:"Site 1" }];
+      state.configsCache[id] = cfg;
+      state.currentSiteId = id;
+    }
+    const id = state.currentSiteId;
+    if(!state.configsCache[id]) state.configsCache[id] = makeSampleConfig();
+    return state.configsCache[id];
+  }
+  function monthCacheKey(siteId, key){ return siteId + "::" + key; }
+  function currentMonthState(){
+    const key = monthCacheKey(state.currentSiteId, state.currentMonth);
+    if(!state.monthsCache[key]) state.monthsCache[key] = emptyMonthState(state.currentMonth);
+    return state.monthsCache[key];
+  }
+  function guardById(id){ return currentConfig().guards.find(g => g.id === id); }
+  function guardName(id){ const g = guardById(id); return g ? g.name : "(removed guard)"; }
+  function activeGuardsOn(dateStr){
+    return currentConfig().guards.filter(g => g.active !== false && (!g.inactiveFrom || dateStr < g.inactiveFrom));
+  }
+  const LEAVE_REASONS = ["Leave", "Absent", "Medical leave (MC)"];
+  // Leave entries used to be stored as bare guard-id strings; normalize both
+  // shapes so older saved months keep working.
+  function leaveEntriesFor(monthState, dateStr){
+    return (monthState.leaves[dateStr] || []).map(e => typeof e === "string" ? {id:e, reason:"Leave"} : e);
+  }
+  function leaveGuardIdsFor(monthState, dateStr){
+    return leaveEntriesFor(monthState, dateStr).map(e => e.id);
+  }
+
+  /* ---------------- scheduling engine ---------------- */
+  // Pure function: derive a full month's assignments from config + overrides + leaves.
+  function generateMonth(y, m, config, monthState){
+    const nDays = daysInMonth(y, m);
+    const cov = coverageDaysPerWeek(config.site);
+    const maxConsecutiveDays = maxConsecutiveDaysFor(config);
+    const minRestHours = Number(config.restRule.minRestHours) || 0;
+
+    const totalShifts = {};   // guardId -> count
+    const lastShiftEnd = {};  // guardId -> ms epoch
+    const lastWorkDate = {};  // guardId -> "YYYY-MM-DD"
+    const streak = {};        // guardId -> int
+    config.guards.forEach(g => { totalShifts[g.id] = 0; });
+
+    const days = [];          // per-day render info
+    const conflicts = [];     // {date, shiftLabel, slot, reason}
+    const flags = [];         // {date, shiftId, shiftLabel, slot, reason}
+
+    for(let d=1; d<=nDays; d++){
+      const dateStr = ymd(y,m,d);
+      const dm = dowMon(dateStr);
+      const covered = dm < cov;
+      // Shift structure (start hours, length) can vary by weekday/weekend
+      // under the FULLH pattern, so this is recomputed per day rather than
+      // once for the whole month.
+      const shiftDefs = computeShiftDefsForDay(config.site, dm);
+      const leaveEntriesToday = leaveEntriesFor(monthState, dateStr);
+      const leaveList = leaveEntriesToday.map(e => e.id);
+      const dayAssignments = []; // per shiftDef -> array of guardId|null
+      const workedToday = new Set();
+
+      shiftDefs.forEach((st, stIdx) => {
+        const posts = covered ? Math.max(0, Math.round(postsAt(config.site, dm, st.night))) : 0;
+        const slots = [];
+        for(let slot=0; slot<posts; slot++){
+          const overrideKey = dateStr+"|"+st.id+"|"+slot;
+          const overrideGuard = monthState.overrides[overrideKey];
+
+          let chosen = null;
+          if(overrideGuard){
+            chosen = overrideGuard;
+            // flag if this override breaks a rule
+            const reasons = [];
+            if(leaveList.includes(overrideGuard)) reasons.push("on leave");
+            if(workedToday.has(overrideGuard)) reasons.push("already on another shift today");
+            const g = guardById(overrideGuard);
+            if(g && g.inactiveFrom && dateStr >= g.inactiveFrom) reasons.push("no longer active");
+            if(lastWorkDate[overrideGuard] === prevDateStr(dateStr) && streak[overrideGuard] >= maxConsecutiveDays) reasons.push("exceeds max consecutive days");
+            if(lastShiftEnd[overrideGuard] != null){
+              const {start} = shiftStartEnd(dateStr, st);
+              const gapH = (start.getTime() - lastShiftEnd[overrideGuard]) / 3600000;
+              if(gapH < minRestHours) reasons.push("less than "+minRestHours+"h rest");
+            }
+            if(reasons.length) flags.push({date:dateStr, shiftId:st.id, shiftLabel:st.label, slot, guardId:overrideGuard, reason:reasons.join(", ")});
+          } else {
+            // auto-pick the best RESTED eligible guard first
+            const byFairness = (a,b) => {
+              const diff = totalShifts[a.id] - totalShifts[b.id];
+              if(diff !== 0) return diff;
+              const ea = lastShiftEnd[a.id] || 0, eb = lastShiftEnd[b.id] || 0;
+              if(ea !== eb) return ea - eb;
+              return a.id < b.id ? -1 : 1;
+            };
+            const rested = activeGuardsOn(dateStr).filter(g => {
+              if(leaveList.includes(g.id)) return false;
+              if(workedToday.has(g.id)) return false;
+              if(lastWorkDate[g.id] === prevDateStr(dateStr) && streak[g.id] >= maxConsecutiveDays) return false;
+              if(lastShiftEnd[g.id] != null){
+                const {start} = shiftStartEnd(dateStr, st);
+                const gapH = (start.getTime() - lastShiftEnd[g.id]) / 3600000;
+                if(gapH < minRestHours) return false;
+              }
+              return true;
+            });
+            if(rested.length){
+              rested.sort(byFairness);
+              chosen = rested[0].id;
+            } else {
+              // nobody is rested — fall back to any guard who isn't on leave and isn't
+              // already on another shift today, so the slot still gets fully staffed.
+              // They work on what should have been a rest day (flagged below).
+              const anyAvailable = activeGuardsOn(dateStr).filter(g => !leaveList.includes(g.id) && !workedToday.has(g.id));
+              if(anyAvailable.length){
+                anyAvailable.sort(byFairness);
+                chosen = anyAvailable[0].id;
+                let reason;
+                if(leaveEntriesToday.length === 1){
+                  const lv = leaveEntriesToday[0];
+                  reason = `covering ${guardName(lv.id)}'s ${leaveNoun(lv.reason)} — normally a rest day`;
+                } else if(leaveEntriesToday.length > 1){
+                  const names = leaveEntriesToday.map(lv => guardName(lv.id)).join(", ");
+                  reason = `covering during leave (${names}) — normally a rest day`;
+                } else {
+                  reason = "no rested guard available — auto-assigned on rest day";
+                }
+                flags.push({date:dateStr, shiftId:st.id, shiftLabel:st.label, slot, guardId:chosen, reason, restDay:true, coveringLeave: leaveEntriesToday.length>0});
+              } else {
+                conflicts.push({date:dateStr, shiftId:st.id, shiftLabel:st.label, slot});
+              }
+            }
+          }
+
+          if(chosen){
+            workedToday.add(chosen);
+            totalShifts[chosen] = (totalShifts[chosen]||0) + 1;
+            const {end} = shiftStartEnd(dateStr, st);
+            lastShiftEnd[chosen] = end.getTime();
+          }
+          slots.push(chosen);
+        }
+        dayAssignments.push(slots);
+      });
+
+      // update streaks after the day is fully processed
+      config.guards.forEach(g => {
+        if(workedToday.has(g.id)){
+          streak[g.id] = (lastWorkDate[g.id] === prevDateStr(dateStr)) ? (streak[g.id]||0)+1 : 1;
+          lastWorkDate[g.id] = dateStr;
+        }
+      });
+
+      days.push({ dateStr, y, m, d, dm, covered, assignments: dayAssignments });
+    }
+
+    return { days, totalShifts, conflicts, flags };
+  }
+
+  /* ---------------- rendering ---------------- */
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+  /* ---------------- toasts + in-page dialogs ----------------
+     window.alert/confirm/prompt are unreliable inside a sandboxed artifact
+     iframe (silently no-op instead of throwing), so every user-facing
+     confirmation/name-entry flow uses these instead. */
+  function showToast(msg, isErr){
+    const stack = $("#toastStack");
+    if(!stack) return;
+    const el = document.createElement("div");
+    el.className = "toast" + (isErr ? " err" : "");
+    el.textContent = msg;
+    stack.appendChild(el);
+    setTimeout(() => { el.remove(); }, 3200);
+  }
+  function closeModal(){ $("#modalRoot").innerHTML = ""; }
+  function openPromptModal(opts){
+    const root = $("#modalRoot");
+    root.innerHTML = `
+      <div class="modalveil" id="modalVeil">
+        <div class="modalcard">
+          <h3>${escapeHtml(opts.title)}</h3>
+          ${opts.message ? `<p class="msg">${escapeHtml(opts.message)}</p>` : ""}
+          <input type="text" id="modalInput" value="${escapeHtml(opts.initialValue || "")}">
+          <div class="modalbtns">
+            <button class="btn sm" id="modalCancel" type="button">Cancel</button>
+            <button class="btn sm primary" id="modalOk" type="button">${escapeHtml(opts.okLabel || "OK")}</button>
+          </div>
+        </div>
+      </div>`;
+    const input = $("#modalInput");
+    input.focus();
+    input.select();
+    const submit = () => {
+      const val = input.value.trim();
+      closeModal();
+      if(val) opts.onConfirm(val);
+    };
+    $("#modalOk").addEventListener("click", submit);
+    input.addEventListener("keydown", e => { if(e.key === "Enter") submit(); if(e.key === "Escape") closeModal(); });
+    $("#modalCancel").addEventListener("click", closeModal);
+    $("#modalVeil").addEventListener("click", e => { if(e.target.id === "modalVeil") closeModal(); });
+  }
+  function openConfirmModal(opts){
+    const root = $("#modalRoot");
+    root.innerHTML = `
+      <div class="modalveil" id="modalVeil">
+        <div class="modalcard">
+          <h3>${escapeHtml(opts.title)}</h3>
+          <p class="msg">${escapeHtml(opts.message)}</p>
+          <div class="modalbtns">
+            <button class="btn sm" id="modalCancel" type="button">Cancel</button>
+            <button class="btn sm ${opts.danger ? 'danger' : 'primary'}" id="modalOk" type="button">${escapeHtml(opts.okLabel || "Confirm")}</button>
+          </div>
+        </div>
+      </div>`;
+    $("#modalOk").addEventListener("click", () => { closeModal(); opts.onConfirm(); });
+    $("#modalCancel").addEventListener("click", closeModal);
+    $("#modalVeil").addEventListener("click", e => { if(e.target.id === "modalVeil") closeModal(); });
+  }
+  function openAlertModal(title, message){
+    const root = $("#modalRoot");
+    root.innerHTML = `
+      <div class="modalveil" id="modalVeil">
+        <div class="modalcard">
+          <h3>${escapeHtml(title)}</h3>
+          <p class="msg">${escapeHtml(message)}</p>
+          <div class="modalbtns">
+            <button class="btn sm primary" id="modalOk" type="button">OK</button>
+          </div>
+        </div>
+      </div>`;
+    $("#modalOk").addEventListener("click", closeModal);
+    $("#modalVeil").addEventListener("click", e => { if(e.target.id === "modalVeil") closeModal(); });
+  }
+
+  let lastResult = null;
+
+  function render(){
+    renderSiteSelect();
+    renderSampleBanner();
+    renderTabsVisibility();
+    renderMonthNav();
+    const {y,m} = parseYM(state.currentMonth);
+    lastResult = generateMonth(y, m, currentConfig(), currentMonthState());
+    renderRosterStats(lastResult);
+    renderRosterCalendar(y, m, lastResult);
+    renderRosterGrid(y, m, lastResult);
+    renderFairness(lastResult);
+    renderConflicts(lastResult);
+    renderGuardsTable();
+    renderSiteRequirement();
+    renderRestInputs();
+    renderLeaveGuardSelect();
+    renderReplaceGuardSelect();
+    renderLeaveTable();
+    renderSwapControls();
+    renderLog();
+  }
+
+  function renderSampleBanner(){
+    $("#sampleBanner").hidden = !currentConfig().isSample;
+  }
+
+  function renderTabsVisibility(){ /* no-op placeholder for future gating */ }
+
+  function renderMonthNav(){
+    const {y,m} = parseYM(state.currentMonth);
+    $("#monthLabel").textContent = monthLabel(y,m);
+  }
+
+  function renderRosterStats(result){
+    const nGuards = currentConfig().guards.filter(g => g.active !== false).length;
+    const nShiftSlots = result.days.reduce((sum,day) => sum + day.assignments.reduce((s,arr)=>s+arr.length,0), 0);
+    const nUnfilled = result.conflicts.length;
+    const nRestDay = result.flags.filter(f => f.restDay).length;
+    const counts = Object.values(result.totalShifts);
+    const spread = counts.length ? (Math.max(...counts) - Math.min(...counts)) : 0;
+    $("#rosterStats").innerHTML = `
+      <div class="stat"><div class="k">Active guards</div><div class="v">${nGuards}</div></div>
+      <div class="stat"><div class="k">Shift slots this month</div><div class="v">${nShiftSlots}</div></div>
+      <div class="stat"><div class="k">Unfilled slots</div><div class="v ${nUnfilled>0?'critical':'good'}">${nUnfilled}</div></div>
+      <div class="stat"><div class="k">Auto-assigned on rest day</div><div class="v ${nRestDay>0?'warn':'good'}">${nRestDay}</div></div>
+      <div class="stat"><div class="k">Fairness spread</div><div class="v">${spread}</div></div>
+    `;
+  }
+
+  function renderRosterCalendar(y, m, result){
+    const guardsAll = currentConfig().guards;
+    const weekdayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    $("#calendarWeekdays").innerHTML = weekdayNames.map(w => `<span>${w}</span>`).join("");
+
+    const firstWeekday = new Date(Date.UTC(y, m-1, 1)).getUTCDay();
+    const grid = $("#calendarGrid");
+    grid.innerHTML = "";
+
+    function addPad(){
+      const pad = document.createElement("div");
+      pad.className = "daycell pad";
+      grid.appendChild(pad);
+    }
+    for(let i=0; i<firstWeekday; i++) addPad();
+
+    result.days.forEach(day => {
+      const wknd = isWeekend(day.y, day.m, day.d);
+      const leaveEntriesToday = leaveEntriesFor(currentMonthState(), day.dateStr);
+      const leaveGuards = leaveEntriesToday.map(e => e.id);
+      const cell = document.createElement("div");
+      cell.className = "daycell" + (wknd ? " weekend" : "");
+
+      const dateRow = document.createElement("div");
+      dateRow.className = "datenum";
+      dateRow.innerHTML = `<span>${String(day.d).padStart(2,"0")} ${weekdayShort(day.y,day.m,day.d)}</span>` +
+        (leaveGuards.length ? `<span class="leavetag">${leaveGuards.length} leave</span>` : "");
+      cell.appendChild(dateRow);
+
+      leaveEntriesToday.forEach(lv => {
+        const line = document.createElement("div");
+        line.className = "leaveline";
+        line.textContent = `${guardName(lv.id)} — ${lv.reason || "Leave"}`;
+        cell.appendChild(line);
+      });
+
+      if(!day.covered){
+        const noCov = document.createElement("div");
+        noCov.className = "shiftlabel";
+        noCov.textContent = "No coverage needed";
+        cell.appendChild(noCov);
+      }
+
+      // Shift structure (labels/ids) can vary by weekday/weekend under the
+      // FULLH pattern, so this is looked up per day rather than once for
+      // the whole calendar.
+      const shiftTypes = computeShiftDefsForDay(currentConfig().site, day.dm);
+      shiftTypes.forEach((st, stIdx) => {
+        const slots = day.assignments[stIdx];
+        if(!slots) return;
+        slots.forEach((guardId, slotIdx) => {
+          const row = document.createElement("div");
+          row.className = "slotrow";
+
+          const lbl = document.createElement("span");
+          lbl.className = "shiftlabel";
+          lbl.textContent = st.label + (slots.length > 1 ? " #"+(slotIdx+1) : "");
+          row.appendChild(lbl);
+
+          const sel = document.createElement("select");
+          sel.className = "slotselect";
+          const overrideKey = day.dateStr+"|"+st.id+"|"+slotIdx;
+          const isOverridden = currentMonthState().overrides.hasOwnProperty(overrideKey);
+          const flagged = result.flags.find(f => f.date===day.dateStr && f.shiftId===st.id && f.slot===slotIdx);
+          if(!guardId) sel.classList.add("unfilled");
+          if(flagged) sel.classList.add("flagged");
+
+          const autoOpt = document.createElement("option");
+          autoOpt.value = "";
+          autoOpt.textContent = isOverridden ? "Unfilled (manual)" : "Unfilled";
+          sel.appendChild(autoOpt);
+
+          const autoLabelOpt = document.createElement("option");
+          autoLabelOpt.value = "__auto__";
+          autoLabelOpt.textContent = "Auto-assign";
+          sel.appendChild(autoLabelOpt);
+
+          guardsAll.forEach(g => {
+            const opt = document.createElement("option");
+            opt.value = g.id;
+            let label = g.name;
+            if(g.active === false || (g.inactiveFrom && day.dateStr >= g.inactiveFrom)) label += " (inactive)";
+            else if(leaveGuards.includes(g.id)) label += " (leave)";
+            opt.textContent = label;
+            sel.appendChild(opt);
+          });
+
+          sel.value = isOverridden ? (guardId || "") : (guardId ? guardId : "__auto__");
+          if(isOverridden && !guardId) sel.value = "";
+          if(guardId) sel.title = flagged ? `${guardName(guardId)} — ${flagged.reason}` : guardName(guardId);
+
+          sel.addEventListener("change", () => {
+            const v = sel.value;
+            const ms = currentMonthState();
+            if(v === "__auto__"){
+              delete ms.overrides[overrideKey];
+            } else if(v === ""){
+              ms.overrides[overrideKey] = null;
+            } else {
+              ms.overrides[overrideKey] = v;
+            }
+            addLog(`Set ${st.label} slot ${slotIdx+1} on ${day.dateStr} to ${v==="__auto__"?"auto-assign":(v?guardName(v):"unfilled")}.`);
+            persistMonth();
+            render();
+          });
+
+          row.appendChild(sel);
+          cell.appendChild(row);
+        });
+      });
+
+      grid.appendChild(cell);
+    });
+
+    const totalCells = firstWeekday + result.days.length;
+    const trailing = (7 - (totalCells % 7)) % 7;
+    for(let i=0; i<trailing; i++) addPad();
+  }
+
+  const SHIFT_LETTERS = ["A","B","C","D","E","F"];
+  const SHIFT_CLASSES = ["shift-a","shift-b","shift-c","shift-d"];
+  const FULL_DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+  // "Roster sheet" — a dense guards-by-days grid (same layout as the site's
+  // cost-per-manhour calculator's Duty Roster Suggestion table), read-only.
+  function renderRosterGrid(y, m, result){
+    const site = currentConfig().site;
+    const nDays = result.days.length;
+    const firstWeekday = new Date(Date.UTC(y, m-1, 1)).getUTCDay();
+
+    $("#gridTitle").textContent = `${monthLabel(y,m)} — ${nDays} days, starting on a ${FULL_DAY_NAMES[firstWeekday]}`;
+    function windowText(st){
+      const endHour = (st.startHour + st.hours) % 24;
+      return `${String(st.startHour).padStart(2,"0")}:00–${String(endHour).padStart(2,"0")}:00`;
+    }
+    if(site.pattern === "FULLH"){
+      // Shift windows differ between weekday and weekend under this
+      // pattern, so both are called out explicitly instead of one
+      // (potentially misleading) shared legend line.
+      const wd = computeShiftDefsForDay(site, 0);
+      const we = computeShiftDefsForDay(site, 5);
+      const rows = [];
+      wd.forEach((st,i) => rows.push({st,i,tag:"Weekday"}));
+      we.forEach((st,i) => rows.push({st,i,tag:"Weekend"}));
+      $("#gridLegend").innerHTML = rows.map(({st,i,tag}) =>
+        `<div class="lg"><span class="sw ${SHIFT_CLASSES[i%SHIFT_CLASSES.length]}"></span><span>Shift ${SHIFT_LETTERS[i%SHIFT_LETTERS.length]} (${escapeHtml(st.label)}) — ${tag} ${windowText(st)}</span></div>`
+      ).join("") || `<span class="empty">No shifts defined — check Client Site Requirement.</span>`;
+    } else {
+      const shiftDefs = computeShiftDefsForDay(site, 0);
+      $("#gridLegend").innerHTML = shiftDefs.map((st,i) =>
+        `<div class="lg"><span class="sw ${SHIFT_CLASSES[i%SHIFT_CLASSES.length]}"></span><span>Shift ${SHIFT_LETTERS[i%SHIFT_LETTERS.length]} (${escapeHtml(st.label)}) ${windowText(st)}</span></div>`
+      ).join("") || `<span class="empty">No shifts defined — check Client Site Requirement.</span>`;
+    }
+
+    // per-day lookup: guardId -> {stIdx, slot, flagged}
+    const dayMaps = result.days.map(day => {
+      const map = new Map();
+      const shiftDefs = computeShiftDefsForDay(site, day.dm);
+      day.assignments.forEach((slots, stIdx) => {
+        slots.forEach((guardId, slotIdx) => {
+          if(!guardId) return;
+          const sd = shiftDefs[stIdx];
+          const flag = result.flags.find(f => f.date===day.dateStr && f.shiftId===(sd?sd.id:"shift"+stIdx) && f.slot===slotIdx && f.restDay);
+          map.set(guardId, {stIdx, slot:slotIdx, flagged:!!flag, flagReason: flag ? flag.reason : null, label: sd?sd.label:""});
+        });
+      });
+      return map;
+    });
+    // per-day lookup: guardId -> leave reason, for guards not on shift that day
+    const dayLeaveMaps = result.days.map(day => {
+      const map = new Map();
+      leaveEntriesFor(currentMonthState(), day.dateStr).forEach(e => map.set(e.id, e.reason || "Leave"));
+      return map;
+    });
+    function leaveAbbrev(reason){
+      if(reason === "Absent") return "ABS";
+      if(reason && reason.toLowerCase().indexOf("medical") !== -1) return "MC";
+      return "LV";
+    }
+
+    const guards = currentConfig().guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
+
+    $("#gridHeadRow").innerHTML = `<th class="g0">Guard</th>` +
+      result.days.map(day => {
+        const wknd = isWeekend(day.y, day.m, day.d);
+        return `<th class="${wknd?'wkend':''}">${day.d} ${weekdayShort(day.y,day.m,day.d).charAt(0)}</th>`;
+      }).join("") +
+      `<th>Shifts</th><th>Rest days</th>`;
+
+    if(!guards.length){
+      $("#gridBody").innerHTML = `<tr><td class="g">&mdash;</td><td colspan="${nDays+2}" class="empty">Add guards to see the roster sheet.</td></tr>`;
+    } else {
+      $("#gridBody").innerHTML = guards.map(g => {
+        const cells = dayMaps.map((map, dayIdx) => {
+          const a = map.get(g.id);
+          if(!a){
+            const leaveReason = dayLeaveMaps[dayIdx].get(g.id);
+            if(leaveReason){
+              return `<td class="off leave" title="${escapeHtml(leaveReason)}">${leaveAbbrev(leaveReason)}</td>`;
+            }
+            return `<td class="off">OFF</td>`;
+          }
+          const cls = SHIFT_CLASSES[a.stIdx % SHIFT_CLASSES.length] + (a.flagged ? " restday" : "");
+          const title = `Shift ${SHIFT_LETTERS[a.stIdx%SHIFT_LETTERS.length]} (${a.label}), Post ${a.slot+1}` + (a.flagged ? ` — ${a.flagReason}` : "");
+          return `<td class="${cls}" title="${escapeHtml(title)}">${SHIFT_LETTERS[a.stIdx%SHIFT_LETTERS.length]} P${a.slot+1}</td>`;
+        }).join("");
+        const worked = result.totalShifts[g.id] || 0;
+        return `<tr><td class="g">${escapeHtml(g.name)}</td>${cells}<td class="tot">${worked}</td><td class="tot">${nDays-worked}</td></tr>`;
+      }).join("");
+    }
+
+    const totalSlots = result.days.reduce((s,d) => s + d.assignments.reduce((s2,a)=>s2+a.length,0), 0);
+    const note = $("#gridNote");
+    if(result.conflicts.length > 0){
+      note.textContent = `Short by ${result.conflicts.length} shift slot(s) this month — no guard was available at all (everyone was on leave or already on a shift that day).`;
+    } else {
+      const counts = guards.map(g => result.totalShifts[g.id]||0);
+      const mn = counts.length? Math.min(...counts) : 0, mx = counts.length? Math.max(...counts) : 0;
+      note.textContent = `Coverage met: all ${totalSlots} shift slots filled. Each guard works ${mn===mx? mn : mn+" to "+mx} shifts this month.`;
+    }
+  }
+
+  /* ---------------- Excel export ----------------
+     Builds the same two tables a person sees on screen — the guards list,
+     and the roster sheet's guards-by-days grid — as plain rows/columns, and
+     hands them to SheetJS to save as a real .xlsx file. Nothing here reads
+     the DOM; it re-derives the same data renderRosterGrid() uses, so the
+     exported numbers can't drift from what's displayed. */
+  function guardsExportRows(){
+    const rows = [["Name","Active"]];
+    currentConfig().guards.forEach(g => {
+      rows.push([g.name, g.active === false ? "No" : "Yes"]);
+    });
+    return rows;
+  }
+
+  function rosterGridExportRows(y, m, result){
+    const site = currentConfig().site;
+    const nDays = result.days.length;
+
+    const dayMaps = result.days.map(day => {
+      const map = new Map();
+      const shiftDefs = computeShiftDefsForDay(site, day.dm);
+      day.assignments.forEach((slots, stIdx) => {
+        slots.forEach((guardId, slotIdx) => {
+          if(!guardId) return;
+          map.set(guardId, { stIdx, slot: slotIdx });
+        });
+      });
+      return map;
+    });
+    const dayLeaveMaps = result.days.map(day => {
+      const map = new Map();
+      leaveEntriesFor(currentMonthState(), day.dateStr).forEach(e => map.set(e.id, e.reason || "Leave"));
+      return map;
+    });
+    function leaveAbbrev(reason){
+      if(reason === "Absent") return "ABS";
+      if(reason && reason.toLowerCase().indexOf("medical") !== -1) return "MC";
+      return "LV";
+    }
+
+    const guards = currentConfig().guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
+
+    const header = ["Guard"]
+      .concat(result.days.map(day => `${day.d} ${weekdayShort(day.y, day.m, day.d)}`))
+      .concat(["Shifts", "Rest days"]);
+    const rows = [header];
+
+    guards.forEach(g => {
+      const row = [g.name];
+      dayMaps.forEach((map, dayIdx) => {
+        const a = map.get(g.id);
+        if(!a){
+          const leaveReason = dayLeaveMaps[dayIdx].get(g.id);
+          row.push(leaveReason ? leaveAbbrev(leaveReason) : "OFF");
+        } else {
+          row.push(`${SHIFT_LETTERS[a.stIdx % SHIFT_LETTERS.length]} P${a.slot+1}`);
+        }
+      });
+      const worked = result.totalShifts[g.id] || 0;
+      row.push(worked, nDays - worked);
+      rows.push(row);
+    });
+    return rows;
+  }
+
+  function exportCurrentMonthToExcel(){
+    if(typeof XLSX === "undefined"){
+      showToast("Couldn't load the Excel export tool — check your internet connection and try again.", true);
+      return;
+    }
+    const { y, m } = parseYM(state.currentMonth);
+    const config = currentConfig();
+    const monthState = currentMonthState();
+    const result = generateMonth(y, m, config, monthState);
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(guardsExportRows()), "Guards");
+    const sheetName = monthLabel(y, m).slice(0, 31);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rosterGridExportRows(y, m, result)), sheetName);
+
+    const siteName = ((state.sites.find(s => s.id === state.currentSiteId) || {}).name || "Site").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_");
+    XLSX.writeFile(wb, `${siteName || "Site"}_${state.currentMonth}_roster.xlsx`);
+    addLog(`Exported ${monthLabel(y,m)} roster to Excel.`);
+  }
+
+  const NORMAL_WORK_DAYS = 26;
+
+  function renderFairness(result){
+    const {y,m} = parseYM(state.currentMonth);
+    const nDays = daysInMonth(y,m);
+    $("#workdaySub").textContent = `Normal work days fixed at ${NORMAL_WORK_DAYS}/month (${monthLabel(y,m)} has ${nDays} days) — any day worked beyond that counts as work on a rest day.`;
+
+    const guards = currentConfig().guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
+    const body = $("#fairnessList");
+    if(!guards.length){ body.innerHTML = `<tr><td colspan="5" class="empty">Add guards to see the work-day summary.</td></tr>`; return; }
+    body.innerHTML = guards.map(g => {
+      const worked = result.totalShifts[g.id] || 0;
+      const normal = Math.min(worked, NORMAL_WORK_DAYS);
+      const restDays = nDays - worked;
+      const onRestDay = Math.max(0, worked - NORMAL_WORK_DAYS);
+      return `<tr>
+        <td>${escapeHtml(g.name)}</td>
+        <td class="mono">${worked}</td>
+        <td class="mono">${normal}</td>
+        <td class="mono">${restDays}</td>
+        <td class="mono">${onRestDay > 0 ? onRestDay : "&mdash;"}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  function renderConflicts(result){
+    const wrap = $("#conflictList");
+    const items = [];
+    result.conflicts.forEach(c => items.push(`<div class="conflictitem">No eligible guard for <strong>${escapeHtml(c.shiftLabel)}</strong> slot ${c.slot+1} on ${c.date}.</div>`));
+    result.flags.forEach(f => {
+      items.push(`<div class="conflictitem">${escapeHtml(guardName(f.guardId))} on <strong>${escapeHtml(f.shiftLabel)}</strong> slot ${f.slot+1}, ${f.date}: ${escapeHtml(f.reason)}.</div>`);
+    });
+    wrap.innerHTML = items.length ? items.join("") : `<p class="empty">No conflicts &mdash; the roster is fully staffed and rule-compliant.</p>`;
+  }
+
+  function renderGuardsTable(){
+    const body = $("#guardTableBody");
+    const guards = currentConfig().guards;
+    $("#guardEmpty").hidden = guards.length > 0;
+    body.innerHTML = guards.map(g => {
+      const inactive = g.active === false;
+      const statusLabel = inactive ? "Inactive" : (g.inactiveFrom ? `Active until ${g.inactiveFrom}` : "Active");
+      return `<tr>
+        <td>${escapeHtml(g.name)}</td>
+        <td><span class="pill ${inactive?'inactive':'active'}">${statusLabel}</span></td>
+        <td style="white-space:nowrap;">
+          <button class="btn sm" data-toggle-guard="${g.id}">${inactive?'Reactivate':'Deactivate'}</button>
+          <button class="btn sm danger" data-remove-guard="${g.id}">Remove</button>
+        </td>
+      </tr>`;
+    }).join("");
+    $$("[data-toggle-guard]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const g = guardById(btn.getAttribute("data-toggle-guard"));
+        g.active = g.active === false ? true : false;
+        if(g.active) g.inactiveFrom = null;
+        addLog(`${g.active ? "Reactivated" : "Deactivated"} guard ${g.name}.`);
+        persistConfig();
+        showToast(g.active ? `Reactivated ${g.name}.` : `Deactivated ${g.name}.`);
+        render();
+      });
+    });
+    $$("[data-remove-guard]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-remove-guard");
+        const g = guardById(id);
+        if(!g) return;
+        openConfirmModal({
+          title: "Remove guard",
+          message: `Permanently remove ${g.name} from this site's guard list? Past roster history that references them will show as "(removed guard)".`,
+          okLabel: "Remove",
+          danger: true,
+          onConfirm: () => {
+            const cfg = currentConfig();
+            cfg.guards = cfg.guards.filter(x => x.id !== id);
+            addLog(`Removed guard ${g.name} from the roster.`);
+            persistConfig();
+            showToast(`Removed ${g.name}.`);
+            render();
+          }
+        });
+      });
+    });
+  }
+
+  // Each pattern maps to a list of form ROWS, each row a list of
+  // [siteFieldKey, label, step?] fields shown side by side in that row.
+  const PATTERN_FIELD_GROUPS = {
+    U:    [[["postsU","Guard posts (all shifts, all days)"]]],
+    DN:   [[["postsDay","Guard posts — day shift"]], [["postsNight","Guard posts — night shift"]]],
+    WW:   [[["postsWd","Guard posts — weekday (Mon–Fri)"]], [["postsWe","Guard posts — weekend (Sat–Sun)"]]],
+    FULL: [[["postsWdDay","Guard posts — weekday day shift"]], [["postsWdNight","Guard posts — weekday night shift"]],
+           [["postsWeDay","Guard posts — weekend day shift"]], [["postsWeNight","Guard posts — weekend night shift"]]]
+    // FULLH ("different posts AND shift hours") isn't a fixed field list —
+    // each category holds a variable number of guard posts, each with its
+    // own hours — so it's rendered by renderFullHFields() instead.
+  };
+
+  // One row per guard post within a FULLH category: an editable hour length
+  // plus a remove button. Reused both for initial render and for "+ Add
+  // post" (which appends one of these without disturbing the others).
+  function fullHRowHtml(hours){
+    const h = isFinite(hours) ? hours : 12;
+    return `<div class="fullh-row"><input type="number" class="fullh-hours" min="0.5" step="0.5" value="${h}"><span class="fullh-unit">hours</span><button type="button" class="fullh-remove" title="Remove this post" aria-label="Remove this post">&times;</button></div>`;
+  }
+  const FULLH_FIELD_LABELS = {
+    shiftsWdDay:"Weekday — day shift guard posts",
+    shiftsWdNight:"Weekday — night shift guard posts",
+    shiftsWeDay:"Weekend — day shift guard posts",
+    shiftsWeNight:"Weekend — night shift guard posts"
+  };
+  function renderFullHFields(site, host){
+    host.innerHTML = `
+      <div class="fieldrow">
+        <div style="flex:1;"><label class="small">Night shift start hour (0&ndash;23)</label>
+          <input type="number" min="0" max="23" step="1" id="siteNightStart" value="${isFinite(site.nightStart) ? site.nightStart : 19}"></div>
+      </div>
+      ${FULLH_CATEGORIES.map(cat => `
+        <div class="fullh-cat" data-cat="${cat.key}">
+          <label class="small">${escapeHtml(FULLH_FIELD_LABELS[cat.key])}</label>
+          <div class="fullh-rows" data-rows="${cat.key}">
+            ${fullHList(site, cat.key).map(h => fullHRowHtml(h)).join("")}
+          </div>
+          <button type="button" class="btn sm" data-add-post="${cat.key}">+ Add post</button>
+        </div>
+      `).join("")}
+    `;
+  }
+  function renderSitePostsFields(){
+    const pattern = $("#sitePattern").value;
+    const site = currentConfig().site;
+    const host = $("#sitePostsFields");
+    if(pattern === "FULLH"){
+      renderFullHFields(site, host);
+    } else {
+      const rows = PATTERN_FIELD_GROUPS[pattern] || PATTERN_FIELD_GROUPS.U;
+      host.innerHTML = rows.map(row => `
+        <div class="fieldrow">
+          ${row.map(([key,label,step]) => `
+            <div style="flex:1;"><label class="small">${escapeHtml(label)}</label><input type="number" min="0" step="${step||1}" data-site-field="${key}" value="${isFinite(site[key]) ? site[key] : 0}"></div>
+          `).join("")}
+        </div>
+      `).join("");
+    }
+    // The global "hours per shift" field only applies to the uniform
+    // patterns — FULLH sets its own per-post hours above instead. Roster
+    // start hour still applies (it's the day-shift's start time; FULLH gets
+    // its own separate night-start-hour field above).
+    const hoursField = $("#siteShiftHrs");
+    if(hoursField) hoursField.closest("div").hidden = pattern === "FULLH";
+  }
+
+  function renderSiteRequirement(){
+    const site = currentConfig().site;
+    $("#sitePattern").value = site.pattern;
+    renderSitePostsFields();
+    $("#siteHoursDay").value = site.hoursDay;
+    $("#siteDaysWeek").value = site.daysWeek;
+    $("#siteShiftHrs").value = site.shiftHrs;
+    $("#siteRosterStart").value = site.rosterStart;
+
+    const cov = coverageDaysPerWeek(site);
+    const sug = suggestedGuardCount(currentConfig());
+    function describe(defs){
+      return defs.length
+        ? defs.map(s => `${s.label} ${String(s.startHour).padStart(2,"0")}:00 (${s.hours}h)`).join(", ")
+        : "none — check coverage hours and hours per shift";
+    }
+    let shiftLine;
+    if(site.pattern === "FULLH"){
+      const wd = computeShiftDefsForDay(site, 0);
+      const we = computeShiftDefsForDay(site, 5);
+      shiftLine = `Weekday: ${escapeHtml(describe(wd))}. Weekend: ${escapeHtml(describe(we))}.`;
+    } else {
+      const shiftDefs = computeShiftDefsForDay(site, 0);
+      shiftLine = `${shiftDefs.length} shift${shiftDefs.length===1?"":"s"}/day &mdash; ${escapeHtml(describe(shiftDefs))}.`;
+    }
+    $("#siteSummary").innerHTML = `${shiftLine} `
+      + `Site needs coverage ${cov} day${cov===1?"":"s"}/week. `
+      + `Suggested headcount from this scenario: <strong>${sug.suggested}</strong>.`;
+  }
+
+  function renderRestInputs(){
+    $("#restDaysWeek").value = currentConfig().restRule.restDaysPerWeek;
+    $("#restMinHours").value = currentConfig().restRule.minRestHours;
+    $("#restSummary").textContent = `= up to ${maxConsecutiveDaysFor(currentConfig())} consecutive working days before a rest day is due.`;
+  }
+
+  function renderLeaveGuardSelect(){
+    fillGuardSelect($("#leaveGuard"));
+    const reasonSel = $("#leaveReason");
+    if(reasonSel && !reasonSel.options.length){
+      reasonSel.innerHTML = LEAVE_REASONS.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
+    }
+  }
+  function renderReplaceGuardSelect(){
+    fillGuardSelect($("#replaceGuard"));
+  }
+  function fillGuardSelect(sel){
+    const prev = sel.value;
+    sel.innerHTML = currentConfig().guards.filter(g=>g.active!==false).map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join("");
+    if(prev) sel.value = prev;
+  }
+
+  function renderLeaveTable(){
+    const ms = currentMonthState();
+    const dates = Object.keys(ms.leaves).filter(d => ms.leaves[d] && ms.leaves[d].length).sort();
+    $("#leaveEmpty").hidden = dates.length > 0;
+    $("#leaveTableBody").innerHTML = dates.map(dateStr => `
+      <tr>
+        <td class="mono">${dateStr}</td>
+        <td>${leaveEntriesFor(ms, dateStr).map(e=>`${escapeHtml(guardName(e.id))} <span class="pill warn">${escapeHtml(e.reason||"Leave")}</span>`).join(", ")}</td>
+        <td><button class="btn sm danger" data-clear-leave="${dateStr}">Clear</button></td>
+      </tr>
+    `).join("");
+    $$("[data-clear-leave]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const d = btn.getAttribute("data-clear-leave");
+        delete ms.leaves[d];
+        addLog(`Cleared leave entries for ${d}.`);
+        persistMonth();
+        render();
+      });
+    });
+  }
+
+  function renderSwapControls(){
+    fillShiftSelect($("#swapShiftA"), $("#swapDateA").value ? dowMon($("#swapDateA").value) : 0);
+    fillShiftSelect($("#swapShiftB"), $("#swapDateB").value ? dowMon($("#swapDateB").value) : 0);
+    updateSwapSlotOptions("A");
+    updateSwapSlotOptions("B");
+  }
+  // Under FULLH, weekday and weekend can each have a different number of
+  // guard posts per category, so the list of choosable shifts genuinely
+  // depends on which date is selected — not just a representative day.
+  function fillShiftSelect(sel, dm){
+    const prev = sel.value;
+    sel.innerHTML = computeShiftDefsForDay(currentConfig().site, dm||0).map(st => `<option value="${st.id}">${escapeHtml(st.label)}</option>`).join("");
+    if(prev) sel.value = prev;
+  }
+  function updateSwapSlotOptions(which){
+    const shiftSel = $("#swapShift"+which);
+    const slotSel = $("#swapSlot"+which);
+    const dateSel = $("#swapDate"+which);
+    const site = currentConfig().site;
+    const dm = dateSel.value ? dowMon(dateSel.value) : 0;
+    const shiftDefs = computeShiftDefsForDay(site, dm);
+    const st = shiftDefs.find(s => s.id === shiftSel.value) || shiftDefs[0];
+    if(!st) return;
+    let posts = 1;
+    if(dateSel.value){
+      const cov = coverageDaysPerWeek(site);
+      posts = dm < cov ? Math.max(0, Math.round(postsAt(site, dm, st.night))) : 0;
+    }
+    const prev = slotSel.value;
+    slotSel.innerHTML = "";
+    for(let i=0;i<posts;i++){
+      const opt = document.createElement("option");
+      opt.value = i; opt.textContent = "Slot "+(i+1);
+      slotSel.appendChild(opt);
+    }
+    if(!posts){
+      const opt = document.createElement("option");
+      opt.value = ""; opt.textContent = "No slots that day";
+      slotSel.appendChild(opt);
+    }
+    if(prev) slotSel.value = prev;
+  }
+
+  function renderLog(){
+    const ms = currentMonthState();
+    const entries = ms.log.slice().reverse();
+    $("#logEmpty").hidden = entries.length > 0;
+    $("#logList").innerHTML = entries.map(e => `
+      <div class="logitem"><span class="ts">${escapeHtml(fmtLogTime(e.ts))}</span>${escapeHtml(e.text)}</div>
+    `).join("");
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  function addLog(text){
+    const ms = currentMonthState();
+    ms.log.push({ ts: nowIso(), text });
+    if(ms.log.length > 200) ms.log = ms.log.slice(-200);
+  }
+
+  /* ---------------- event wiring ---------------- */
+  $("#siteSelect").addEventListener("change", () => {
+    switchSite($("#siteSelect").value);
+  });
+  $("#newSiteBtn").addEventListener("click", () => {
+    openPromptModal({
+      title: "Name this site",
+      initialValue: "New site",
+      okLabel: "Create",
+      onConfirm: name => {
+        createSite(name);
+        showToast(`Created site "${name}".`);
+      }
+    });
+  });
+  $("#renameSiteBtn").addEventListener("click", () => {
+    const site = state.sites.find(s => s.id === state.currentSiteId);
+    openPromptModal({
+      title: "Rename this site",
+      initialValue: site ? site.name : "",
+      okLabel: "Rename",
+      onConfirm: name => {
+        renameSite(state.currentSiteId, name);
+        showToast(`Renamed site to "${name}".`);
+      }
+    });
+  });
+  $("#deleteSiteBtn").addEventListener("click", () => {
+    if(state.sites.length <= 1){ openAlertModal("Can't delete", "You need at least one site — add another before deleting this one."); return; }
+    const site = state.sites.find(s => s.id === state.currentSiteId);
+    openConfirmModal({
+      title: "Delete site",
+      message: `Delete "${site ? site.name : "this site"}" and all of its guards, roster history and settings? This cannot be undone.`,
+      okLabel: "Delete",
+      danger: true,
+      onConfirm: () => {
+        const name = site ? site.name : "site";
+        deleteSite(state.currentSiteId);
+        showToast(`Deleted "${name}".`);
+      }
+    });
+  });
+
+  $$(".vt").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.rosterViewMode = btn.getAttribute("data-view");
+      $$(".vt").forEach(b => b.classList.toggle("active", b === btn));
+      $("#calendarView").hidden = state.rosterViewMode !== "calendar";
+      $("#gridView").hidden = state.rosterViewMode !== "grid";
+    });
+  });
+
+  $$(".tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      $$(".tab").forEach(t => t.classList.remove("active"));
+      $$(".view").forEach(v => v.classList.remove("active"));
+      tab.classList.add("active");
+      $("#view-"+tab.getAttribute("data-tab")).classList.add("active");
+    });
+  });
+
+  $("#prevMonth").addEventListener("click", () => {
+    const {y,m} = parseYM(state.currentMonth);
+    const nx = addMonths(y,m,-1);
+    state.currentMonth = monthKey(nx.y, nx.m);
+    loadMonthIfNeeded();
+    render();
+  });
+  $("#nextMonth").addEventListener("click", () => {
+    const {y,m} = parseYM(state.currentMonth);
+    const nx = addMonths(y,m,1);
+    state.currentMonth = monthKey(nx.y, nx.m);
+    loadMonthIfNeeded();
+    render();
+  });
+  $("#exportExcelBtn").addEventListener("click", exportCurrentMonthToExcel);
+
+  $("#addGuardBtn").addEventListener("click", () => {
+    const input = $("#newGuardName");
+    const name = input.value.trim();
+    if(!name){ showToast("Type a guard name first.", true); input.focus(); return; }
+    currentConfig().guards.push({ id:newId("g"), name, active:true, inactiveFrom:null });
+    currentConfig().isSample = false;
+    input.value = "";
+    addLog(`Added guard ${name}.`);
+    persistConfig(); persistMonth();
+    showToast(`Added guard ${name}.`);
+    render();
+  });
+  $("#newGuardName").addEventListener("keydown", e => { if(e.key === "Enter") $("#addGuardBtn").click(); });
+
+  $("#sitePattern").addEventListener("change", renderSitePostsFields);
+
+  // "+ Add post" / remove-post buttons inside the FULLH category editors are
+  // re-created every renderSitePostsFields() call, so this listener is
+  // delegated on the (static, never-replaced) #sitePostsFields container
+  // itself rather than re-attached per button.
+  $("#sitePostsFields").addEventListener("click", e => {
+    const addKey = e.target.closest && e.target.closest("[data-add-post]");
+    if(addKey){
+      const rows = $(`#sitePostsFields .fullh-rows[data-rows="${addKey.getAttribute("data-add-post")}"]`);
+      if(rows){
+        const lastInput = rows.querySelector(".fullh-row:last-child .fullh-hours");
+        rows.insertAdjacentHTML("beforeend", fullHRowHtml(lastInput ? Number(lastInput.value) : 12));
+      }
+      return;
+    }
+    if(e.target.classList && e.target.classList.contains("fullh-remove")){
+      const row = e.target.closest(".fullh-row");
+      const rowsContainer = row && row.parentElement;
+      if(!row || !rowsContainer) return;
+      if(rowsContainer.querySelectorAll(".fullh-row").length <= 1){
+        openAlertModal("Can't remove", "Each shift category needs at least one guard post — add a replacement before removing the last one.");
+        return;
+      }
+      row.remove();
+    }
+  });
+
+  $("#saveSiteBtn").addEventListener("click", () => {
+    const site = currentConfig().site;
+    site.pattern = $("#sitePattern").value;
+    if(site.pattern === "FULLH"){
+      site.nightStart = Number($("#siteNightStart").value) || 0;
+      FULLH_CATEGORIES.forEach(cat => {
+        const hours = $$(`#sitePostsFields .fullh-rows[data-rows="${cat.key}"] .fullh-hours`)
+          .map(inp => Number(inp.value) || 0)
+          .filter(h => h > 0);
+        site[cat.key] = hours.length ? hours : [12];
+      });
+    } else {
+      $$("#sitePostsFields [data-site-field]").forEach(inp => {
+        site[inp.getAttribute("data-site-field")] = Number(inp.value) || 0;
+      });
+    }
+    site.hoursDay = Number($("#siteHoursDay").value) || 0;
+    site.daysWeek = Number($("#siteDaysWeek").value) || 0;
+    site.shiftHrs = Number($("#siteShiftHrs").value) || 0;
+    site.rosterStart = Number($("#siteRosterStart").value) || 0;
+    currentConfig().isSample = false;
+    addLog(`Updated client site requirement (pattern: ${site.pattern}, ${site.hoursDay}h/day coverage, ${site.daysWeek} days/week).`);
+    persistConfig();
+    showToast("Site requirement saved.");
+    render();
+  });
+
+  $("#saveRestBtn").addEventListener("click", () => {
+    currentConfig().restRule.restDaysPerWeek = Math.max(0, Math.min(6, Number($("#restDaysWeek").value) || 0));
+    currentConfig().restRule.minRestHours = Number($("#restMinHours").value) || 0;
+    addLog(`Updated rest rules: ${currentConfig().restRule.restDaysPerWeek} rest day(s)/week, min ${currentConfig().restRule.minRestHours}h rest between shifts.`);
+    persistConfig();
+    showToast("Rest rules saved.");
+    render();
+  });
+
+  function leavePhrase(reason){
+    if(reason === "Absent") return "absent";
+    if(reason && reason.toLowerCase().indexOf("medical") !== -1) return "on medical leave";
+    return "on leave";
+  }
+  // Noun form for possessive phrasing ("covering X's ___"), as opposed to
+  // leavePhrase's verb form ("X is ___") used in log/toast messages.
+  function leaveNoun(reason){
+    if(reason === "Absent") return "absence";
+    if(reason && reason.toLowerCase().indexOf("medical") !== -1) return "medical leave";
+    return "leave";
+  }
+  $("#addLeaveBtn").addEventListener("click", () => {
+    const guardId = $("#leaveGuard").value;
+    const dateStr = $("#leaveDate").value;
+    const reason = ($("#leaveReason") && $("#leaveReason").value) || "Leave";
+    if(!guardId || !dateStr) return;
+    ensureMonthLoadedForDate(dateStr);
+    const key = dateStr.slice(0,7);
+    const ms = state.monthsCache[monthCacheKey(state.currentSiteId, key)] || currentMonthState();
+    const entries = leaveEntriesFor(ms, dateStr);
+    const existing = entries.find(e => e.id === guardId);
+    if(existing) existing.reason = reason;
+    else entries.push({id: guardId, reason});
+    ms.leaves[dateStr] = entries;
+    addLog(`Marked ${guardName(guardId)} ${leavePhrase(reason)} for ${dateStr}.`);
+    if(key === state.currentMonth) persistMonth();
+    else persistMonthByKey(state.currentSiteId, key);
+    showToast(`Marked ${guardName(guardId)} ${leavePhrase(reason)} for ${dateStr}.`);
+    render();
+  });
+
+  $("#replaceBtn").addEventListener("click", () => {
+    const guardId = $("#replaceGuard").value;
+    const dateStr = $("#replaceDate").value;
+    const newName = $("#replaceNewName").value.trim();
+    if(!guardId || !dateStr) return;
+    const g = guardById(guardId);
+    g.inactiveFrom = dateStr;
+    let msg = `Replacing ${g.name}, effective ${dateStr}.`;
+    if(newName){
+      currentConfig().guards.push({ id:newId("g"), name:newName, active:true, inactiveFrom:null });
+      msg += ` Added ${newName} to the pool.`;
+    }
+    addLog(msg);
+    $("#replaceNewName").value = "";
+    persistConfig();
+    showToast(msg);
+    render();
+  });
+
+  // A date change can move a FULLH swap between weekday/weekend, which can
+  // change how many guard posts (and which shift ids) exist that day — so
+  // the shift dropdown is refreshed for the new date, not just the slot list.
+  $("#swapDateA").addEventListener("change", () => {
+    fillShiftSelect($("#swapShiftA"), $("#swapDateA").value ? dowMon($("#swapDateA").value) : 0);
+    updateSwapSlotOptions("A");
+  });
+  $("#swapDateB").addEventListener("change", () => {
+    fillShiftSelect($("#swapShiftB"), $("#swapDateB").value ? dowMon($("#swapDateB").value) : 0);
+    updateSwapSlotOptions("B");
+  });
+  $("#swapShiftA").addEventListener("change", () => updateSwapSlotOptions("A"));
+  $("#swapShiftB").addEventListener("change", () => updateSwapSlotOptions("B"));
+
+  $("#swapBtn").addEventListener("click", () => {
+    const dA = $("#swapDateA").value, dB = $("#swapDateB").value;
+    const sA = $("#swapShiftA").value, sB = $("#swapShiftB").value;
+    const slotA = Number($("#swapSlotA").value), slotB = Number($("#swapSlotB").value);
+    if(!dA || !dB){ showToast("Pick both dates.", true); return; }
+    if(dA.slice(0,7) !== state.currentMonth || dB.slice(0,7) !== state.currentMonth){
+      showToast("Swap only within the month currently shown. Navigate to that month first.", true);
+      return;
+    }
+    const {y,m} = parseYM(state.currentMonth);
+    const site = currentConfig().site;
+    const result = generateMonth(y, m, currentConfig(), currentMonthState());
+    // A and B can fall on different weekday/weekend shift structures under
+    // FULLH, so each is resolved against its own date's shift defs.
+    const shiftDefsA = computeShiftDefsForDay(site, dowMon(dA));
+    const shiftDefsB = computeShiftDefsForDay(site, dowMon(dB));
+    const dayA = result.days.find(d => d.dateStr === dA);
+    const dayB = result.days.find(d => d.dateStr === dB);
+    const stIdxA = shiftDefsA.findIndex(s => s.id === sA);
+    const stIdxB = shiftDefsB.findIndex(s => s.id === sB);
+    const guardA = (dayA && stIdxA>=0) ? dayA.assignments[stIdxA][slotA] : null;
+    const guardB = (dayB && stIdxB>=0) ? dayB.assignments[stIdxB][slotB] : null;
+    const ms = currentMonthState();
+    ms.overrides[dA+"|"+sA+"|"+slotA] = guardB || null;
+    ms.overrides[dB+"|"+sB+"|"+slotB] = guardA || null;
+    addLog(`Swapped ${dA} ${stIdxA>=0?shiftDefsA[stIdxA].label:sA} slot ${slotA+1} (${guardA?guardName(guardA):"unfilled"}) with ${dB} ${stIdxB>=0?shiftDefsB[stIdxB].label:sB} slot ${slotB+1} (${guardB?guardName(guardB):"unfilled"}).`);
+    persistMonth();
+    showToast("Swapped shifts.");
+    render();
+  });
+
+  $("#clearSampleBtn").addEventListener("click", () => {
+    openConfirmModal({
+      title: "Clear sample data",
+      message: "This removes the example guards and shift history for this site so you can start fresh with your own. This cannot be undone.",
+      okLabel: "Clear sample data",
+      danger: true,
+      onConfirm: () => {
+        const id = state.currentSiteId;
+        const name = (state.configsCache[id] && state.configsCache[id].name) || "Site 1";
+        state.configsCache[id] = { id, name, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, updatedAt: nowIso() };
+        Object.keys(state.monthsCache).forEach(k => { if(k.indexOf(id+"::") === 0) delete state.monthsCache[k]; });
+        persistConfig();
+        persistMonth();
+        showToast("Sample data cleared. Add your own guards below.");
+        render();
+      }
+    });
+  });
+
+  /* ---------------- site management ---------------- */
+  function switchSite(id){
+    if(!state.sites.find(s => s.id === id)) return;
+    Object.keys(monthUnsubs).forEach(k => { monthUnsubs[k](); delete monthUnsubs[k]; });
+    state.currentSiteId = id;
+    try{ localStorage.setItem("dutyRosterLastSite", id); }catch(e){}
+    if(dbHandle) subscribeMonth(id, state.currentMonth);
+    render();
+  }
+
+  function createSite(name){
+    const id = newId("site");
+    const cfg = { id, name, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, createdAt: nowIso(), updatedAt: nowIso() };
+    state.sites.push({id, name});
+    state.configsCache[id] = cfg;
+    if(dbHandle) dbHandle.doc("sites/"+id).set(cfg).catch(()=>{});
+    switchSite(id);
+    addLog(`Created new site "${name}".`);
+    persistMonth();
+  }
+
+  function renameSite(id, name){
+    const s = state.sites.find(s => s.id === id);
+    if(!s) return;
+    s.name = name;
+    if(state.configsCache[id]) state.configsCache[id].name = name;
+    addLog(`Renamed site to "${name}".`);
+    persistSiteConfig(id);
+    render();
+  }
+
+  function deleteSite(id){
+    const idx = state.sites.findIndex(s => s.id === id);
+    if(idx === -1 || state.sites.length <= 1) return;
+    state.sites.splice(idx, 1);
+    delete state.configsCache[id];
+    Object.keys(state.monthsCache).forEach(k => { if(k.indexOf(id+"::") === 0) delete state.monthsCache[k]; });
+    if(dbHandle) dbHandle.doc("sites/"+id).delete().catch(()=>{});
+    const next = state.sites[0];
+    switchSite(next.id);
+  }
+
+  function renderSiteSelect(){
+    const sel = $("#siteSelect");
+    if(!sel) return;
+    sel.innerHTML = state.sites.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
+    if(state.currentSiteId) sel.value = state.currentSiteId;
+    const delBtn = $("#deleteSiteBtn");
+    if(delBtn) delBtn.disabled = state.sites.length <= 1;
+  }
+
+  /* ---------------- month loading helpers ---------------- */
+  function loadMonthIfNeeded(){
+    ensureMonthLoadedForDate(state.currentMonth + "-01");
+  }
+  function ensureMonthLoadedForDate(dateStr){
+    const key = dateStr.slice(0,7);
+    const cacheKey = monthCacheKey(state.currentSiteId, key);
+    if(!state.monthsCache[cacheKey]) state.monthsCache[cacheKey] = emptyMonthState(key);
+    if(dbHandle) subscribeMonth(state.currentSiteId, key);
+  }
+
+  /* ---------------- persistence (db capability, graceful no-op fallback) ---------------- */
+  let dbHandle = null;
+  let sitesUnsub = null;
+  const monthUnsubs = {};
+  let suppressPersist = false;
+
+  function setSyncUi(mode){
+    state.dbMode = mode;
+    const el = $("#syncIndicator");
+    el.classList.remove("ok","local");
+    if(mode === "on"){ el.classList.add("ok"); $("#syncLabel").textContent = "Live — synced with your team"; }
+    else if(mode === "off"){ el.classList.add("local"); $("#syncLabel").textContent = "Not connected — local to this browser only"; }
+    else { $("#syncLabel").textContent = "Connecting…"; }
+  }
+
+  function persistConfig(){ persistSiteConfig(state.currentSiteId); }
+  function persistSiteConfig(siteId){
+    const cfg = state.configsCache[siteId];
+    if(!cfg) return;
+    cfg.updatedAt = nowIso();
+    if(!dbHandle || suppressPersist) return;
+    dbHandle.doc("sites/"+siteId).set(cfg).catch(()=>{});
+  }
+  function persistMonth(){ persistMonthByKey(state.currentSiteId, state.currentMonth); }
+  function persistMonthByKey(siteId, key){
+    const ms = state.monthsCache[monthCacheKey(siteId, key)];
+    if(!ms) return;
+    ms.updatedAt = nowIso();
+    if(!dbHandle || suppressPersist) return;
+    dbHandle.doc("sites/"+siteId).collection("months").doc(key).set(ms).catch(()=>{});
+  }
+
+  function subscribeMonth(siteId, key){
+    const cacheKey = monthCacheKey(siteId, key);
+    if(monthUnsubs[cacheKey] || !dbHandle) return;
+    monthUnsubs[cacheKey] = dbHandle.doc("sites/"+siteId).collection("months").doc(key).onSnapshot(snap => {
+      if(snap.exists){
+        suppressPersist = true;
+        state.monthsCache[cacheKey] = deepClone(snap.data());
+        suppressPersist = false;
+        if(siteId === state.currentSiteId && key === state.currentMonth) render();
+      }
+    }, () => {});
+  }
+
+  // Brand-new (empty) Firestore project: seed one sample site so the app
+  // isn't blank on first load.
+  async function migrateOrSeed(){
+    const id = newId("site");
+    const cfg = makeSampleConfig();
+    cfg.id = id; cfg.name = "Site 1"; cfg.createdAt = nowIso();
+    await dbHandle.doc("sites/"+id).set(cfg).catch(()=>{});
+  }
+
+  function bootLocalFallback(){
+    // No db capability available: keep working entirely client-side, single local site.
+    if(!state.sites.length){
+      const id = newId("site");
+      const cfg = makeSampleConfig();
+      cfg.id = id; cfg.name = "Site 1"; cfg.createdAt = nowIso();
+      state.sites = [{id, name:"Site 1"}];
+      state.configsCache[id] = cfg;
+      state.currentSiteId = id;
+    }
+    render();
+  }
+
+  function firebaseIsConfigured(){
+    const cfg = window.FIREBASE_CONFIG;
+    if(!cfg) return false;
+    const placeholder = v => typeof v !== "string" || v.indexOf("PASTE_YOUR_") === 0;
+    return !placeholder(cfg.apiKey) && !placeholder(cfg.projectId);
+  }
+
+  async function initDb(){
+    try{
+      if(typeof firebase === "undefined" || !firebase.initializeApp || !firebaseIsConfigured()){
+        setSyncUi("off");
+        bootLocalFallback();
+        return;
+      }
+      firebase.initializeApp(window.FIREBASE_CONFIG);
+
+      // This page is embedded (via an <iframe>) inside the Inter Prominent CRM, which signs
+      // people in against this SAME Firebase project through its own, separate FirebaseApp
+      // instance. Firebase Auth's persisted session (IndexedDB, scoped to this browser +
+      // project) is shared across any app instance for that project — but only once something
+      // here actually asks for it. Calling firebase.auth() rehydrates the CRM's already
+      // signed-in user onto THIS instance too, so the Firestore rules below can see
+      // request.auth and the security rules that gate /sites can apply. Without this, every
+      // request from this page would look anonymous and get rejected. Waiting for the first
+      // onAuthStateChanged callback (or a short timeout, in case persistence is ever slow)
+      // avoids racing the very first Firestore read against that rehydration.
+      await new Promise((resolve) => {
+        const unsub = firebase.auth().onAuthStateChanged(() => { unsub(); resolve(); });
+        setTimeout(resolve, 4000);
+      });
+
+      dbHandle = firebase.firestore();
+
+      const sitesSnap = await dbHandle.collection("sites").get().catch(() => ({empty:true, docs:[]}));
+      if(sitesSnap.empty) await migrateOrSeed();
+
+      let retriedSeed = false;
+      sitesUnsub = dbHandle.collection("sites").orderBy("createdAt").onSnapshot(snap => {
+        suppressPersist = true;
+        const docSites = snap.docs.map(d => ({ id:d.id, name:((d.data()||{}).name) || "Untitled site" }));
+        snap.docs.forEach(d => { if(d.data()) state.configsCache[d.id] = deepClone(d.data()); });
+        suppressPersist = false;
+
+        if(!docSites.length){
+          // Nothing made it to the store yet (a first write that silently
+          // failed, a slow backend, ...). Retry seeding once; meanwhile the
+          // app stays usable locally via currentConfig()'s self-heal, and we
+          // don't strand the sync indicator on "Connecting…" forever.
+          if(!retriedSeed){ retriedSeed = true; migrateOrSeed().catch(()=>{}); }
+          setSyncUi("off");
+          return;
+        }
+        state.sites = docSites;
+        setSyncUi("on");
+
+        if(!state.currentSiteId || !state.sites.find(s => s.id === state.currentSiteId)){
+          let preferred = null;
+          try{ preferred = localStorage.getItem("dutyRosterLastSite"); }catch(e){}
+          const initial = (preferred && state.sites.find(s => s.id === preferred)) ? preferred : state.sites[0].id;
+          state.currentSiteId = initial;
+          subscribeMonth(initial, state.currentMonth);
+        }
+        render();
+      }, () => { setSyncUi("off"); bootLocalFallback(); });
+
+    } catch(err){
+      setSyncUi("off");
+      bootLocalFallback();
+    }
+  }
+
+  /* ---------------- boot ---------------- */
+  render();
+  initDb();
+  // Safety net: if the db handshake hasn't settled the sync indicator within
+  // a few seconds (slow network, an unexpected rejection somewhere in the
+  // chain, etc.), stop showing "Connecting…" forever — the app is already
+  // fully usable locally via currentConfig()'s self-heal above.
+  setTimeout(() => {
+    if(state.dbMode === "connecting") setSyncUi("off");
+  }, 6000);
+})();
+</script>

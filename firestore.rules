@@ -112,5 +112,20 @@ service cloud.firestore {
         allow delete: if isAdmin();
       }
     }
+
+    // ---- Duty Roster (public/duty-roster/index.html, embedded via an <iframe> on
+    // /duty-roster) ----
+    // A separate, self-contained tool with its own data model — client "sites", each with a
+    // guard roster, shift/site config, and a per-month schedule. Every signed-in, active team
+    // member can read and write it regardless of role (including the "dutyStaff" role, which
+    // can reach nothing else in this app) — there's no per-branch or per-owner scoping here the
+    // way there is for tenders, since duty rosters aren't attributed to an individual owner.
+    match /sites/{siteId} {
+      allow read, write: if isActiveUser();
+
+      match /months/{monthKey} {
+        allow read, write: if isActiveUser();
+      }
+    }
   }
 }

@@ -1,6 +1,15 @@
 // Core domain types shared across the app.
 
-export type Role = 'admin' | 'branchManager';
+/**
+ * 'dutyStaff' is a separate, narrower role from 'branchManager' — a "Staff" account can ONLY
+ * reach the Duty Roster tab (see hideFromStaff in ProtectedRoute/App.tsx and the nav gating in
+ * AppLayout); it has no access to Pipeline, Performance Analysis, Active/Past Projects, or
+ * Admin Settings. Deliberately NOT called 'staff' — that string is still in flight as the
+ * legacy value some old 'branchManager' accounts haven't been migrated off yet (see the
+ * migration banner in UserManager.tsx); reusing it here would make the two unrelated meanings
+ * indistinguishable for any account caught mid-migration.
+ */
+export type Role = 'admin' | 'branchManager' | 'dutyStaff';
 
 /** The 7 fixed pipeline stages, in kanban column order. */
 export const STAGES = [

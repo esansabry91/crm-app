@@ -7,13 +7,26 @@ import PipelinePage from './pages/PipelinePage';
 import AnalysisPage from './pages/AnalysisPage';
 import ActiveProjectsPage from './pages/ActiveProjectsPage';
 import PastProjectsPage from './pages/PastProjectsPage';
+import DutyRosterPage from './pages/DutyRosterPage';
 import AdminPage from './pages/AdminPage';
 
+/** A "Staff" account can only ever reach Duty Roster; everyone else's home is Pipeline. */
+function defaultRouteFor(role: string | undefined): string {
+  return role === 'dutyStaff' ? '/duty-roster' : '/pipeline';
+}
+
 function LoginRoute() {
-  const { firebaseUser, loading } = useAuth();
+  const { firebaseUser, profile, loading } = useAuth();
   if (loading) return null;
-  if (firebaseUser) return <Navigate to="/pipeline" replace />;
+  if (firebaseUser) return <Navigate to={defaultRouteFor(profile?.role)} replace />;
   return <LoginPage />;
+}
+
+/** Catch-all target — same role-aware default as LoginRoute, for any unmatched path. */
+function DefaultRedirect() {
+  const { profile, loading } = useAuth();
+  if (loading) return null;
+  return <Navigate to={defaultRouteFor(profile?.role)} replace />;
 }
 
 export default function App() {
@@ -25,7 +38,7 @@ export default function App() {
           <Route
             path="/pipeline"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute hideFromStaff>
                 <AppLayout>
                   <PipelinePage />
                 </AppLayout>
@@ -35,7 +48,7 @@ export default function App() {
           <Route
             path="/analysis"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute hideFromStaff>
                 <AppLayout>
                   <AnalysisPage />
                 </AppLayout>
@@ -45,7 +58,7 @@ export default function App() {
           <Route
             path="/active-projects"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute hideFromStaff>
                 <AppLayout>
                   <ActiveProjectsPage />
                 </AppLayout>
@@ -55,7 +68,7 @@ export default function App() {
           <Route
             path="/past-projects"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute hideFromStaff>
                 <AppLayout>
                   <PastProjectsPage />
                 </AppLayout>
@@ -63,16 +76,26 @@ export default function App() {
             }
           />
           <Route
+            path="/duty-roster"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <DutyRosterPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/admin"
             element={
-              <ProtectedRoute adminOnly>
+              <ProtectedRoute adminOnly hideFromStaff>
                 <AppLayout>
                   <AdminPage />
                 </AppLayout>
               </ProtectedRoute>
             }
           />
-          <Route path="*" element={<Navigate to="/pipeline" replace />} />
+          <Route path="*" element={<DefaultRedirect />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

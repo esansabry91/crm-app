@@ -5,9 +5,15 @@ import { useAuth } from '../../contexts/AuthContext';
 export default function ProtectedRoute({
   children,
   adminOnly = false,
+  hideFromStaff = false,
 }: {
   children: ReactNode;
   adminOnly?: boolean;
+  /**
+   * The "Staff" role can only ever reach Duty Roster — every other route passes this so a
+   * Staff account bounces straight there instead of landing wherever this route would show.
+   */
+  hideFromStaff?: boolean;
 }) {
   const { firebaseUser, profile, loading } = useAuth();
 
@@ -40,6 +46,10 @@ export default function ProtectedRoute({
         </div>
       </div>
     );
+  }
+
+  if (hideFromStaff && profile?.role === 'dutyStaff') {
+    return <Navigate to="/duty-roster" replace />;
   }
 
   if (adminOnly && profile?.role !== 'admin') {

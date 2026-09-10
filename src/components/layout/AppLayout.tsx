@@ -28,17 +28,24 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-1">
-          <NavLink to="/pipeline" className={navItemClass}>
-            <span aria-hidden>🗂️</span> Pipeline
-          </NavLink>
-          <NavLink to="/analysis" className={navItemClass}>
-            <span aria-hidden>📊</span> Performance Analysis
-          </NavLink>
-          <NavLink to="/active-projects" className={navItemClass}>
-            <span aria-hidden>🏗️</span> Active Projects
-          </NavLink>
-          <NavLink to="/past-projects" className={navItemClass}>
-            <span aria-hidden>📦</span> Past Projects
+          {profile?.role !== 'dutyStaff' && (
+            <>
+              <NavLink to="/pipeline" className={navItemClass}>
+                <span aria-hidden>🗂️</span> Pipeline
+              </NavLink>
+              <NavLink to="/analysis" className={navItemClass}>
+                <span aria-hidden>📊</span> Performance Analysis
+              </NavLink>
+              <NavLink to="/active-projects" className={navItemClass}>
+                <span aria-hidden>🏗️</span> Active Projects
+              </NavLink>
+              <NavLink to="/past-projects" className={navItemClass}>
+                <span aria-hidden>📦</span> Past Projects
+              </NavLink>
+            </>
+          )}
+          <NavLink to="/duty-roster" className={navItemClass}>
+            <span aria-hidden>🗓️</span> Duty Roster
           </NavLink>
           {profile?.role === 'admin' && (
             <NavLink to="/admin" className={navItemClass}>
@@ -50,7 +57,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <div className="px-4 py-4 border-t border-slate-100">
           <p className="text-sm font-medium text-slate-800 truncate">{profile?.name}</p>
           <p className="text-xs text-slate-400 truncate">
-            {profile?.role === 'admin' ? 'HQ Admin' : 'Branch Manager'} · {profile?.department}
+            {profile?.role === 'admin' ? 'HQ Admin' : profile?.role === 'dutyStaff' ? 'Staff' : 'Branch Manager'} ·{' '}
+            {profile?.department}
           </p>
           <button
             onClick={() => logout()}
