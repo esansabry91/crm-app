@@ -81,6 +81,17 @@ export interface Tender {
   /** ISO date (yyyy-mm-dd) the tender was actually won/lost — only meaningful when stage is Won or Lost. */
   closedDate?: string;
   /**
+   * ISO date (yyyy-mm-dd) the tender was submitted to the client — captured exactly once, the
+   * first time the tender enters the "Submitted" stage (required at that point, and validated
+   * client-side to never be a future date), so it can be compared against closedDate later to
+   * measure time-to-convert. Deliberately write-once from a non-admin's side: firestore.rules
+   * lets the owner set it while it's still unset, but rejects any change to an already-set value
+   * unless the caller is admin — a Branch Manager who needs it corrected has to ask HQ. Stays on
+   * the tender permanently once set, even if the stage later moves on to Negotiation/Won/Lost or
+   * regresses to an earlier stage.
+   */
+  submittedDate?: string;
+  /**
    * The branch actually running the awarded contract — only meaningful once stage is Won.
    * Defaults to `department` (the branch that submitted/owns the tender) the moment it's won,
    * but an admin can reassign it afterwards from the Active Projects page — e.g. HQ wins a

@@ -29,6 +29,9 @@ export default function TenderCard({
         <span>{tender.department}</span>
         <span>{formatDate(tender.contractEnd)}</span>
       </div>
+      {tender.submittedDate && (
+        <p className="mt-1 text-[11px] text-slate-500">Submitted {formatDate(tender.submittedDate)}</p>
+      )}
       {(tender.stage === 'Won' || tender.stage === 'Lost') && tender.closedDate && (
         <p className={`mt-1 text-[11px] ${tender.stage === 'Won' ? 'text-emerald-600' : 'text-rose-500'}`}>
           {tender.stage} on {formatDate(tender.closedDate)}

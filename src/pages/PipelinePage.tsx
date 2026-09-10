@@ -5,6 +5,7 @@ import { useBranches, useBrands } from '../hooks/useBranches';
 import { useUsers } from '../hooks/useUsers';
 import KanbanBoard from '../components/kanban/KanbanBoard';
 import TenderFormModal from '../components/tenders/TenderFormModal';
+import SubmissionDateModal from '../components/tenders/SubmissionDateModal';
 import { moveTenderStage } from '../services/tenders';
 import type { Tender } from '../types';
 import { formatRM } from '../utils/format';
@@ -20,6 +21,9 @@ export default function PipelinePage() {
   const [brandFilter, setBrandFilter] = useState('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Tender | null>(null);
+  // A tender awaiting its required submission date before the drag-to-Submitted move actually
+  // commits (see the onDropStage handler below and SubmissionDateModal.tsx).
+  const [pendingSubmission, setPendingSubmission] = useState<Tender | null>(null);
 
   const staffOptions = useMemo(
     () => (profile?.role === 'admin' ? users.filter((u) => u.active !== false) : profile ? [profile] : []),
@@ -85,9 +89,17 @@ export default function PipelinePage() {
               setEditing(t);
               setModalOpen(true);
             }}
-            onDropStage={(tender, newStage) =>
-              moveTenderStage(tender, newStage, { uid: profile.uid, name: profile.name, role: profile.role })
-            }
+            onDropStage={(tender, newStage) => {
+              // Submission date is required exactly once, the moment a tender first reaches
+              // Submitted — hold off on the actual stage move until SubmissionDateModal confirms
+              // one. A tender that already has a submittedDate (e.g. moving back into Submitted
+              // after a regression) skips straight through, same as any other stage move.
+              if (newStage === 'Submitted' && !tender.submittedDate) {
+                setPendingSubmission(tender);
+                return;
+              }
+              moveTenderStage(tender, newStage, { uid: profile.uid, name: profile.name, role: profile.role });
+            }}
           />
         )}
       </div>
@@ -100,6 +112,24 @@ export default function PipelinePage() {
         branches={branches}
         staffOptions={staffOptions}
         editing={editing}
+      />
+
+      <SubmissionDateModal
+        open={!!pendingSubmission}
+        tender={pendingSubmission}
+        onCancel={() => setPendingSubmission(null)}
+        onConfirm={(submittedDate) => {
+          if (pendingSubmission) {
+            moveTenderStage(
+              pendingSubmission,
+              'Submitted',
+              { uid: profile.uid, name: profile.name, role: profile.role },
+              undefined,
+              submittedDate
+            );
+          }
+          setPendingSubmission(null);
+        }}
       />
     </div>
   );

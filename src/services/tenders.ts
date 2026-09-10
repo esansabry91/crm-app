@@ -42,6 +42,8 @@ export interface NewTenderInput {
   notes?: string;
   /** ISO date (yyyy-mm-dd) — only meaningful when stage is Won or Lost. Used to backfill history. */
   closedDate?: string;
+  /** ISO date (yyyy-mm-dd) — only meaningful when stage is Submitted or later. See Tender.submittedDate. */
+  submittedDate?: string;
 }
 
 async function addHistoryEntry(
@@ -78,13 +80,14 @@ export async function createTender(
   const isClosed = input.stage === 'Won' || input.stage === 'Lost';
   const historyTimestamp = isClosed && input.closedDate ? closedDateToMillis(input.closedDate) : now;
 
-  // Firestore's addDoc() rejects fields explicitly set to `undefined` — closedDate is optional
-  // and undefined for every open-stage tender, so it must be omitted entirely rather than spread
-  // in as `closedDate: undefined`.
-  const { closedDate, ...rest } = input;
+  // Firestore's addDoc() rejects fields explicitly set to `undefined` — closedDate/submittedDate
+  // are optional and undefined for most tenders, so they must be omitted entirely rather than
+  // spread in as `closedDate: undefined`.
+  const { closedDate, submittedDate, ...rest } = input;
   const docRef = await addDoc(collection(db, 'tenders'), {
     ...rest,
     ...(closedDate ? { closedDate } : {}),
+    ...(submittedDate ? { submittedDate } : {}),
     // A tender can be created directly in the Won stage (not just moved there later) — give it
     // the same activeBranch default moveTenderStage would, so it doesn't rely on the opportunistic
     // backfill (which has no idea who created it) to fill this in afterwards.
@@ -135,12 +138,18 @@ export async function updateTender(
  * Move a tender to a new stage (kanban drag, or explicit stage change from the form).
  * Pass `closedDate` (yyyy-mm-dd) when moving to Won/Lost with a known historical date — the
  * trend chart will then reflect that real date instead of "today".
+ * Pass `submittedDate` (yyyy-mm-dd) when moving to Submitted for the FIRST time — the caller
+ * (see the drag-to-Submitted flow in PipelinePage.tsx, and TenderFormModal's own validation) is
+ * responsible for actually collecting it; this only ever writes it when the tender doesn't
+ * already have one, so a stray call can never silently overwrite an already-set value — and
+ * firestore.rules enforces the same thing independently of this client-side check.
  */
 export async function moveTenderStage(
   tender: Tender,
   newStage: Stage,
   actor: Actor,
-  closedDate?: string
+  closedDate?: string,
+  submittedDate?: string
 ) {
   if (newStage === tender.stage) return;
   const isClosed = newStage === 'Won' || newStage === 'Lost';
@@ -158,6 +167,7 @@ export async function moveTenderStage(
     activeBranch: becomingWon
       ? tender.activeBranch || defaultActiveBranchOnWin(tender.department, actor.role)
       : null,
+    ...(newStage === 'Submitted' && !tender.submittedDate && submittedDate ? { submittedDate } : {}),
   });
   await addHistoryEntry(
     tender.id,
@@ -198,6 +208,20 @@ export async function setClosedDate(
     },
     closedDateToMillis(closedDate)
   );
+}
+
+/**
+ * Sets a tender's submission date — either the very first entry (a Branch Manager keying it in
+ * the moment their tender reaches Submitted) or an admin correcting an already-set one. The
+ * caller (TenderFormModal) is what restricts WHO reaches this: the date input is only editable
+ * there when it's unset, or when the signed-in user is admin. firestore.rules is the real
+ * enforcement layer — it independently rejects a non-admin's attempt to change an already-set
+ * submittedDate, so this function has no client-side branching of its own to get wrong. No
+ * history entry: unlike closedDate (which the pipeline-value trend chart replays), nothing
+ * currently reads submittedDate out of the history log — it's a plain field on the tender.
+ */
+export async function setSubmittedDate(tenderId: string, submittedDate: string) {
+  await updateDoc(doc(db, 'tenders', tenderId), { submittedDate, updatedAt: Date.now() });
 }
 
 /**

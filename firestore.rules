@@ -91,6 +91,15 @@ service cloud.firestore {
       allow create: if isActiveUser()
         && (isAdmin() || request.resource.data.ownerUid == request.auth.uid);
 
+      // Once a tender's submittedDate is set, only an admin may write a DIFFERENT value into it —
+      // a Branch Manager can key it in the first time (this stays true whether or not the field
+      // existed before, since '!=' on a missing key compares against null), but if they need it
+      // corrected afterwards they have to ask HQ. Used below in the owner's own update branch.
+      function submittedDateUnchangedOrFirstSet() {
+        return resource.data.get('submittedDate', null) == null
+          || request.resource.data.submittedDate == resource.data.submittedDate;
+      }
+
       // Non-owners can additionally update JUST the Active Project detail fields (location,
       // contact person, guards deployed, tender doc number, close-out status) on a Won tender
       // they can see in Active Projects — branch-mates in its activeBranch, or anyone in HQ —
@@ -101,7 +110,8 @@ service cloud.firestore {
         && (
           isAdmin()
           || (resource.data.ownerUid == request.auth.uid
-              && request.resource.data.ownerUid == request.auth.uid)
+              && request.resource.data.ownerUid == request.auth.uid
+              && submittedDateUnchangedOrFirstSet())
           || (
             resource.data.stage == 'Won'
             && (resource.data.activeBranch == myDepartment() || myDepartment() == 'HQ')

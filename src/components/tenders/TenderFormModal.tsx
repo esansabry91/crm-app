@@ -6,8 +6,10 @@ import {
   deleteTender,
   moveTenderStage,
   setClosedDate,
+  setSubmittedDate,
   updateTender,
 } from '../../services/tenders';
+import { formatDate } from '../../utils/format';
 
 interface Props {
   open: boolean;
@@ -41,11 +43,20 @@ export default function TenderFormModal({
   const [ownerUid, setOwnerUid] = useState(profile.uid);
   const [notes, setNotes] = useState('');
   const [closedDate, setClosedDateField] = useState('');
+  const [submittedDate, setSubmittedDateField] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isClosedStage = stage === 'Won' || stage === 'Lost';
   const today = () => new Date().toISOString().slice(0, 10);
+
+  // Shown whenever the tender is currently sitting in Submitted, or already has a submittedDate
+  // from having passed through it before (even if it's since moved on to Negotiation/Won/Lost, or
+  // regressed to an earlier stage) — so the date stays visible for the "time to convert" math
+  // regardless of where the tender is now. Only actually REQUIRED (see validation below) the
+  // moment stage is being set to Submitted for a tender that doesn't have one yet.
+  const showSubmittedField = stage === 'Submitted' || !!editing?.submittedDate;
+  const submittedDateAlreadySet = !!editing?.submittedDate;
 
   useEffect(() => {
     if (!open) return;
@@ -60,6 +71,7 @@ export default function TenderFormModal({
       setOwnerUid(editing.ownerUid);
       setNotes(editing.notes || '');
       setClosedDateField(editing.closedDate || (editing.stage === 'Won' || editing.stage === 'Lost' ? today() : ''));
+      setSubmittedDateField(editing.submittedDate || (editing.stage === 'Submitted' ? today() : ''));
     } else {
       setClientName('');
       setBrandId(brands[0]?.id || '');
@@ -71,6 +83,7 @@ export default function TenderFormModal({
       setOwnerUid(profile.uid);
       setNotes('');
       setClosedDateField('');
+      setSubmittedDateField('');
     }
     setError(null);
   }, [open, editing, brands, profile]);
@@ -81,6 +94,13 @@ export default function TenderFormModal({
     if (isClosedStage && !closedDate) setClosedDateField(today());
   }, [isClosedStage]);
 
+  // Same convenience default for submittedDate the moment someone switches stage to Submitted —
+  // but only while it's genuinely unset; once editing?.submittedDate exists this field is either
+  // locked (non-admin) or an intentional correction (admin), and must never be silently reset.
+  useEffect(() => {
+    if (stage === 'Submitted' && !submittedDate && !submittedDateAlreadySet) setSubmittedDateField(today());
+  }, [stage, submittedDateAlreadySet]);
+
   if (!open) return null;
 
   const handleSubmit = async (e: FormEvent) => {
@@ -90,6 +110,10 @@ export default function TenderFormModal({
     if (!clientName.trim()) return setError('Client name is required.');
     if (!brandId) return setError('Please select a brand.');
     if (!Number.isFinite(value) || value < 0) return setError('Enter a valid tender value.');
+    if (showSubmittedField) {
+      if (!submittedDate) return setError('Please enter the submission date.');
+      if (submittedDate > today()) return setError('Submission date cannot be a future date.');
+    }
 
     const owner = staffOptions.find((s) => s.uid === ownerUid) || profile;
     const brand = brands.find((b) => b.id === brandId);
@@ -135,6 +159,15 @@ export default function TenderFormModal({
           // Stage didn't change, but they corrected/backfilled the won/lost date.
           await setClosedDate(editing, closedDate, { uid: profile.uid, name: profile.name });
         }
+        // Submission date: independent of whether stage also changed above — covers a first-time
+        // entry for a tender already sitting in Submitted, a first-time entry in the same save
+        // that ALSO moves the stage into Submitted (moveTenderStage above never touches
+        // submittedDate from this form path), and an admin's correction of an already-set value.
+        // The field is fully disabled for a non-admin once a value exists (see the JSX below), so
+        // a changed value can only ever reach here as either a first entry or an admin edit.
+        if (showSubmittedField && submittedDate !== (editing.submittedDate || '')) {
+          await setSubmittedDate(editing.id, submittedDate);
+        }
       } else {
         await createTender(
           {
@@ -150,6 +183,7 @@ export default function TenderFormModal({
             ownerName: owner.name,
             notes,
             closedDate: isClosedStage ? closedDate : undefined,
+            submittedDate: showSubmittedField ? submittedDate : undefined,
           },
           { uid: profile.uid, name: profile.name, role: profile.role }
         );
@@ -281,6 +315,34 @@ export default function TenderFormModal({
                 Use the real date this tender was {stage === 'Won' ? 'won' : 'lost'} — this is what
                 the pipeline value trend chart uses, so it's safe to backdate for past deals.
               </span>
+            </Field>
+          )}
+
+          {showSubmittedField && (
+            <Field label="Submission Date">
+              {submittedDateAlreadySet && !isAdmin ? (
+                <>
+                  <input type="text" value={formatDate(editing?.submittedDate)} disabled className="input disabled:bg-slate-50 disabled:text-slate-500" />
+                  <span className="block text-xs text-slate-400 mt-1">
+                    Locked after first entry — ask your Admin if this needs to change.
+                  </span>
+                </>
+              ) : (
+                <>
+                  <input
+                    type="date"
+                    value={submittedDate}
+                    max={today()}
+                    onChange={(e) => setSubmittedDateField(e.target.value)}
+                    className="input"
+                  />
+                  <span className="block text-xs text-slate-400 mt-1">
+                    {submittedDateAlreadySet
+                      ? 'Already set — as Admin you can correct it if needed.'
+                      : "The date this tender was submitted to the client — can't be a future date, and can only be entered once."}
+                  </span>
+                </>
+              )}
             </Field>
           )}
 
