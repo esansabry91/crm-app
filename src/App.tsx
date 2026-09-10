@@ -10,6 +10,7 @@ import PastProjectsPage from './pages/PastProjectsPage';
 import DutyRosterPage from './pages/DutyRosterPage';
 import QuotationCalculatorPage from './pages/QuotationCalculatorPage';
 import AdminPage from './pages/AdminPage';
+import NewTenderWatcher from './components/notifications/NewTenderWatcher';
 
 /** A "Staff" or "Payroll" account can only ever reach Duty Roster; everyone else's home is Pipeline. */
 function defaultRouteFor(role: string | undefined): string {
@@ -34,6 +35,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        {/* Mounted once here (not inside AppLayout, which remounts on every route change) so the
+            live "new tender" listener survives page navigation instead of resetting each time. */}
+        <NewTenderWatcher />
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
           <Route
