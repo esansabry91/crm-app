@@ -284,21 +284,23 @@ export default function ActiveProjectsPage() {
 
           <BrandBreakdown items={visible} scopeLabel={brandScopeLabel} />
 
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <h3 className="text-sm font-semibold text-slate-800 mb-3">
-              Active Projects Race — Branch {raceMetric === 'guards' ? 'Guards Deployed' : 'Value'} Over Time
-            </h3>
-            <RaceBarChart
-              frames={activeRaceFrames}
-              metric={raceMetric}
-              timeView={raceTimeView}
-              onMetricChange={setRaceMetric}
-              onTimeViewChange={setRaceTimeView}
-              colorDomain={branchNames}
-              metricOptions={ACTIVE_RACE_METRICS}
-              valueFormatter={raceMetric === 'guards' ? (v) => String(v) : formatRM}
-            />
-          </div>
+          {isAdmin && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <h3 className="text-sm font-semibold text-slate-800 mb-3">
+                Active Projects Race — Branch {raceMetric === 'guards' ? 'Guards Deployed' : 'Value'} Over Time
+              </h3>
+              <RaceBarChart
+                frames={activeRaceFrames}
+                metric={raceMetric}
+                timeView={raceTimeView}
+                onMetricChange={setRaceMetric}
+                onTimeViewChange={setRaceTimeView}
+                colorDomain={branchNames}
+                metricOptions={ACTIVE_RACE_METRICS}
+                valueFormatter={raceMetric === 'guards' ? (v) => String(v) : formatRM}
+              />
+            </div>
+          )}
 
           {sorted.length === 0 ? (
             <p className="text-sm text-slate-400 py-8 text-center">No active projects yet.</p>
