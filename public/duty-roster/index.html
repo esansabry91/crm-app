@@ -424,11 +424,21 @@
           <h2>Public holidays</h2>
           <p class="sub">Dates worked on these count as "worked public holiday" in the Summary Report, paid as holiday overtime in full</p>
           <div class="fieldrow">
+            <div style="flex:1;">
+              <label class="small">Site's Malaysian state</label>
+              <select id="siteStateSelect">
+                <option value="">Not set &mdash; add holidays manually</option>
+              </select>
+            </div>
+          </div>
+          <p class="sub" id="siteStateSub" style="margin-top:-4px;">Assigning a state auto-fills federal + that state's own gazetted public holidays below &mdash; you can still add or remove dates by hand any time.</p>
+          <div class="fieldrow">
             <div style="flex:1;"><input type="date" id="newHolidayDate"></div>
+            <div style="flex:1;"><input type="text" id="newHolidayName" placeholder="Holiday name (optional)"></div>
             <button class="btn primary sm" id="addHolidayBtn">Add holiday</button>
           </div>
           <table class="simple" style="margin-top:10px;">
-            <thead><tr><th>Date</th><th></th></tr></thead>
+            <thead><tr><th>Date</th><th>Holiday</th><th></th></tr></thead>
             <tbody id="holidayTableBody"></tbody>
           </table>
           <p class="empty" id="holidayEmpty" hidden>No public holidays added for this site yet.</p>
@@ -710,6 +720,10 @@
       site: defaultSite(),
       restRule: { restDaysPerWeek:1, minRestHours:12 },
       publicHolidays: [], // absolute dates ("YYYY-MM-DD"), site-wide — see configHolidays()
+      state: null, // Malaysian state this site is in, e.g. "Selangor" — see MALAYSIA_STATES
+      stateHolidayDates: [], // dates in publicHolidays that came from the state calendar (not
+      // hand-added) — lets applyStateHolidays() swap them out cleanly if the state changes,
+      // without touching anything the user added manually. See configStateHolidayDates().
       isSample: true,
       updatedAt: nowIso()
     };
@@ -723,6 +737,168 @@
   // Defensive accessors: months/configs saved before these two fields existed won't have them.
   function monthTempGuards(ms){ if(!ms.tempGuards) ms.tempGuards = {}; return ms.tempGuards; }
   function configHolidays(cfg){ if(!cfg.publicHolidays) cfg.publicHolidays = []; return cfg.publicHolidays; }
+  function configStateHolidayDates(cfg){ if(!cfg.stateHolidayDates) cfg.stateHolidayDates = []; return cfg.stateHolidayDates; }
+  // date ("YYYY-MM-DD") -> holiday name, for dates in configHolidays(cfg). Populated automatically
+  // for state-calendar dates (see applyStateHolidays); optional for hand-added ones — a date with
+  // no entry here just shows a dash in the Public holidays table.
+  function configHolidayNames(cfg){ if(!cfg.holidayNames) cfg.holidayNames = {}; return cfg.holidayNames; }
+
+  /* ---------------- Malaysia public holiday calendar (federal + per-state) ----------------
+     Reference data for the "assign a state to auto-fill public holidays" feature. Malaysia's
+     holidays come in three layers:
+       1. Federal holidays — observed nationwide, with a couple of known state exceptions
+          (5 states don't observe New Year's Day; Sarawak doesn't observe Deepavali).
+       2. "Regional" religious observances — technically federal-pattern holidays (Thaipusam,
+          Nuzul Al-Quran, Israk & Mikraj, Awal Ramadan, Arafat Day, Good Friday) but only
+          gazetted by a subset of states — the opposite of the federal exception list, so
+          they're modelled as opt-in per state instead.
+       3. Each state/federal territory's own unique observances (a ruler's birthday, an
+          installation or heritage day, Sarawak's Gawai, Sabah's Kaamatan, etc.).
+     Compiled from publicholidays.com.my, officeholidays.com and (for a couple of recently
+     *changed* dates — Kedah's and Sabah's) NST/Malay Mail news coverage, current as of
+     September 2026. Lunar-calendar 2027 dates are the best available estimates pending final
+     government gazette confirmation. This table only covers what's been researched — assigning
+     a state fills in whichever years are listed here, and the Public holidays panel below stays
+     fully editable, so any gap or correction can always be fixed by hand for a specific site. */
+  const MALAYSIA_STATES = [
+    "Johor","Kedah","Kelantan","Melaka","Negeri Sembilan","Pahang","Penang","Perak","Perlis",
+    "Sabah","Sarawak","Selangor","Terengganu","Kuala Lumpur","Labuan","Putrajaya"
+  ];
+
+  const MALAYSIA_HOLIDAYS_BY_YEAR = {
+    2026: {
+      federal: [
+        { d:"2026-01-01", n:"New Year's Day", excl:["Johor","Kedah","Kelantan","Perlis","Terengganu"] },
+        { d:"2026-02-17", n:"Chinese New Year" },
+        { d:"2026-02-18", n:"Chinese New Year Holiday" },
+        { d:"2026-03-20", n:"Hari Raya Aidilfitri" },
+        { d:"2026-03-21", n:"Hari Raya Aidilfitri Holiday" },
+        { d:"2026-05-01", n:"Labour Day" },
+        { d:"2026-05-27", n:"Hari Raya Haji" },
+        { d:"2026-05-31", n:"Wesak Day" },
+        { d:"2026-06-01", n:"Agong's Birthday" },
+        { d:"2026-06-17", n:"Awal Muharram" },
+        { d:"2026-08-25", n:"Prophet Muhammad's Birthday" },
+        { d:"2026-08-31", n:"Merdeka Day" },
+        { d:"2026-09-16", n:"Malaysia Day" },
+        { d:"2026-11-08", n:"Deepavali", excl:["Sarawak"] },
+        { d:"2026-12-25", n:"Christmas Day" }
+      ],
+      regional: {
+        "Thaipusam": { d:"2026-02-01", states:["Johor","Kuala Lumpur","Putrajaya","Negeri Sembilan","Penang","Perak","Selangor"] },
+        "Nuzul Al-Quran": { d:"2026-03-07", states:["Kelantan","Pahang","Penang","Perak","Perlis","Selangor","Terengganu","Kuala Lumpur","Labuan","Putrajaya"] },
+        "Israk and Mikraj": { d:"2026-01-17", states:["Kedah","Perlis","Terengganu"] },
+        "Awal Ramadan": { d:"2026-02-19", states:["Johor","Kedah"] },
+        "Arafat Day": { d:"2026-05-26", states:["Kelantan","Terengganu"] },
+        "Good Friday": { d:"2026-04-03", states:["Sabah","Sarawak"] }
+      },
+      stateOwn: {
+        "Johor": [ {d:"2026-03-23", n:"Sultan of Johor's Birthday"}, {d:"2026-07-21", n:"Hari Hol Almarhum Sultan Iskandar"} ],
+        "Kedah": [ {d:"2026-07-05", n:"Sultan of Kedah's Birthday"} ],
+        "Kelantan": [ {d:"2026-09-29", n:"Sultan of Kelantan's Birthday"}, {d:"2026-09-30", n:"Sultan of Kelantan's Birthday Holiday"} ],
+        "Melaka": [ {d:"2026-02-20", n:"Independence Declaration Day"}, {d:"2026-08-24", n:"Melaka Governor's Birthday"} ],
+        "Negeri Sembilan": [ {d:"2026-01-14", n:"YDPB Negeri Sembilan's Birthday"} ],
+        "Pahang": [ {d:"2026-05-22", n:"Hari Hol Pahang"}, {d:"2026-07-31", n:"Sultan of Pahang's Birthday"} ],
+        "Penang": [ {d:"2026-07-07", n:"Georgetown World Heritage City Day"}, {d:"2026-07-11", n:"Penang Governor's Birthday"} ],
+        "Perak": [ {d:"2026-11-06", n:"Sultan of Perak's Birthday"} ],
+        "Perlis": [ {d:"2026-05-17", n:"Raja of Perlis's Birthday"} ],
+        "Sabah": [ {d:"2026-03-30", n:"Sabah Governor's Birthday"}, {d:"2026-05-30", n:"Kaamatan (Harvest Festival)"}, {d:"2026-05-31", n:"Kaamatan (Harvest Festival) Holiday"} ],
+        "Sarawak": [ {d:"2026-06-01", n:"Hari Gawai (Gawai Dayak)"}, {d:"2026-06-02", n:"Hari Gawai (Gawai Dayak) Holiday"}, {d:"2026-07-22", n:"Sarawak Day"}, {d:"2026-10-10", n:"Sarawak Governor's Birthday"} ],
+        "Selangor": [ {d:"2026-12-11", n:"Sultan of Selangor's Birthday"} ],
+        "Terengganu": [ {d:"2026-03-04", n:"Installation of Sultan of Terengganu"}, {d:"2026-04-26", n:"Sultan of Terengganu's Birthday"} ],
+        "Kuala Lumpur": [ {d:"2026-02-01", n:"Federal Territory Day"} ],
+        "Labuan": [ {d:"2026-02-01", n:"Federal Territory Day"}, {d:"2026-05-30", n:"Kaamatan (Harvest Festival)"}, {d:"2026-05-31", n:"Kaamatan (Harvest Festival) Holiday"} ],
+        "Putrajaya": [ {d:"2026-02-01", n:"Federal Territory Day"} ]
+      }
+    },
+    2027: {
+      federal: [
+        { d:"2027-01-01", n:"New Year's Day", excl:["Johor","Kedah","Kelantan","Perlis","Terengganu"] },
+        { d:"2027-02-06", n:"Chinese New Year" },
+        { d:"2027-02-07", n:"Chinese New Year Holiday" },
+        { d:"2027-03-10", n:"Hari Raya Aidilfitri" },
+        { d:"2027-03-11", n:"Hari Raya Aidilfitri Holiday" },
+        { d:"2027-05-01", n:"Labour Day" },
+        { d:"2027-05-17", n:"Hari Raya Haji" },
+        { d:"2027-05-20", n:"Wesak Day" },
+        { d:"2027-06-07", n:"Agong's Birthday" },
+        { d:"2027-06-06", n:"Awal Muharram" },
+        { d:"2027-08-15", n:"Prophet Muhammad's Birthday" },
+        { d:"2027-08-31", n:"Merdeka Day" },
+        { d:"2027-09-16", n:"Malaysia Day" },
+        { d:"2027-10-28", n:"Deepavali", excl:["Sarawak"] },
+        { d:"2027-12-25", n:"Christmas Day" }
+      ],
+      regional: {
+        "Thaipusam": { d:"2027-01-22", states:["Johor","Kuala Lumpur","Putrajaya","Negeri Sembilan","Penang","Perak","Selangor"] },
+        "Nuzul Al-Quran": { d:"2027-02-24", states:["Kelantan","Pahang","Penang","Perak","Perlis","Selangor","Terengganu","Kuala Lumpur","Labuan","Putrajaya"] },
+        "Israk and Mikraj": { d:"2027-01-06", states:["Kedah","Perlis","Terengganu"] },
+        "Awal Ramadan": { d:"2027-02-08", states:["Johor","Kedah"] },
+        "Arafat Day": { d:"2027-05-16", states:["Kelantan","Terengganu"] },
+        "Good Friday": { d:"2027-03-26", states:["Sabah","Sarawak"] }
+      },
+      stateOwn: {
+        "Johor": [ {d:"2027-03-23", n:"Sultan of Johor's Birthday"}, {d:"2027-07-21", n:"Hari Hol Almarhum Sultan Iskandar"} ],
+        "Kedah": [ {d:"2027-07-05", n:"Sultan of Kedah's Birthday"} ],
+        "Kelantan": [ {d:"2027-09-29", n:"Sultan of Kelantan's Birthday"}, {d:"2027-09-30", n:"Sultan of Kelantan's Birthday Holiday"} ],
+        "Melaka": [ {d:"2027-02-20", n:"Independence Declaration Day"}, {d:"2027-08-24", n:"Melaka Governor's Birthday"} ],
+        "Negeri Sembilan": [ {d:"2027-01-14", n:"YDPB Negeri Sembilan's Birthday"} ],
+        "Pahang": [ {d:"2027-05-22", n:"Hari Hol Pahang"}, {d:"2027-07-30", n:"Sultan of Pahang's Birthday"} ],
+        "Penang": [ {d:"2027-07-07", n:"Georgetown World Heritage City Day"}, {d:"2027-07-10", n:"Penang Governor's Birthday"} ],
+        "Perak": [ {d:"2027-11-05", n:"Sultan of Perak's Birthday"} ],
+        "Perlis": [ {d:"2027-05-17", n:"Raja of Perlis's Birthday"} ],
+        "Sabah": [ {d:"2027-03-30", n:"Sabah Governor's Birthday"}, {d:"2027-05-30", n:"Kaamatan (Harvest Festival)"}, {d:"2027-05-31", n:"Kaamatan (Harvest Festival) Holiday"} ],
+        "Sarawak": [ {d:"2027-06-01", n:"Hari Gawai (Gawai Dayak)"}, {d:"2027-06-02", n:"Hari Gawai (Gawai Dayak) Holiday"}, {d:"2027-07-22", n:"Sarawak Day"}, {d:"2027-10-09", n:"Sarawak Governor's Birthday"} ],
+        "Selangor": [ {d:"2027-12-11", n:"Sultan of Selangor's Birthday"} ],
+        "Terengganu": [ {d:"2027-03-04", n:"Installation of Sultan of Terengganu"}, {d:"2027-04-26", n:"Sultan of Terengganu's Birthday"} ],
+        "Kuala Lumpur": [ {d:"2027-02-01", n:"Federal Territory Day"} ],
+        "Labuan": [ {d:"2027-02-01", n:"Federal Territory Day"}, {d:"2027-05-30", n:"Kaamatan (Harvest Festival)"}, {d:"2027-05-31", n:"Kaamatan (Harvest Festival) Holiday"} ],
+        "Putrajaya": [ {d:"2027-02-01", n:"Federal Territory Day"} ]
+      }
+    }
+  };
+
+  // All {date, name} entries (across every year in the table above) that a given state's
+  // calendar contributes — federal (minus that state's exclusions) + its opt-in regional
+  // observances + its own uniques. De-duped by date (first name found wins) in case two layers
+  // ever land on the same day.
+  function malaysiaHolidayEntriesForState(stateName){
+    if(!stateName) return [];
+    const seen = new Map();
+    const add = (d, n) => { if(!seen.has(d)) seen.set(d, n); };
+    Object.keys(MALAYSIA_HOLIDAYS_BY_YEAR).forEach(yr => {
+      const data = MALAYSIA_HOLIDAYS_BY_YEAR[yr];
+      data.federal.forEach(h => { if(!h.excl || !h.excl.includes(stateName)) add(h.d, h.n); });
+      Object.keys(data.regional).forEach(key => {
+        const r = data.regional[key];
+        if(r.states.includes(stateName)) add(r.d, key);
+      });
+      (data.stateOwn[stateName] || []).forEach(h => add(h.d, h.n));
+    });
+    return Array.from(seen.entries()).map(([d,n]) => ({d,n})).sort((a,b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+  }
+
+  // Swaps a site's auto-filled holidays (dates AND names) over to a new state (or clears them if
+  // stateName is falsy) without touching any date the user added by hand — see stateHolidayDates
+  // on the config, tracked separately from the plain publicHolidays list for exactly this reason.
+  function applyStateHolidays(cfg, stateName){
+    const prevAuto = new Set(configStateHolidayDates(cfg));
+    const names = configHolidayNames(cfg);
+    const current = configHolidays(cfg).filter(d => !prevAuto.has(d));
+    const nextEntries = malaysiaHolidayEntriesForState(stateName || null);
+    const nextAuto = nextEntries.map(e => e.d);
+    const merged = Array.from(new Set([...current, ...nextAuto])).sort();
+
+    // Drop names for old auto dates that aren't sticking around (not re-added, not kept manually).
+    prevAuto.forEach(d => { if(!merged.includes(d)) delete names[d]; });
+    // Set/refresh names for the newly-applied auto dates.
+    nextEntries.forEach(e => { names[e.d] = e.n; });
+
+    cfg.publicHolidays = merged;
+    cfg.stateHolidayDates = nextAuto;
+    cfg.state = stateName || null;
+    return nextAuto.length;
+  }
 
   /* ---------------- app state ---------------- */
   const state = {
@@ -1049,6 +1225,7 @@
     renderSummaryReport(lastResult);
     renderGuardsTable();
     renderSiteRequirement();
+    renderSiteStateSelect();
     renderHolidayTable();
     renderRestInputs();
     renderLeaveGuardSelect();
@@ -1672,21 +1849,41 @@
     wrap.innerHTML = items.length ? items.join("") : `<p class="empty">No conflicts &mdash; the roster is fully staffed and rule-compliant.</p>`;
   }
 
+  function renderSiteStateSelect(){
+    const sel = $("#siteStateSelect");
+    if(!sel) return;
+    if(sel.options.length <= 1){
+      sel.innerHTML = `<option value="">Not set &mdash; add holidays manually</option>`
+        + MALAYSIA_STATES.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+    }
+    const cfg = currentConfig();
+    sel.value = cfg.state || "";
+    const sub = $("#siteStateSub");
+    if(sub){
+      sub.textContent = cfg.state
+        ? `Auto-filled from the ${cfg.state} calendar (federal + state holidays, 2026–2027) — add or remove dates below any time.`
+        : `Assigning a state auto-fills federal + that state's own gazetted public holidays below — you can still add or remove dates by hand any time.`;
+    }
+  }
+
   function renderHolidayTable(){
     const cfg = currentConfig();
     const dates = configHolidays(cfg).slice().sort();
+    const names = configHolidayNames(cfg);
     const body = $("#holidayTableBody");
     if(!body) return;
     $("#holidayEmpty").hidden = dates.length > 0;
     body.innerHTML = dates.map(d => `
-      <tr><td class="mono">${escapeHtml(d)}</td><td><button class="btn sm danger" data-remove-holiday="${escapeHtml(d)}">Remove</button></td></tr>
+      <tr><td class="mono">${escapeHtml(d)}</td><td>${escapeHtml(names[d] || "—")}</td><td><button class="btn sm danger" data-remove-holiday="${escapeHtml(d)}">Remove</button></td></tr>
     `).join("");
     $$("[data-remove-holiday]").forEach(btn => {
       btn.addEventListener("click", () => {
         const d = btn.getAttribute("data-remove-holiday");
         const cfg2 = currentConfig();
+        const removedName = configHolidayNames(cfg2)[d];
         cfg2.publicHolidays = configHolidays(cfg2).filter(x => x !== d);
-        addLog(`Removed public holiday ${d}.`);
+        delete configHolidayNames(cfg2)[d];
+        addLog(`Removed public holiday ${d}${removedName ? ` (${removedName})` : ""}.`);
         persistConfig();
         showToast(`Removed ${d} from public holidays.`);
         render();
@@ -2127,17 +2324,52 @@
 
   $("#addHolidayBtn").addEventListener("click", () => {
     const input = $("#newHolidayDate");
+    const nameInput = $("#newHolidayName");
     const d = input.value;
     if(!d){ showToast("Pick a date first.", true); return; }
     const cfg = currentConfig();
     const list = configHolidays(cfg);
     if(list.includes(d)){ showToast("That date is already marked as a public holiday.", true); return; }
+    const name = nameInput ? nameInput.value.trim() : "";
     list.push(d);
+    if(name) configHolidayNames(cfg)[d] = name;
     input.value = "";
-    addLog(`Added public holiday ${d}.`);
+    if(nameInput) nameInput.value = "";
+    addLog(`Added public holiday ${d}${name ? ` (${name})` : ""}.`);
     persistConfig();
     showToast(`Added ${d} as a public holiday.`);
     render();
+  });
+
+  $("#siteStateSelect").addEventListener("change", () => {
+    const sel = $("#siteStateSelect");
+    const stateName = sel.value || null;
+    const cfg = currentConfig();
+    const doApply = () => {
+      const count = applyStateHolidays(cfg, stateName);
+      addLog(stateName
+        ? `Assigned this site to ${stateName} — auto-filled ${count} public holiday date${count===1?"":"s"} from the state calendar.`
+        : `Cleared this site's assigned state and its auto-filled public holidays.`);
+      persistConfig();
+      showToast(stateName ? `Applied ${stateName}'s public holidays.` : `Cleared the state assignment.`);
+      render();
+    };
+    // Switching away from an already-assigned state would drop that state's auto-filled dates
+    // (any the user separately added by hand are unaffected) — worth a confirmation, same as
+    // reassigning a site's branch elsewhere in this app.
+    if(cfg.state && cfg.state !== stateName){
+      openConfirmModal({
+        title: "Change assigned state?",
+        message: stateName
+          ? `Switch this site from ${cfg.state} to ${stateName}? ${cfg.state}'s auto-filled public holidays will be replaced with ${stateName}'s — any dates you added by hand are kept.`
+          : `Remove this site's ${cfg.state} state assignment? Its auto-filled public holidays will be removed — any dates you added by hand are kept.`,
+        okLabel: "Change",
+        onConfirm: doApply,
+        onCancel: () => { sel.value = cfg.state || ""; }
+      });
+    } else {
+      doApply();
+    }
   });
 
   $("#sitePattern").addEventListener("change", renderSitePostsFields);
@@ -2316,8 +2548,11 @@
         const id = state.currentSiteId;
         const prev = state.configsCache[id] || {};
         const name = prev.name || "Site 1";
-        // Preserve the site's branch assignment — this is a data reset, not a re-creation.
-        state.configsCache[id] = { id, name, branch: prev.branch || null, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, updatedAt: nowIso() };
+        // Preserve the site's branch/state/holiday assignments — this is a data reset for the
+        // sample guards and shift history, not a re-creation of the site itself.
+        state.configsCache[id] = { id, name, branch: prev.branch || null, state: prev.state || null,
+          stateHolidayDates: prev.stateHolidayDates || [], publicHolidays: prev.publicHolidays || [],
+          guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, updatedAt: nowIso() };
         Object.keys(state.monthsCache).forEach(k => { if(k.indexOf(id+"::") === 0) delete state.monthsCache[k]; });
         persistConfig();
         persistMonth();
