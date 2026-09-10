@@ -515,8 +515,8 @@
       <div class="tablewrap" style="overflow-x:auto;">
         <table class="simple">
           <thead><tr>
-            <th>Guard</th>
             <th>Employee ID</th>
+            <th>Guard</th>
             <th>Man-hours</th>
             <th>Normal worked days</th>
             <th>Worked rest days</th>
@@ -1387,14 +1387,46 @@
   function summaryReportExportRows(y, m, config, monthState, result){
     const summary = computeGuardSummary(y, m, config, monthState, result);
     const guards = config.guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
-    const header = ["Guard","Employee ID","Man-hours","Normal worked days","Worked rest days","Worked public holidays",
+    const tempGuards = monthTempGuards(monthState);
+    const tempIds = Object.keys(tempGuards);
+    const n = v => v || 0;
+    const header = ["Employee ID","Guard","Man-hours","Normal worked days","Worked rest days","Worked public holidays",
       "Normal OT (hrs)","Rest-day OT (hrs)","Public holiday OT (hrs)","MC","Absent","Leave","Unpaid leave"];
+
+    const totals = {
+      manHours:0, normalDays:0, restDaysWorked:0, holidayDaysWorked:0,
+      normalOTHours:0, restOTHours:0, holidayOTHours:0,
+      mc:0, absent:0, leave:0, unpaidLeave:0
+    };
+
     const rows = guards.map(g => {
       const s = summary[g.id] || {};
-      return [g.name, g.employeeId||"", s.manHours||0, s.normalDays||0, s.restDaysWorked||0, s.holidayDaysWorked||0,
-        s.normalOTHours||0, s.restOTHours||0, s.holidayOTHours||0, s.mc||0, s.absent||0, s.leave||0, s.unpaidLeave||0];
+      totals.manHours += n(s.manHours); totals.normalDays += n(s.normalDays);
+      totals.restDaysWorked += n(s.restDaysWorked); totals.holidayDaysWorked += n(s.holidayDaysWorked);
+      totals.normalOTHours += n(s.normalOTHours); totals.restOTHours += n(s.restOTHours);
+      totals.holidayOTHours += n(s.holidayOTHours); totals.mc += n(s.mc);
+      totals.absent += n(s.absent); totals.leave += n(s.leave); totals.unpaidLeave += n(s.unpaidLeave);
+      return [g.employeeId||"", g.name, n(s.manHours), n(s.normalDays), n(s.restDaysWorked), n(s.holidayDaysWorked),
+        n(s.normalOTHours), n(s.restOTHours), n(s.holidayOTHours), n(s.mc), n(s.absent), n(s.leave), n(s.unpaidLeave)];
     });
-    return [header, ...rows];
+
+    const out = [header, ...rows];
+
+    // Temporary/relief guards, listed separately below the permanent roster — only their own
+    // man-hours are meaningful here, but those hours still roll into the grand total below.
+    if(tempIds.length){
+      out.push(["", "Temporary guards this month", "", "", "", "", "", "", "", "", "", "", ""]);
+      tempIds.forEach(id => {
+        const s = summary[id] || {};
+        totals.manHours += n(s.manHours);
+        out.push(["", `${(tempGuards[id]||{}).name || "(unknown)"} (Temp)`, n(s.manHours), "", "", "", "", "", "", "", "", "", ""]);
+      });
+    }
+
+    out.push(["", "Total — all guards", totals.manHours, totals.normalDays, totals.restDaysWorked, totals.holidayDaysWorked,
+      totals.normalOTHours, totals.restOTHours, totals.holidayOTHours, totals.mc, totals.absent, totals.leave, totals.unpaidLeave]);
+
+    return out;
   }
 
   function tempGuardExportRows(monthState){
@@ -1476,14 +1508,16 @@
     const holidays = new Set(configHolidays(config));
     const normalThreshold = Number(config.site.normalHoursPerDay) || 8;
     const summary = {};
-    config.guards.forEach(g => {
-      summary[g.id] = {
-        manHours:0, normalDays:0, restDaysWorked:0, holidayDaysWorked:0,
-        normalOTHours:0, restOTHours:0, holidayOTHours:0,
-        mc:0, absent:0, leave:0, unpaidLeave:0,
-        _nonHolidayWorked:0 // running counter only, not part of the report
-      };
+    const initEntry = () => ({
+      manHours:0, normalDays:0, restDaysWorked:0, holidayDaysWorked:0,
+      normalOTHours:0, restOTHours:0, holidayOTHours:0,
+      mc:0, absent:0, leave:0, unpaidLeave:0,
+      _nonHolidayWorked:0 // running counter only, not part of the report
     });
+    config.guards.forEach(g => { summary[g.id] = initEntry(); });
+    // Temp/relief guards get an entry too (same shape) so their own shifts are tallied below —
+    // callers that only want permanent-guard stats should look up by config.guards ids only.
+    Object.keys(monthTempGuards(monthState)).forEach(id => { summary[id] = initEntry(); });
 
     result.days.forEach(day => {
       const dateStr = day.dateStr;
@@ -1505,7 +1539,7 @@
         slotsForShift.forEach(guardId => {
           if(!guardId) return;
           const s = summary[guardId];
-          if(!s) return; // a temporary guard's id, or one no longer in the roster
+          if(!s) return; // a guard no longer in the roster (temp guards have an entry — see above)
           s.manHours += st.hours;
           if(isHoliday){
             s.holidayDaysWorked++;
@@ -1533,15 +1567,37 @@
     const monthState = currentMonthState();
     const summary = computeGuardSummary(y, m, config, monthState, result);
     const guards = config.guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
+    const tempGuards = monthTempGuards(monthState);
+    const tempIds = Object.keys(tempGuards);
     const body = $("#summaryReportBody");
     if(!body) return;
-    body.innerHTML = guards.length ? guards.map(g => {
+
+    const n = v => v || 0;
+    const h = v => n(v).toFixed(1);
+    const dash = `<td class="mono">—</td>`;
+
+    const totals = {
+      manHours:0, normalDays:0, restDaysWorked:0, holidayDaysWorked:0,
+      normalOTHours:0, restOTHours:0, holidayOTHours:0,
+      mc:0, absent:0, leave:0, unpaidLeave:0
+    };
+
+    const permanentRows = guards.map(g => {
       const s = summary[g.id] || {};
-      const n = v => v || 0;
-      const h = v => n(v).toFixed(1);
+      totals.manHours += n(s.manHours);
+      totals.normalDays += n(s.normalDays);
+      totals.restDaysWorked += n(s.restDaysWorked);
+      totals.holidayDaysWorked += n(s.holidayDaysWorked);
+      totals.normalOTHours += n(s.normalOTHours);
+      totals.restOTHours += n(s.restOTHours);
+      totals.holidayOTHours += n(s.holidayOTHours);
+      totals.mc += n(s.mc);
+      totals.absent += n(s.absent);
+      totals.leave += n(s.leave);
+      totals.unpaidLeave += n(s.unpaidLeave);
       return `<tr>
-        <td>${escapeHtml(g.name)}</td>
         <td class="mono">${escapeHtml(g.employeeId || "—")}</td>
+        <td>${escapeHtml(g.name)}</td>
         <td class="mono">${h(s.manHours)}</td>
         <td class="mono">${n(s.normalDays)}</td>
         <td class="mono">${n(s.restDaysWorked)}</td>
@@ -1554,7 +1610,46 @@
         <td class="mono">${n(s.leave)}</td>
         <td class="mono">${n(s.unpaidLeave)}</td>
       </tr>`;
-    }).join("") : `<tr><td colspan="13" class="empty">Add guards to see the summary report.</td></tr>`;
+    });
+
+    // Temporary/relief guards get their own section below the permanent roster — just their
+    // own man-hours for the month (the other columns don't apply to one-off coverage), but
+    // their man-hours still feed into the grand total below so the overall figure is complete.
+    let tempSection = "";
+    if(tempIds.length){
+      tempSection += `<tr><td colspan="13" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Temporary guards this month</td></tr>`;
+      tempSection += tempIds.map(id => {
+        const s = summary[id] || {};
+        const name = (tempGuards[id] || {}).name || "(unknown)";
+        totals.manHours += n(s.manHours);
+        return `<tr>
+          <td class="mono">—</td>
+          <td>${escapeHtml(name)} <span style="color:var(--muted, #64748b);font-size:12px;">(Temp)</span></td>
+          <td class="mono">${h(s.manHours)}</td>
+          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
+        </tr>`;
+      }).join("");
+    }
+
+    const totalsRow = (guards.length || tempIds.length) ? `<tr style="border-top:2px solid var(--border-strong,#94a3b8);">
+      <td></td>
+      <td><strong>Total — all guards</strong></td>
+      <td class="mono"><strong>${h(totals.manHours)}</strong></td>
+      <td class="mono"><strong>${n(totals.normalDays)}</strong></td>
+      <td class="mono"><strong>${n(totals.restDaysWorked)}</strong></td>
+      <td class="mono"><strong>${n(totals.holidayDaysWorked)}</strong></td>
+      <td class="mono"><strong>${h(totals.normalOTHours)}</strong></td>
+      <td class="mono"><strong>${h(totals.restOTHours)}</strong></td>
+      <td class="mono"><strong>${h(totals.holidayOTHours)}</strong></td>
+      <td class="mono"><strong>${n(totals.mc)}</strong></td>
+      <td class="mono"><strong>${n(totals.absent)}</strong></td>
+      <td class="mono"><strong>${n(totals.leave)}</strong></td>
+      <td class="mono"><strong>${n(totals.unpaidLeave)}</strong></td>
+    </tr>` : "";
+
+    body.innerHTML = (guards.length || tempIds.length)
+      ? permanentRows.join("") + tempSection + totalsRow
+      : `<tr><td colspan="13" class="empty">Add guards to see the summary report.</td></tr>`;
 
     const holidayCount = configHolidays(config).filter(d => d.slice(0,7) === state.currentMonth).length;
     const sub = $("#summaryReportSub");
