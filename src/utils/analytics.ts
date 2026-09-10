@@ -360,52 +360,164 @@ export interface WaterfallBar {
   kind: 'total' | 'delta';
 }
 
-/** Month options ('YYYY-MM' keys, with a display label) for a bridge chart's Prev/Next navigator. */
-export interface MonthOption {
+/** Time granularity for a bridge/waterfall chart's period navigator. */
+export type BridgeTimeView = 'monthly' | 'quarterly' | 'yearly' | 'ytd';
+
+/** Shared toggle options for every bridge/waterfall chart's time-granularity switch. */
+export const BRIDGE_TIME_VIEWS: { value: BridgeTimeView; label: string }[] = [
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'quarterly', label: 'Quarterly' },
+  { value: 'yearly', label: 'Yearly' },
+  { value: 'ytd', label: 'Year-to-Date' },
+];
+
+/**
+ * One navigable period for a bridge chart's Prev/Next navigator — 'YYYY-MM' for monthly,
+ * 'YYYY-Q#' for quarterly, plain 'YYYY' for yearly/ytd (they share the same year-granularity key;
+ * only their bounds differ, see `periodBounds`).
+ */
+export interface PeriodOption {
   key: string;
   label: string;
 }
 
-function monthRangeOptions(monthKeys: string[]): MonthOption[] {
+function quarterKey(d: Date): string {
+  return `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+}
+
+function quarterLabel(key: string): string {
+  const [y, q] = key.split('-Q');
+  return `Q${q} ${y}`;
+}
+
+/** Every quarter key ('YYYY-Q#') from `firstKey` through `lastKey`, inclusive. */
+function quarterKeysBetween(firstKey: string, lastKey: string): string[] {
+  const result: string[] = [];
+  let [y, q] = firstKey.split('-Q').map(Number);
+  const [ly, lq] = lastKey.split('-Q').map(Number);
+  while (y < ly || (y === ly && q <= lq)) {
+    result.push(`${y}-Q${q}`);
+    q += 1;
+    if (q > 4) {
+      q = 1;
+      y += 1;
+    }
+  }
+  return result;
+}
+
+/** Every year key ('YYYY') from `firstYear` through `lastYear`, inclusive. */
+function yearKeysBetween(firstYear: number, lastYear: number): string[] {
+  const result: string[] = [];
+  for (let y = firstYear; y <= lastYear; y++) result.push(String(y));
+  return result;
+}
+
+function periodKeyFor(view: BridgeTimeView, d: Date): string {
+  if (view === 'monthly') return raceMonthKey(d);
+  if (view === 'quarterly') return quarterKey(d);
+  return String(d.getFullYear()); // 'yearly' and 'ytd' share the same (year-granularity) key
+}
+
+function periodLabelFor(view: BridgeTimeView, key: string): string {
+  if (view === 'monthly') return raceMonthLabel(key);
+  if (view === 'quarterly') return quarterLabel(key);
+  if (view === 'ytd') return `${key} YTD`;
+  return key;
+}
+
+function periodKeysBetween(view: BridgeTimeView, firstKey: string, lastKey: string): string[] {
+  if (view === 'monthly') return monthKeysBetween(firstKey, lastKey);
+  if (view === 'quarterly') return quarterKeysBetween(firstKey, lastKey);
+  return yearKeysBetween(Number(firstKey), Number(lastKey));
+}
+
+/**
+ * The [start, end) millisecond bounds of one navigable period. 'yearly' always spans the full
+ * calendar year — even the current, still-in-progress one, so a contract already dated later this
+ * year still counts. 'ytd' clamps the current year's end to right now, so it reflects only what's
+ * actually happened so far; a past year's 'ytd' bounds equal its 'yearly' bounds (the year is
+ * already over either way).
+ */
+function periodBounds(view: BridgeTimeView, key: string): { start: number; end: number } {
+  if (view === 'monthly') {
+    const [y, m] = key.split('-').map(Number);
+    return { start: new Date(y, m - 1, 1).getTime(), end: new Date(y, m, 1).getTime() };
+  }
+  if (view === 'quarterly') {
+    const [yStr, qStr] = key.split('-Q');
+    const y = Number(yStr);
+    const startMonth = (Number(qStr) - 1) * 3;
+    return { start: new Date(y, startMonth, 1).getTime(), end: new Date(y, startMonth + 3, 1).getTime() };
+  }
+  const y = Number(key);
+  const start = new Date(y, 0, 1).getTime();
+  const fullEnd = new Date(y + 1, 0, 1).getTime();
+  if (view === 'ytd') {
+    const now = Date.now();
+    return { start, end: Math.min(Math.max(now, start), fullEnd) };
+  }
+  return { start, end: fullEnd };
+}
+
+/** The Start/End anchor labels for a bridge, phrased to match the selected time granularity. */
+function periodBoundaryLabels(view: BridgeTimeView): { start: string; end: string } {
+  switch (view) {
+    case 'monthly':
+      return { start: 'Start of Month', end: 'End of Month' };
+    case 'quarterly':
+      return { start: 'Start of Quarter', end: 'End of Quarter' };
+    case 'ytd':
+      return { start: 'Start of Year', end: 'Today' };
+    case 'yearly':
+    default:
+      return { start: 'Start of Year', end: 'End of Year' };
+  }
+}
+
+function periodRangeOptions(view: BridgeTimeView, keys: string[]): PeriodOption[] {
   const now = new Date();
-  const nowKey = raceMonthKey(now);
-  const keys = monthKeys.length > 0 ? monthKeys : [nowKey];
-  const sorted = [...keys].sort();
+  const nowKey = periodKeyFor(view, now);
+  const useKeys = keys.length > 0 ? keys : [nowKey];
+  const sorted = [...useKeys].sort();
   const firstKey = sorted[0];
   const lastKey = sorted[sorted.length - 1] > nowKey ? sorted[sorted.length - 1] : nowKey;
-  return monthKeysBetween(firstKey, lastKey).map((key) => ({ key, label: raceMonthLabel(key) }));
+  return periodKeysBetween(view, firstKey, lastKey).map((key) => ({ key, label: periodLabelFor(view, key) }));
 }
 
 /**
- * Every navigable month ('YYYY-MM') for the Active Project Value bridge — from the earliest
- * contract start through the current month, so Prev/Next always lands somewhere with data (or at
- * least the current month, if there's none yet).
+ * Every navigable period for the Active Project Value bridge, at the requested granularity — from
+ * the earliest contract start through the current period, so Prev/Next always lands somewhere
+ * with data (or at least the current period, if there's none yet).
  */
-export function activeProjectBridgeMonths(tenders: Tender[]): MonthOption[] {
+export function activeProjectBridgePeriods(tenders: Tender[], view: BridgeTimeView): PeriodOption[] {
   const keys = tenders
     .filter((t) => t.stage === 'Won' && t.contractStart)
-    .map((t) => t.contractStart.slice(0, 7));
-  return monthRangeOptions(keys);
+    .map((t) => periodKeyFor(view, new Date(`${t.contractStart}T12:00:00`)));
+  return periodRangeOptions(view, keys);
 }
 
 /**
- * Builds the Active Project Value bridge for one calendar month: start-of-month active value,
- * plus contracts that newly went active this month (by `contractStart`), minus projects closed
- * out this month (by `closedOutAt`), equals end-of-month active value.
+ * Builds the Active Project Value bridge for one period (month, quarter, year, or year-to-date):
+ * start-of-period active value, plus contracts that newly went active during the period (by
+ * `contractStart`), minus projects closed out during the period (by `closedOutAt`), equals
+ * end-of-period active value.
  *
  * `tenders` should be every Won tender in scope (active AND already closed-out — see
- * useWonTenders) so closed-out projects still contribute their exit from the month they left in;
+ * useWonTenders) so closed-out projects still contribute their exit from the period they left in;
  * usePastProjects/useActiveProjects alone would each only have half the picture.
  *
  * Reopening a project (closeOutProject reversed) doesn't leave a trace of when it was closed —
  * that's deliberate: a reopened project is treated as having been active all along, which is the
- * correct "current understanding" even though it changes what an already-elapsed month's bridge
+ * correct "current understanding" even though it changes what an already-elapsed period's bridge
  * would have shown while it was still closed out.
  */
-export function activeProjectValueBridge(tenders: Tender[], monthKey: string): WaterfallBar[] {
-  const [y, m] = monthKey.split('-').map(Number);
-  const monthStart = new Date(y, m - 1, 1).getTime();
-  const monthEnd = new Date(y, m, 1).getTime();
+export function activeProjectValueBridge(
+  tenders: Tender[],
+  view: BridgeTimeView,
+  periodKey: string
+): WaterfallBar[] {
+  const { start: periodStart, end: periodEnd } = periodBounds(view, periodKey);
 
   let startValue = 0;
   let enteringValue = 0;
@@ -418,23 +530,24 @@ export function activeProjectValueBridge(tenders: Tender[], monthKey: string): W
     const closedMs = t.closedOutAt ?? null;
     const value = t.tenderValue || 0;
 
-    if (startMs < monthStart && (closedMs === null || closedMs >= monthStart)) {
+    if (startMs < periodStart && (closedMs === null || closedMs >= periodStart)) {
       startValue += value;
     }
-    if (startMs >= monthStart && startMs < monthEnd) {
+    if (startMs >= periodStart && startMs < periodEnd) {
       enteringValue += value;
     }
-    if (closedMs !== null && closedMs >= monthStart && closedMs < monthEnd) {
+    if (closedMs !== null && closedMs >= periodStart && closedMs < periodEnd) {
       exitingValue += value;
     }
   }
 
   const endValue = startValue + enteringValue - exitingValue;
+  const { start: startLabel, end: endLabel } = periodBoundaryLabels(view);
 
-  const bars: WaterfallBar[] = [{ label: 'Start of Month', amount: startValue, kind: 'total' }];
+  const bars: WaterfallBar[] = [{ label: startLabel, amount: startValue, kind: 'total' }];
   if (enteringValue !== 0) bars.push({ label: 'New Contracts', amount: enteringValue, kind: 'delta' });
   if (exitingValue !== 0) bars.push({ label: 'Closed Out', amount: -exitingValue, kind: 'delta' });
-  bars.push({ label: 'End of Month', amount: endValue, kind: 'total' });
+  bars.push({ label: endLabel, amount: endValue, kind: 'total' });
   return bars;
 }
 
@@ -462,34 +575,37 @@ function openValueOf(state: Map<string, TenderReplayState>): number {
 }
 
 /**
- * Every navigable month ('YYYY-MM') for the Pipeline Value bridge, from the earliest history
- * entry through the current month.
+ * Every navigable period for the Pipeline Value bridge, at the requested granularity, from the
+ * earliest history entry through the current period.
  */
-export function pipelineBridgeMonths(entries: TenderHistoryEntry[]): MonthOption[] {
-  const keys = entries.map((e) => raceMonthKey(new Date(e.timestamp)));
-  return monthRangeOptions(keys);
+export function pipelineBridgePeriods(entries: TenderHistoryEntry[], view: BridgeTimeView): PeriodOption[] {
+  const keys = entries.map((e) => periodKeyFor(view, new Date(e.timestamp)));
+  return periodRangeOptions(view, keys);
 }
 
 /**
- * Builds the open Pipeline Value bridge for one calendar month by replaying the full audit
- * trail: start-of-month open pipeline value, plus new tenders entering the pipeline, plus/minus
- * tenders moving between open stages with a value correction, minus tenders that moved to Won,
- * minus tenders that moved to Lost, minus tenders deleted while still open, equals end-of-month
- * open pipeline value. Every delta bucket is a real, reconciling contributor — start + every
- * delta always sums to exactly the end value — which is what makes a shrinking end value
- * meaningful to read: whether it shrank because deals were Won (good) or Lost / never replaced
- * by new intake (not good) is visible in which bars moved, not just the final number.
+ * Builds the open Pipeline Value bridge for one period (month, quarter, year, or year-to-date) by
+ * replaying the full audit trail: start-of-period open pipeline value, plus new tenders entering
+ * the pipeline, plus/minus tenders moving between open stages with a value correction, minus
+ * tenders that moved to Won, minus tenders that moved to Lost, minus tenders deleted while still
+ * open, equals end-of-period open pipeline value. Every delta bucket is a real, reconciling
+ * contributor — start + every delta always sums to exactly the end value — which is what makes a
+ * shrinking end value meaningful to read: whether it shrank because deals were Won (good) or Lost
+ * / never replaced by new intake (not good) is visible in which bars moved, not just the final
+ * number.
  */
-export function pipelineValueBridge(entries: TenderHistoryEntry[], monthKey: string): WaterfallBar[] {
-  const [y, m] = monthKey.split('-').map(Number);
-  const monthStart = new Date(y, m - 1, 1).getTime();
-  const monthEnd = new Date(y, m, 1).getTime();
+export function pipelineValueBridge(
+  entries: TenderHistoryEntry[],
+  view: BridgeTimeView,
+  periodKey: string
+): WaterfallBar[] {
+  const { start: periodStart, end: periodEnd } = periodBounds(view, periodKey);
 
   const sorted = [...entries].sort((a, b) => a.timestamp - b.timestamp);
   const state = new Map<string, TenderReplayState>();
 
   let i = 0;
-  for (; i < sorted.length && sorted[i].timestamp < monthStart; i++) {
+  for (; i < sorted.length && sorted[i].timestamp < periodStart; i++) {
     applyHistoryEntry(state, sorted[i]);
   }
   const startValue = openValueOf(state);
@@ -500,7 +616,7 @@ export function pipelineValueBridge(entries: TenderHistoryEntry[], monthKey: str
   let removedValue = 0;
   let adjustValue = 0;
 
-  for (; i < sorted.length && sorted[i].timestamp < monthEnd; i++) {
+  for (; i < sorted.length && sorted[i].timestamp < periodEnd; i++) {
     const e = sorted[i];
     const prev = state.get(e.tenderId);
     const prevOpen = !!prev && !prev.removed && OPEN_STAGES.includes(prev.stage);
@@ -532,13 +648,14 @@ export function pipelineValueBridge(entries: TenderHistoryEntry[], monthKey: str
   }
 
   const endValue = startValue + newValue + wonValue + lostValue + removedValue + adjustValue;
+  const { start: startLabel, end: endLabel } = periodBoundaryLabels(view);
 
-  const bars: WaterfallBar[] = [{ label: 'Start of Month', amount: startValue, kind: 'total' }];
+  const bars: WaterfallBar[] = [{ label: startLabel, amount: startValue, kind: 'total' }];
   if (newValue !== 0) bars.push({ label: 'New Tenders', amount: newValue, kind: 'delta' });
   if (wonValue !== 0) bars.push({ label: 'Won', amount: wonValue, kind: 'delta' });
   if (lostValue !== 0) bars.push({ label: 'Lost', amount: lostValue, kind: 'delta' });
   if (removedValue !== 0) bars.push({ label: 'Removed', amount: removedValue, kind: 'delta' });
   if (adjustValue !== 0) bars.push({ label: 'Value Adjustments', amount: adjustValue, kind: 'delta' });
-  bars.push({ label: 'End of Month', amount: endValue, kind: 'total' });
+  bars.push({ label: endLabel, amount: endValue, kind: 'total' });
   return bars;
 }

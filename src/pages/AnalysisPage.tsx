@@ -6,12 +6,14 @@ import { useBranches, useBrands } from '../hooks/useBranches';
 import {
   brandBreakdown,
   buildRaceFrames,
-  pipelineBridgeMonths,
+  BRIDGE_TIME_VIEWS,
+  pipelineBridgePeriods,
   pipelineSummary,
   pipelineValueBridge,
   pipelineValueTrend,
   stageBreakdown,
   staffPerformance,
+  type BridgeTimeView,
   type RaceMetric,
   type RaceTimeView,
 } from '../utils/analytics';
@@ -47,7 +49,8 @@ export default function AnalysisPage() {
   const [deptFilter, setDeptFilter] = useState('all');
   const [raceMetric, setRaceMetric] = useState<RaceMetric>('won');
   const [raceTimeView, setRaceTimeView] = useState<RaceTimeView>('alltime');
-  const [bridgeMonthKey, setBridgeMonthKey] = useState<string | null>(null);
+  const [bridgeTimeView, setBridgeTimeView] = useState<BridgeTimeView>('monthly');
+  const [bridgePeriodKey, setBridgePeriodKey] = useState<string | null>(null);
 
   const filtered = useMemo(
     () =>
@@ -81,13 +84,13 @@ export default function AnalysisPage() {
     [filtered, raceDepartments, raceMetric, raceTimeView]
   );
 
-  const bridgeMonths = useMemo(() => pipelineBridgeMonths(entries), [entries]);
-  const bridgeFoundIndex = bridgeMonthKey ? bridgeMonths.findIndex((m) => m.key === bridgeMonthKey) : -1;
-  const bridgeIndex = bridgeFoundIndex >= 0 ? bridgeFoundIndex : bridgeMonths.length - 1;
-  const currentBridgeMonth = bridgeMonths[bridgeIndex];
+  const bridgePeriods = useMemo(() => pipelineBridgePeriods(entries, bridgeTimeView), [entries, bridgeTimeView]);
+  const bridgeFoundIndex = bridgePeriodKey ? bridgePeriods.findIndex((p) => p.key === bridgePeriodKey) : -1;
+  const bridgeIndex = bridgeFoundIndex >= 0 ? bridgeFoundIndex : bridgePeriods.length - 1;
+  const currentBridgePeriod = bridgePeriods[bridgeIndex];
   const bridgeBars = useMemo(
-    () => (currentBridgeMonth ? pipelineValueBridge(entries, currentBridgeMonth.key) : []),
-    [entries, currentBridgeMonth]
+    () => (currentBridgePeriod ? pipelineValueBridge(entries, bridgeTimeView, currentBridgePeriod.key) : []),
+    [entries, bridgeTimeView, currentBridgePeriod]
   );
 
   if (!profile) return null;
@@ -158,29 +161,45 @@ export default function AnalysisPage() {
           <div className="bg-white rounded-xl border border-slate-200 p-5">
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
               <h3 className="text-sm font-semibold text-slate-800">Open Pipeline Value Bridge</h3>
-              {bridgeMonths.length > 0 && (
+              {bridgePeriods.length > 0 && (
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => setBridgeMonthKey(bridgeMonths[Math.max(bridgeIndex - 1, 0)].key)}
+                    onClick={() => setBridgePeriodKey(bridgePeriods[Math.max(bridgeIndex - 1, 0)].key)}
                     disabled={bridgeIndex === 0}
                     className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-30"
                   >
                     ◀ Prev
                   </button>
-                  <span className="text-xs font-semibold text-slate-700 w-24 text-center">
-                    {currentBridgeMonth?.label}
+                  <span className="text-xs font-semibold text-slate-700 w-28 text-center">
+                    {currentBridgePeriod?.label}
                   </span>
                   <button
                     onClick={() =>
-                      setBridgeMonthKey(bridgeMonths[Math.min(bridgeIndex + 1, bridgeMonths.length - 1)].key)
+                      setBridgePeriodKey(bridgePeriods[Math.min(bridgeIndex + 1, bridgePeriods.length - 1)].key)
                     }
-                    disabled={bridgeIndex >= bridgeMonths.length - 1}
+                    disabled={bridgeIndex >= bridgePeriods.length - 1}
                     className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-30"
                   >
                     Next ▶
                   </button>
                 </div>
               )}
+            </div>
+            <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 w-fit mb-4">
+              {BRIDGE_TIME_VIEWS.map((tv) => (
+                <button
+                  key={tv.value}
+                  onClick={() => {
+                    setBridgeTimeView(tv.value);
+                    setBridgePeriodKey(null);
+                  }}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition ${
+                    bridgeTimeView === tv.value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {tv.label}
+                </button>
+              ))}
             </div>
             <WaterfallChart bars={bridgeBars} />
           </div>
