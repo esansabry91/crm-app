@@ -1,0 +1,2168 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Guard Quotation Calculator</title>
+<style>
+:root{
+ --bg:#eef2f7; --card:#ffffff; --ink:#16202e; --muted:#63748a;
+ --line:#e3e9f0; --accent:#0f3557; --accent2:#2b7fb8; --accent3:#10a37f;
+ --input:#fffdf2; --inputline:#e6c96b; --good:#0d7a4a; --bad:#b3261e;
+ --shadow:0 1px 2px rgba(16,32,53,.04),0 8px 24px rgba(16,32,53,.07);
+}
+*{box-sizing:border-box}
+body{margin:0;color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,Helvetica,Arial,sans-serif;
+ background:radial-gradient(1200px 600px at 10% -10%,#dfe9f5 0%,rgba(223,233,245,0) 60%),radial-gradient(900px 500px at 100% 0%,#e2f4ee 0%,rgba(226,244,238,0) 55%),var(--bg);
+ background-attachment:fixed;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:26px 18px 72px}
+header{background:linear-gradient(120deg,#0b2b47 0%,#14527f 55%,#12806a 100%);color:#fff;border-radius:16px;
+ padding:22px 26px;margin-bottom:20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+header:after{content:'';position:absolute;right:-60px;top:-70px;width:240px;height:240px;border-radius:50%;background:rgba(255,255,255,.07)}
+header h1{font-size:25px;line-height:1.25;margin:0 0 6px;letter-spacing:-.01em;font-weight:700}
+header p{margin:0;color:rgba(255,255,255,.82);font-size:13px;max-width:70ch}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:22px;align-items:start}
+.grid>div,.card{min-width:0}
+ @media(max-width:960px){.grid{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px 16px;
+ margin-bottom:18px;box-shadow:var(--shadow);transition:box-shadow .18s ease,transform .18s ease}
+.card:hover{box-shadow:0 2px 4px rgba(16,32,53,.05),0 14px 34px rgba(16,32,53,.10)}
+.card h2{position:relative;font-size:11.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--accent);
+ margin:0 0 14px;padding:0 0 10px 12px;border-bottom:1px solid var(--line);font-weight:800}
+.card h2:before{content:'';position:absolute;left:0;top:1px;width:4px;height:13px;border-radius:3px;
+ background:linear-gradient(180deg,var(--accent2),var(--accent3))}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 8px;margin:0 -8px;
+ border-radius:8px;border-bottom:1px dotted var(--line);transition:background .12s ease}
+.row:hover{background:#f6f9fc}
+.row:last-child{border-bottom:0}
+.row label,.row .lbl{flex:1;font-size:13.5px;color:#28374a}
+.row.strong{background:#f4f8fc;border-bottom:1px solid var(--line)}
+.strong .lbl,.strong .out,.strong label{font-weight:700;color:var(--ink)}
+.key{background:linear-gradient(90deg,#eaf7ef,#f4fbf7);margin:8px -20px;padding:10px 20px;
+ border-top:1px solid #cfe6d4;border-bottom:1px solid #cfe6d4;border-left:3px solid var(--accent3);border-radius:0}
+.key .lbl,.key label{font-weight:800}
+.msub{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--accent);
+ margin:16px 0 6px;padding-left:10px;border-left:3px solid var(--accent2)}
+.note{font-size:11.5px;color:var(--muted);line-height:1.6;margin:12px 0 2px;padding:9px 12px;
+ background:#f7f9fc;border-left:3px solid var(--line);border-radius:0 8px 8px 0}
+input[type=number],input[type=text],select{font:inherit;font-size:13.5px;padding:6px 9px;border-radius:9px;
+ border:1px solid var(--line);background:#fff;color:#0b3d91;transition:border-color .15s,box-shadow .15s}
+input[type=number],input[type=text]{background:var(--input);border-color:var(--inputline);text-align:right;width:112px}
+input[type=text]{text-align:left}
+input[type=number]:focus,input[type=text]:focus,select:focus{outline:0;border-color:var(--accent2);
+ box-shadow:0 0 0 3px rgba(43,127,184,.18)}
+input[type=range]{width:132px;accent-color:var(--accent2);background:none;border:0;padding:0;cursor:pointer}
+select{cursor:pointer;color:var(--ink);min-width:96px}
+.out{width:118px;text-align:right;font-variant-numeric:tabular-nums;font-size:13.5px;color:#1d2b3c}
+.hero{background:linear-gradient(145deg,#0b2b47,#1a6fa8 70%,#2b7fb8);color:#fff;border:0;border-radius:16px;
+ padding:20px 22px;box-shadow:0 10px 30px rgba(11,43,71,.28);position:relative;overflow:hidden}
+.hero:hover{box-shadow:0 14px 38px rgba(11,43,71,.34)}
+.hero:after{content:'';position:absolute;right:-50px;bottom:-70px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.06)}
+.hero2{background:linear-gradient(145deg,#083f2e,#0d7a52 65%,#17a06b);box-shadow:0 10px 30px rgba(8,63,46,.28)}
+.hero .k{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;opacity:.85;font-weight:700}
+.hero .v{font-size:40px;font-weight:800;margin:6px 0 0;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.05}
+.hero .s{font-size:11.5px;opacity:.8;margin-top:2px}
+.hero .v input[type=number]{font:inherit;font-size:34px;font-weight:800;width:100%;text-align:right;
+ background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.45);color:#fff;border-radius:10px;padding:2px 12px}
+.hero .v input[type=number]:focus{box-shadow:0 0 0 3px rgba(255,255,255,.25);border-color:#fff}
+.hero .tag{color:#cfe8ff;font-weight:600}
+.tabs{display:flex;gap:8px;margin-top:14px}
+.tab{padding:8px 16px;border-radius:999px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.10);
+ color:#fff;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;flex:none;min-width:0;box-shadow:none;transition:background .15s,border-color .15s}
+.tab:hover{background:rgba(255,255,255,.20);transform:none;box-shadow:none}
+.tab.on{background:#fff;color:#0b2b47;border-color:#fff}
+.mini{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:7px 0;
+ border-bottom:1px solid rgba(255,255,255,.16);font-size:12.5px}
+.mini:last-child{border-bottom:0}
+.mini span{opacity:.86}
+.mini b{font-variant-numeric:tabular-nums;font-weight:700;font-size:13.5px}
+.sticky{position:sticky;top:18px}
+.tag{font-size:10.5px;margin-left:8px;padding:2px 8px;border-radius:999px;background:rgba(43,127,184,.12);color:var(--accent2);font-weight:700}
+.btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+button{flex:1;min-width:104px;padding:9px 12px;font:inherit;font-size:12.5px;font-weight:600;border-radius:10px;
+ cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--ink);
+ box-shadow:0 1px 2px rgba(16,32,53,.06);transition:transform .12s,box-shadow .12s,background .12s}
+button:hover{background:#f2f7fc;transform:translateY(-1px);box-shadow:0 4px 12px rgba(16,32,53,.12)}
+button:active{transform:translateY(0)}
+.xbtn{flex:none;width:74px;min-width:74px;padding:4px 6px;font-size:11px;border-radius:8px}
+.xspace{flex:none;width:74px}
+.logActions{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.logActions button{flex:none;min-width:56px;width:auto;padding:4px 10px;font-size:11px}
+#logTable td,#logTable th{white-space:nowrap}
+.logWrap{max-height:340px;overflow-y:auto}
+.logWrap thead th{position:sticky;top:0;z-index:1}
+.logRowHidden{display:none}
+.syncBadge{display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:12.5px}
+.syncDot{width:8px;height:8px;border-radius:50%;flex:none;background:#8494a6}
+.syncDot.live{background:#10a37f;box-shadow:0 0 0 3px rgba(16,163,127,.16);animation:syncPulse 2.4s ease-in-out infinite}
+.syncDot.local{background:#c98a13;box-shadow:0 0 0 3px rgba(201,138,19,.16)}
+.syncDot.signedout{background:#c98a13;box-shadow:0 0 0 3px rgba(201,138,19,.16)}
+.syncDot.denied{background:#b3261e;box-shadow:0 0 0 3px rgba(179,38,30,.16)}
+.syncDot.checking{background:#8494a6;box-shadow:0 0 0 3px rgba(132,148,166,.16)}
+@keyframes syncPulse{0%,100%{opacity:1}50%{opacity:.45}}
+@media (prefers-reduced-motion: reduce){ .syncDot.live{animation:none} }
+.mrow .lbl{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12.5px}
+.bar{display:flex;height:30px;width:100%;border-radius:9px;overflow:hidden;border:1px solid var(--line);
+ box-shadow:inset 0 1px 3px rgba(16,32,53,.10)}
+.bar div{height:100%;transition:width .35s cubic-bezier(.4,0,.2,1)}
+.bar div:hover{filter:brightness(1.08)}
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:2px 18px;margin-top:14px}
+ @media(max-width:640px){.legend{grid-template-columns:1fr}}
+.lg{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:4px 6px;border-radius:7px}
+.lg:hover{background:#f6f9fc}
+.sw{width:12px;height:12px;border-radius:3px;flex:none;box-shadow:0 0 0 1px rgba(0,0,0,.06)}
+.lg .nm{flex:1;color:#28374a}
+.lg .amt{font-variant-numeric:tabular-nums;color:var(--muted)}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+th,td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+th:first-child,td:first-child{text-align:left;font-variant-numeric:normal}
+thead th{color:var(--accent);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;
+ background:#f4f8fc;border-bottom:1px solid var(--line);font-weight:800}
+tbody tr:hover td{background:#f8fbfe}
+.dlt{font-size:10.5px;display:block;font-weight:600}
+.up{color:var(--bad)}
+.dn{color:var(--good)}
+.rwrap{overflow-x:auto;max-width:100%;border:1px solid var(--line);border-radius:10px;margin-top:12px}
+.rt{font-size:11.5px;margin:0}
+.rt th,.rt td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:4px 6px;
+ text-align:center;white-space:nowrap}
+.rt th{position:sticky;top:0;z-index:3;background:#f4f8fc;font-size:10px}
+.rt td.g,.rt th:first-child{position:sticky;left:0;z-index:2;background:#fbfdff;text-align:left;font-weight:700}
+.rt th:first-child{z-index:4}
+.rt th.wkend{background:#e9eef4;color:#8494a6}
+.rt th.wk{background:#e8f1f8}
+.rt td.tot{font-weight:700;background:#fbfdff}
+.rt.dense th,.rt.dense td{padding:2px 4px;font-size:9.5px}
+.off{color:#b6c0cc;font-weight:500}
+.rtitle{font-size:12.5px;color:var(--accent);font-weight:800;margin-top:10px;letter-spacing:.01em}
+.warn{background:linear-gradient(90deg,#fdecea,#fff6f5);border:1px solid #f3c4bf;color:var(--bad);
+ padding:10px 13px;border-radius:10px;font-size:12px;margin-top:12px;font-weight:500}
+.okmsg{background:linear-gradient(90deg,#eaf7ee,#f5fbf7);border:1px solid #bfe0ca;color:var(--good);
+ padding:10px 13px;border-radius:10px;font-size:12px;margin-top:12px;font-weight:500}
+.errbar{display:none;background:#fdecea;border:1px solid #f3c4bf;color:var(--bad);padding:11px 14px;
+ border-radius:10px;font-size:12.5px;margin-bottom:16px;font-family:ui-monospace,Menlo,Consolas,monospace}
+ @media print{
+  .btns,input[type=range]{display:none}
+  body{background:#fff}
+  .card,.hero{box-shadow:none;break-inside:avoid}
+  header{background:#0b2b47}
+  #saveCard{display:none}
+ }
+</style>
+</head>
+<body>
+<div class='wrap'>
+<div class='card' id='accessBlocked' style='display:none;margin-top:0'>
+ <h2>Access restricted</h2>
+ <p class='note' id='accessBlockedMsg'>The Quotation Calculator is only available to Admin and Branch Manager accounts.</p>
+</div>
+<div id='calcContent'>
+<header>
+ <h1>Security Guard Service - Cost per Manhour</h1>
+ <p>Drag the sliders or type in the yellow fields. Overtime is priced at a fixed RM per hour. Guards Required drives every calculation and is editable. Currency: RM.</p>
+ <p id='headerClient' style='margin:6px 0 0;font-weight:700;color:#eaf6ff'></p>
+ <div class='tabs'>
+  <button type='button' class='tab on' id='tabF' onclick='setOtMode(1)'>Fixed OT Rate</button>
+  <button type='button' class='tab' id='tabM' onclick='setOtMode(2)'>Multiplier OT Rate</button>
+ </div>
+</header>
+<div class='errbar' id='errBar'></div>
+<div class='grid'>
+<div>
+ <div class='card' id='saveCard'>
+  <h2>Quotation Details &amp; Save</h2>
+  <div class='row'><span class='lbl'>Sync status</span><span class='syncBadge' id='syncStatus'><span class='syncDot checking' id='syncDot'></span><span id='syncText'>Checking sync…</span></span></div>
+  <div class='row'><span class='lbl'>Signed in as</span><span id='authArea' style='text-align:right'></span></div>
+  <div class='row'><label for='clientName'>Client Name<span class='tag'>required to save</span></label><input id='clientName' type='text' style='width:220px;text-align:left' placeholder='e.g. ABC Sdn Bhd' value=''></div>
+  <div class='row'><label for='quoteSite'>Site / Project (optional)</label><input id='quoteSite' type='text' style='width:220px;text-align:left' placeholder='e.g. Menara ABC, KL' value=''></div>
+  <div class='row'><label for='quoteNotes'>Notes (optional)</label><input id='quoteNotes' type='text' style='width:220px;text-align:left' placeholder='e.g. Revision 2 - added night posts' value=''></div>
+  <div class='row'><label for='quoteBranch'>Branch</label><span><select id='quoteBranch' hidden></select><span class='lbl' id='quoteBranchBadge' style='text-align:right;color:var(--muted)'></span></span></div>
+  <div class='row'><span class='lbl'>Currently editing</span><span id='editingStatus' style='font-weight:700;color:var(--accent);text-align:right'>New, unsaved quotation</span></div>
+  <div class='btns'>
+   <button type='button' onclick='saveQuotation()'>Save Quotation</button>
+   <button type='button' onclick='newQuotation()'>New Quotation</button>
+   <button type='button' onclick='exportAllQuotes()'>Export Backup (.json)</button>
+   <button type='button' onclick='document.getElementById("importFile").click()'>Import Backup (.json)</button>
+   <input type='file' id='importFile' accept='.json,application/json' style='display:none' onchange='importQuotesFile(this)'>
+  </div>
+  <div id='saveMsg'></div>
+  <p class='note'>Save stores every figure on this page - all inputs, guard posts, grades, misc items and fees - together with the Client Name, the date and time saved, who saved it and which branch it belongs to. This syncs automatically with your CRM team, the same way Duty Roster does - once Sync status reads Live, every save, load and delete is shared instantly with everyone who can see this branch. Admin and HQ see every saved quotation from every branch; a Branch Manager sees and saves only their own branch's. If sync is briefly unavailable, saves stay local to this browser - use Export Backup to keep a portable copy, and Import Backup to bring a backup file back in.</p>
+  <div class='msub'>Saved Quotations Log</div>
+  <div class='row'><label for='logSearch'>Search by client or site/project</label><input id='logSearch' type='text' style='width:220px;text-align:left' placeholder='Type to filter...'></div>
+  <div class='rwrap logWrap' id='logWrap'><table id='logTable'><thead><tr><th style='text-align:left'>Date &amp; time saved</th><th style='text-align:left'>Client</th><th style='text-align:left'>Site / Notes</th><th>Rate (RM/hr)</th><th>Guards</th><th style='text-align:left'>Branch</th><th style='text-align:left'>Created by</th><th>Actions</th></tr></thead><tbody id='logBody'></tbody></table></div>
+  <p class='note' id='logEmptyNote'>No quotations saved yet in this browser.</p>
+  <p class='note' id='logCountNote' style='display:none'></p>
+ </div>
+ <div class='card'>
+  <h2>1. Client Site Requirement</h2>
+  <div class='row'><label for='postPattern'>Post Requirement Pattern</label><select id='postPattern'><option value='U'>Same posts at all times</option><option value='DN'>Different posts for day and night shift</option><option value='WW'>Different posts for weekday and weekend (day = night)</option><option value='FULL'>Different posts for weekday/weekend and day/night</option><option value='CUSTOM'>Custom post list - mixed shift hours</option></select></div>
+  <div class='row pU'><label for='postsU'>Guard Posts (all shifts, all days)</label><input id='postsU' type='number' step='1' min='0' value='5'></div>
+  <div class='row pDN'><label for='postsDay'>Guard Posts - Day Shift</label><input id='postsDay' type='number' step='1' min='0' value='5'></div>
+  <div class='row pDN'><label for='postsNight'>Guard Posts - Night Shift</label><input id='postsNight' type='number' step='1' min='0' value='3'></div>
+  <div class='row pWW'><label for='postsWd'>Guard Posts - Weekday (Mon-Fri)</label><input id='postsWd' type='number' step='1' min='0' value='5'></div>
+  <div class='row pWW'><label for='postsWe'>Guard Posts - Weekend (Sat-Sun)</label><input id='postsWe' type='number' step='1' min='0' value='3'></div>
+  <div class='row pFULL'><label for='postsWdDay'>Guard Posts - Weekday Day Shift</label><input id='postsWdDay' type='number' step='1' min='0' value='5'></div>
+  <div class='row pFULL'><label for='postsWdNight'>Guard Posts - Weekday Night Shift</label><input id='postsWdNight' type='number' step='1' min='0' value='4'></div>
+  <div class='row pFULL'><label for='postsWeDay'>Guard Posts - Weekend Day Shift</label><input id='postsWeDay' type='number' step='1' min='0' value='3'></div>
+  <div class='row pFULL'><label for='postsWeNight'>Guard Posts - Weekend Night Shift</label><input id='postsWeNight' type='number' step='1' min='0' value='2'></div>
+  <div class='row'><label for='hoursDay'>Coverage Hours per Day</label><input id='hoursDay' type='number' step='0.5' min='0' value='24'></div>
+  <div class='row'><label for='daysWeek'>Coverage Days per Week</label><input id='daysWeek' type='number' step='1' min='0' max='7' value='7'></div>
+  <div class='row'><label for='contractMonths'>Contract Period</label><span><input id='contractMonths' type='number' step='1' min='1' value='12'> <select id='contractUnit'><option value='D'>Days</option><option value='M' selected>Months</option><option value='Y'>Years</option></select></span></div>
+  <div class='pCUSTOM'>
+   <div class='msub'>Custom post list</div>
+   <div class='row strong'><span class='lbl'>Post block</span><span class='out'>Slots / week</span><span class='out'>Manhours / week</span><span class='xspace'></span></div>
+   <div id='postList'></div>
+   <div class='btns'><button type='button' onclick='addPost()'>Add post block</button></div>
+   <div class='row strong'><span class='lbl'>Total across blocks</span><span class='out' id='pcSlots'></span><span class='out' id='pcMh'></span><span class='xspace'></span></div>
+   <p class='note'>Each block is a number of posts covering one shift length, on weekdays, weekends or every day, in the day or night period. Example: 1 post day shift 12 hours on weekdays, plus 2 posts day shift 16 hours on weekdays. Blocks are independent so shift lengths can differ. In this mode Coverage Hours per Day and Hours per Shift no longer drive coverage - Hours per Shift still drives the wage build-up - and Coverage Days per Week still decides which days are worked.</p>
+  </div>
+  <div class='row'><span class='lbl'>Shift Slots per Week (all posts)</span><span class='out' id='slotsWeekTop'></span></div>
+  <p class='note'>A shift counts as day when it starts between 06:00 and 18:00 (derived from Roster Start Hour and Hours per Shift); anything else is night. Weekend means Saturday and Sunday. If Coverage Days per Week is 5 or fewer, weekend posts are never used.</p>
+ </div>
+ <div class='card'>
+  <h2>1b. Guard Grades - Secondary Requirement</h2>
+  <div class='row'><label for='gradesOn'>Use guard grades</label><select id='gradesOn'><option value='N' selected>No - single guard type</option><option value='Y'>Yes - graded team</option></select></div>
+  <div id='gradeBody'>
+  <div class='msub'>Compulsory grades - billed to the client at their own rate</div>
+  <div class='row strong'><span class='lbl'>Grade / headcount / basic / allowance</span><span class='out'>Cost / person</span><span class='out'>Total cost</span><span class='xspace'></span></div>
+  <div id='gradeListC'></div>
+  <div class='btns'><button type='button' onclick='addGradeC()'>Add compulsory grade</button></div>
+  <div class='msub'>Special grades - billed together with the remaining security guards</div>
+  <div class='row strong'><span class='lbl'>Grade / headcount / basic / allowance</span><span class='out'>Cost / person</span><span class='out'>Total cost</span><span class='xspace'></span></div>
+  <div id='gradeListS'></div>
+  <div class='btns'><button type='button' onclick='addGradeS()'>Add special grade</button></div>
+  <div class='row'><span class='lbl'>Headcount in graded roles (compulsory + special)</span><span class='out' id='gradeHeadOut'></span><span class='xspace'></span></div>
+  <div class='row'><span class='lbl'>Remaining security guards (on section 4 basic salary)</span><span class='out' id='gradeRemainOut'></span><span class='xspace'></span></div>
+  <div class='row strong'><span class='lbl'>Total headcount / total guard cost</span><span class='out' id='gradeTotHeadOut'></span><span class='out' id='gradeCostOut'></span><span class='xspace'></span></div>
+  <div id='gradeWarn'></div>
+  <p class='note'>Compulsory grades are quoted to the client separately in section 6b, with their own markup. Special grades are pooled with the remaining security guards and quoted at the main rate in section 6. Remaining headcount is Guards Required less all graded headcount, and those guards are costed on the Basic Salary in section 4. Overtime, rest-day and public-holiday terms and all statutory rates are shared by every grade. Coverage manhours and misc costs are split between the two billing streams in proportion to headcount.</p>
+  </div>
+ </div>
+ <div class='card'>
+  <h2>2. Shift and Roster Parameters</h2>
+  <div class='row'><label for='shiftHrs'>Hours per Shift</label><input id='shiftHrs' type='number' step='0.5' min='0.5' value='12'></div>
+  <div class='row'><label for='restDays'>Rest Days per Guard per Week</label><input id='restDays' type='number' step='1' min='0' max='6' value='1'></div>
+  <div class='row'><label for='normalHrs'>Normal Working Hours (per day)</label><input id='normalHrs' type='number' step='0.5' min='0' value='8'></div>
+ </div>
+ <div class='card'>
+  <h2>3. Guards Required</h2>
+  <div class='row'><span class='lbl'>Shifts Needed per Day</span><span class='out' id='shiftsDay'></span></div>
+  <div class='row'><span class='lbl'>Total Shift-Slots per Week</span><span class='out' id='slotsWeek'></span></div>
+  <div class='row'><span class='lbl'>Working Days per Guard per Week</span><span class='out' id='workDaysWeek'></span></div>
+  <div class='row'><span class='lbl'>Guards Required - Suggested (from roster math)</span><span class='out' id='guardsSuggested'></span></div>
+  <div class='row key'><label for='guards'>Guards Required - USED IN ALL CALCULATIONS<span class='tag' id='guardsTag'></span></label><input id='guards' type='number' step='1' min='0' value='12'></div>
+  <p class='note'>The suggested figure assumes each guard covers one shift on each working day (rest days rotate across the roster). The editable field is what every downstream calculation uses - it follows the suggestion automatically until you change it. Press Sync to suggested to reconnect it.</p>
+ </div>
+ <div class='card'>
+  <h2>Duty Roster Suggestion</h2>
+  <div class='row'><label for='rosterStart'>Roster Start Hour (0-23)</label><input id='rosterStart' type='number' step='1' min='0' max='23' value='7'></div>
+  <div class='row'><span class='lbl'>Roster view</span><select id='rosterView'><option value='7'>Weekly (7 days)</option><option value='14'>Bi-weekly (14 days)</option><option value='M'>Monthly (calendar month)</option></select></div>
+  <div class='row'><span class='lbl'>Month and year (monthly view)</span><span><select id='rosterMonth'><option value='0'>January</option><option value='1'>February</option><option value='2'>March</option><option value='3'>April</option><option value='4'>May</option><option value='5'>June</option><option value='6'>July</option><option value='7'>August</option><option value='8'>September</option><option value='9'>October</option><option value='10'>November</option><option value='11'>December</option></select> <select id='rosterYear'></select></span></div>
+  <div class='btns'><button type='button' onclick='shiftMonth(-1)'>Prev month</button><button type='button' onclick='shiftMonth(1)'>Next month</button><button type='button' onclick='thisMonth()'>This month</button></div>
+  <div class='rtitle' id='rosterTitle'></div>
+  <div class='legend' id='rosterLegend'></div>
+  <div class='rwrap' id='roster'></div>
+  <div id='rosterWarn'></div>
+  <p class='note'>The roster is generated from Guards Required (used in all calculations), guard posts, coverage hours and hours per shift. Guards are rotated round-robin so shifts and rest days spread as evenly as the headcount allows. Each cell shows the shift letter and the post number; OFF means a rest day. Change Guards Required and the roster re-draws.</p>
+ </div>
+ <div class='card'>
+  <h2>4. Per-Guard Monthly Cost - Inputs</h2>
+  <div class='msub'>Basic Inputs</div>
+  <div class='row'><label for='basic'>Basic Salary (RM)</label><span><input id='basic' type='number' step='50' min='0' value='1700'> <select id='salaryBasis'><option value='M' selected>Monthly</option><option value='D'>Daily</option></select></span></div>
+  <div class='row'><span class='lbl'>Basic Salary - Monthly Equivalent (RM)</span><span class='out' id='basicMoEq'></span></div>
+  <div class='row'><label for='workDaysMo'>Working Days per Month</label><input id='workDaysMo' type='number' step='1' min='1' value='26'></div>
+  <div class='row'><label for='rdDays'>Rest Days Worked per Month (within normal shift)</label><input id='rdDays' type='number' step='1' min='0' value='4'></div>
+  <div class='row'><label for='phDays'>Public Holidays Worked per Month (within shift)</label><input id='phDays' type='number' step='1' min='0' value='0'></div>
+  <div class='msub'>Normal Overtime</div>
+  <div class='row'><label for='otHrs'>Overtime Hours per Month (per guard)</label><input id='otHrs' type='number' step='1' min='0' value='104'></div>
+  <div class='row mF'><label for='otRate'>Overtime Rate (RM per hour)</label><input id='otRate' type='number' step='0.01' min='0' value='6.13'></div>
+  <div class='row mM'><label for='otMult'>Overtime Rate Multiplier (x normal hourly rate)</label><input id='otMult' type='number' step='0.05' min='0' value='0.75'></div>
+  <div class='msub'>Rest Day Overtime</div>
+  <div class='row'><label for='rdMult'>Rest Day Rate Multiplier (x normal daily rate)</label><input id='rdMult' type='number' step='0.5' min='0' value='1'></div>
+  <div class='row'><label for='rdOtHrs'>Rest Day OT Hours per Month (beyond shift)</label><input id='rdOtHrs' type='number' step='1' min='0' value='16'></div>
+  <div class='row mF'><label for='rdOtRate'>Rest Day OT Rate (RM per hour)</label><input id='rdOtRate' type='number' step='0.01' min='0' value='8.17'></div>
+  <div class='row mM'><label for='rdOtMult'>Rest Day OT Rate Multiplier (x normal hourly rate)</label><input id='rdOtMult' type='number' step='0.5' min='0' value='1'></div>
+  <div class='msub'>Public Holiday Overtime</div>
+  <div class='row'><label for='phMult'>Public Holiday Rate Multiplier (x normal daily rate)</label><input id='phMult' type='number' step='0.5' min='0' value='1'></div>
+  <div class='row'><label for='phOtHrs'>Public Holiday OT Hours per Month (beyond shift)</label><input id='phOtHrs' type='number' step='1' min='0' value='0'></div>
+  <div class='row mF'><label for='phOtRate'>Public Holiday OT Rate (RM per hour)</label><input id='phOtRate' type='number' step='0.01' min='0' value='8.17'></div>
+  <div class='row mM'><label for='phOtMult'>Public Holiday OT Rate Multiplier (x normal hourly rate)</label><input id='phOtMult' type='number' step='0.5' min='0' value='1'></div>
+  <div class='msub'>Statutory Employer Contribution</div>
+  <div class='row'><label for='epf'>EPF Employer Contribution Rate (%)</label><input id='epf' type='number' step='0.1' min='0' value='13'></div>
+  <div class='row'><label for='socso'>SOCSO Employer Contribution Rate (%)</label><input id='socso' type='number' step='0.05' min='0' value='1.75'></div>
+  <div class='row'><label for='eis'>EIS Employer Contribution Rate (%)</label><input id='eis' type='number' step='0.05' min='0' value='0.2'></div>
+  <div class='row'><label for='ceiling'>SOCSO/EIS Wage Ceiling (RM)</label><input id='ceiling' type='number' step='100' min='0' value='5000'></div>
+ </div>
+ <div class='card'>
+  <h2>4b. Per-Guard Monthly Cost - Build-Up</h2>
+  <div class='row'><span class='lbl'>Normal Hours per Month (per guard)</span><span class='out' id='normalHrsMo'></span></div>
+  <div class='row'><span class='lbl'>Hourly Basic Rate (RM/hr)</span><span class='out' id='hourly'></span></div>
+  <div class='row'><span class='lbl'>Allowance (RM)</span><span class='out' id='allowPay'></span></div>
+  <div class='row'><span class='lbl'>Overtime Pay (RM)</span><span class='out' id='otPay'></span></div>
+  <div class='row'><span class='lbl'>Rest Day Pay (RM)</span><span class='out' id='rdPay'></span></div>
+  <div class='row'><span class='lbl'>Rest Day OT Pay (RM)</span><span class='out' id='rdOtPay'></span></div>
+  <div class='row'><span class='lbl'>Public Holiday Pay (RM)</span><span class='out' id='phPay'></span></div>
+  <div class='row'><span class='lbl'>Public Holiday OT Pay (RM)</span><span class='out' id='phOtPay'></span></div>
+  <div class='row strong'><span class='lbl'>Gross Monthly Wages (RM)</span><span class='out' id='gross'></span></div>
+  <div class='row'><span class='lbl'>EPF Employer Contribution (on basic salary) (RM)</span><span class='out' id='epfAmt'></span></div>
+  <div class='row'><span class='lbl'>SOCSO Employer Contribution (RM)</span><span class='out' id='socsoAmt'></span></div>
+  <div class='row'><span class='lbl'>EIS Employer Contribution (RM)</span><span class='out' id='eisAmt'></span></div>
+  <div class='row strong'><span class='lbl' id='costGuardLbl'>Total Monthly Cost per Guard (RM)</span><span class='out' id='costGuard'></span></div>
+ </div>
+ <div class='card'>
+  <h2>4c. Misc / Equipment Cost</h2>
+  <div class='row strong'><span class='lbl'>Item</span><span class='out'>Per month</span><span class='out'>Full term</span><span class='xspace'></span></div>
+  <div class='msub'>Compulsory items - issued per guard over the contract period</div>
+  <div id='miscC'></div>
+  <div class='btns'><button type='button' onclick='addMiscC()'>Add compulsory item</button></div>
+  <div class='msub'>Optional items - one-off lump sum or monthly rental over the contract period</div>
+  <div id='miscO'></div>
+  <div class='btns'><button type='button' onclick='addMiscL()'>Add lump sum item</button><button type='button' onclick='addMiscR()'>Add monthly rental item</button></div>
+  <div class='row strong'><span class='lbl'>Total misc / equipment cost</span><span class='out' id='miscMonthlyOut'></span><span class='out' id='miscTotalOut'></span><span class='xspace'></span></div>
+  <p class='note'>Every line is priced as quantity x price per unit. Compulsory items use quantity per guard x price per unit x Guards Required, paid once and spread over the contract period. A lump sum item is units x price per unit paid once for the whole term, shown per month as the term average. A monthly rental item is units x price per unit charged every month of the term. All misc costs are added to the site cost, so they flow into the cost per manhour, the quoted rate and the contract summary.</p>
+ </div>
+ <div class='card'>
+  <h2>4d. Management Fee</h2>
+  <div class='row strong'><span class='lbl'>Fee item</span><span class='out'>Per month</span><span class='out'>Full term</span><span class='xspace'></span></div>
+  <div id='feeList'></div>
+  <div class='btns'><button type='button' onclick='addFee()'>Add management fee item</button></div>
+  <div class='row strong'><span class='lbl'>Total management fee</span><span class='out' id='feeTotalOut'></span><span class='out' id='feeTermOut'></span><span class='xspace'></span></div>
+  <div class='row'><span class='lbl'>Total fee rate (% of revenue billed)</span><span class='out' id='feeRateOut'></span><span class='xspace'></span></div>
+  <div id='feeWarn'></div>
+  <p class='note'>Each item is charged as a percentage of the revenue billed to the client. The fee is NOT part of the cost per manhour or the quoted rate - the client is not charged for it. It is deducted from gross profit after revenue is billed, producing the final gross profit and final margin shown in sections 6 and 7 and in the summary panel.</p>
+ </div>
+ <div class='card'>
+  <h2 id='breakLbl'>Cost Breakdown - One Guard per Month</h2>
+  <div class='bar' id='bar'></div>
+  <div class='legend' id='legend'></div>
+ </div>
+ <div class='card'>
+  <h2>5. Site Totals and Result</h2>
+  <div class='row'><span class='lbl'>Guards Required Used for this Site</span><span class='out' id='guardsUsedOut'></span></div>
+   <div class='row'><span class='lbl' id='siteCostLbl'>Monthly Guard Wage Cost - Site (RM)</span><span class='out' id='siteCost'></span></div>
+   <div class='row'><span class='lbl' id='siteMiscLbl'>Monthly Misc / Equipment Cost - Site (RM)</span><span class='out' id='siteMisc'></span></div>
+   <div class='row'><span class='lbl'>of which compulsory grades (RM)</span><span class='out' id='siteCostC'></span></div>
+   <div class='row'><span class='lbl'>of which main stream (RM)</span><span class='out' id='siteCostS'></span></div>
+   <div class='row strong'><span class='lbl' id='siteTotalLbl'>TOTAL Monthly Site Cost (RM)</span><span class='out' id='siteTotal'></span></div>
+  <div class='row'><span class='lbl' id='manhoursLbl'>Total Site Coverage Manhours per Month</span><span class='out' id='manhours'></span></div>
+  <div class='row strong'><span class='lbl'>Cost per Manhour - Client Billing Basis (RM/hr)</span><span class='out' id='cpmBill'></span></div>
+  <div class='row'><span class='lbl'>Cost per Manhour - Per-Guard Basis (RM/hr)</span><span class='out' id='cpmGuard'></span></div>
+  <p class='note'>Site cost = Guards Required (used) x Total Monthly Cost per Guard. Manhours use 4.348 weeks per month.</p>
+ </div>
+ <div class='card'>
+  <h2>6. Client Quote</h2>
+  <div class='row'><label for='markup'>Markup on Cost (%)</label><input id='markup' type='number' step='1' min='0' value='20'></div>
+  <div class='row strong'><span class='lbl'>Quoted Rate per Manhour (RM/hr)</span><span class='out' id='quote'></span></div>
+  <div class='row'><span class='lbl'>Gross Margin - Main Stream (%)</span><span class='out' id='margin'></span></div>
+  <div class='row'><span class='lbl'>Gross Margin - All Streams (%)</span><span class='out' id='marginTotal'></span></div>
+  <div class='row'><span class='lbl' id='revenueLbl'>Monthly Revenue - Site (RM)</span><span class='out' id='revenue'></span></div>
+  <div class='row'><span class='lbl' id='profitLbl'>Monthly Gross Profit - Site (RM)</span><span class='out' id='profit'></span></div>
+  <div class='row'><span class='lbl' id='feeSiteLbl'>Less: Management Fee (RM)</span><span class='out' id='feeSite'></span></div>
+  <div class='row strong'><span class='lbl' id='finalProfitLbl'>FINAL Gross Profit after Management Fee (RM)</span><span class='out' id='finalProfit'></span></div>
+  <div class='row strong'><span class='lbl'>FINAL Gross Margin after Management Fee</span><span class='out' id='finalMargin'></span></div>
+ </div>
+ <div class='card' id='card6b'>
+  <h2>6b. Compulsory Grade Billing - Separate Rate</h2>
+  <div class='rwrap'><table id='bcTable'><thead><tr><th>Compulsory grade</th><th>Pax</th><th>Manhours</th><th>Cost (RM)</th><th>Cost/hr</th><th>Rate/hr</th><th>Revenue</th><th>Gross profit</th></tr></thead><tbody id='bcBody'></tbody></table></div>
+  <div class='row strong'><span class='lbl'>TOTAL compulsory headcount</span><span class='out' id='bcHead'></span></div>
+  <div class='row'><span class='lbl' id='bcMhLbl'>Coverage manhours (pro-rata)</span><span class='out' id='bcMh'></span></div>
+  <div class='row'><span class='lbl' id='bcCostLbl'>Cost - compulsory grades (RM)</span><span class='out' id='bcCost'></span></div>
+  <div class='row'><span class='lbl'>Cost per Manhour - Compulsory (RM/hr)</span><span class='out' id='bcCpm'></span></div>
+  <div class='row'><label for='compMarkup'>Markup on Cost - Compulsory (%)</label><input id='compMarkup' type='number' step='1' min='0' value='25'></div>
+  <div class='row strong'><span class='lbl'>QUOTED RATE - Compulsory (RM/hr)</span><span class='out' id='bcQuote'></span></div>
+  <div class='row'><span class='lbl'>Gross margin - Compulsory</span><span class='out' id='bcMargin'></span></div>
+  <div class='row'><span class='lbl' id='bcRevLbl'>Revenue - Compulsory (RM)</span><span class='out' id='bcRev'></span></div>
+  <div class='row'><span class='lbl' id='bcProLbl'>Gross profit - Compulsory (RM)</span><span class='out' id='bcPro'></span></div>
+  <p class='note'>Every compulsory grade is listed individually with its own headcount, share of coverage manhours, cost, cost per manhour, quoted rate, revenue and gross profit. Each carries the compulsory markup below. Manhours and misc cost are allocated in proportion to headcount, so the individual lines add up to the totals shown, and this stream's revenue and gross profit feed the totals in sections 6 and 7.</p>
+ </div>
+ <div class='card'>
+  <h2>7. Contract Summary</h2>
+  <div class='msub'>Contract period is set in section 1 - Client Site Requirement</div>
+  <div class='row'><span class='lbl'>Equivalent months</span><span class='out' id='cMonthsEq'></span></div>
+  <div class='row'><span class='lbl'>Equivalent years</span><span class='out' id='contractYears'></span></div>
+  <div class='row strong'><span class='lbl'>Item</span><span class='out'>Per month</span><span class='out'>Full term</span></div>
+  <div class='row'><span class='lbl'>Coverage manhours</span><span class='out' id='cMhM'></span><span class='out' id='cMhT'></span></div>
+  <div class='row'><span class='lbl'>Revenue (RM)</span><span class='out' id='cRevM'></span><span class='out' id='cRevT'></span></div>
+   <div class='row'><span class='lbl'>Guard wage cost (RM)</span><span class='out' id='cCostM'></span><span class='out' id='cCostT'></span></div>
+   <div class='row'><span class='lbl'>Misc / equipment cost (RM)</span><span class='out' id='cMiscM'></span><span class='out' id='cMiscT'></span></div>
+   <div class='row'><span class='lbl'>Total cost (RM)</span><span class='out' id='cTotM'></span><span class='out' id='cTotT'></span></div>
+   <div class='row strong'><span class='lbl'>Gross profit (RM)</span><span class='out' id='cProM'></span><span class='out' id='cProT'></span></div>
+   <div class='row'><span class='lbl'>Less: management fee (RM)</span><span class='out' id='cFeeM'></span><span class='out' id='cFeeT'></span></div>
+   <div class='row strong'><span class='lbl'>FINAL gross profit after fee (RM)</span><span class='out' id='cFinalM'></span><span class='out' id='cFinalT'></span></div>
+   <div class='row'><span class='lbl'>Gross margin (before fee)</span><span class='out' id='cMargin'></span></div>
+   <div class='row strong'><span class='lbl'>FINAL gross margin after fee</span><span class='out' id='cFinalMargin'></span></div>
+  <p class='note'>Full-term figures are the monthly result multiplied by the contract period. They assume the cost base, headcount and quoted rate hold for the whole term - no salary escalation or annual price revision is modelled.</p>
+ </div>
+ <div class='card'>
+  <h2>Sensitivity - Quoted Rate vs Driver</h2>
+  <div class='row'><span class='lbl'>Driver to vary</span><select id='sensDriver'>
+   <option value='markup'>Markup on Cost (%)</option>
+   <option value='guards'>Guards Required</option>
+   <option value='basic'>Basic Monthly Salary (RM)</option>
+   <option value='otHrs'>Overtime Hours per Month</option>
+   <option value='otX'>Overtime rate / multiplier</option>
+  </select></div>
+  <div id='chart'></div>
+  <p class='note'>The red marker is your current setting. Varying guard posts also re-derives the suggested headcount unless you have overridden Guards Required.</p>
+ </div>
+ <div class='card'>
+  <h2>Scenario Comparison</h2>
+  <div class='btns'>
+   <button type='button' onclick='saveScen(0)'>Save as Base</button>
+   <button type='button' onclick='saveScen(1)'>Save as Best</button>
+   <button type='button' onclick='saveScen(2)'>Save as Worst</button>
+   <button type='button' onclick='clearScen()'>Clear all</button>
+  </div>
+  <div style='height:10px'></div>
+  <table id='scenTable'>
+   <thead><tr><th>Metric</th><th>Current</th><th>Base</th><th>Best</th><th>Worst</th></tr></thead>
+   <tbody id='scenBody'></tbody>
+  </table>
+  <div class='btns'>
+   <button type='button' onclick='loadScen(0)'>Load Base</button>
+   <button type='button' onclick='loadScen(1)'>Load Best</button>
+   <button type='button' onclick='loadScen(2)'>Load Worst</button>
+  </div>
+  <p class='note'>Best and Worst show the difference against Base underneath each figure. Scenarios live in this browser tab only and are lost when you refresh.</p>
+ </div>
+ <div class='card'>
+  <h2>Assumption Sources</h2>
+  <p class='note'>EPF employer rate 13% applies for monthly wages up to RM5,000 (12% above) - per KWSP Third Schedule. EPF is charged on basic salary only, not on overtime or premium pay.</p>
+  <p class='note'>SOCSO (Category 1) and EIS employer rates are simplified flat-rate approximations of PERKESO tiered contribution tables; use the official PERKESO table for payroll-exact figures.</p>
+  <p class='note' id='otModeNote'></p>
+ </div>
+</div>
+<div>
+ <div class='sticky'>
+  <div class='card hero'>
+   <div class='k'>Quoted Rate to Client</div>
+   <div class='v'><span id='heroRate'></span></div>
+   <div class='s'>RM per manhour</div>
+   <div style='height:12px'></div>
+   <div class='mini'><span>Client</span><b id='mClient'>-</b></div>
+   <div class='mini'><span>Contract period</span><b id='mContract'></b></div>
+   <div class='mini'><span>Guards used</span><b id='mGuards'></b></div>
+   <div class='mini'><span id='mBasicLbl'>Basic salary per guard</span><b id='mBasic'></b></div>
+   <div class='mini'><span>Billing cost / hour</span><b id='mCost'></b></div>
+   <div class='mini'><span>Gross margin</span><b id='mMargin'></b></div>
+   <div class='mini'><span id='mRevLbl'>Monthly revenue</span><b id='mRev'></b></div>
+   <div class='mini'><span id='mProfitLbl'>Monthly gross profit</span><b id='mProfit'></b></div>
+   <div class='mini'><span>Less: management fee</span><b id='mFee'></b></div>
+   <div class='mini'><span id='mFinalLbl'>Final gross profit</span><b id='mFinal'></b></div>
+   <div class='mini'><span>Final gross margin</span><b id='mFinalMargin'></b></div>
+   <div class='mini'><span>Contract revenue (full term)</span><b id='mCRev'></b></div>
+   <div class='mini'><span>Contract gross profit (full term)</span><b id='mCPro'></b></div>
+  </div>
+  <div class='card hero hero2'>
+   <div class='k'>Adjusted Quoted Rate to Client<span class='tag' id='adjTag'></span></div>
+   <div class='v'><input id='adjRate' type='number' step='0.01' min='0' value='0'></div>
+   <div class='s'>RM per manhour - edit this to test a price</div>
+   <div style='height:12px'></div>
+   <div class='mini'><span>Suggested rate</span><b id='aSug'></b></div>
+   <div class='mini'><span>Difference vs suggested</span><b id='aDiffRate'></b></div>
+   <div class='mini'><span>Billing cost / hour</span><b id='aCost'></b></div>
+   <div class='mini'><span>Gross margin</span><b id='aMargin'></b></div>
+   <div class='mini'><span id='aRevLbl'>Monthly revenue</span><b id='aRev'></b></div>
+   <div class='mini'><span id='aProLbl'>Monthly gross profit</span><b id='aPro'></b></div>
+   <div class='mini'><span>Less: management fee</span><b id='aFee'></b></div>
+   <div class='mini'><span>Final gross profit</span><b id='aFinal'></b></div>
+   <div class='mini'><span>Final gross margin</span><b id='aFinalMargin'></b></div>
+   <div class='mini'><span>Contract revenue (full term)</span><b id='aCRev'></b></div>
+   <div class='mini'><span>Contract gross profit (full term)</span><b id='aCPro'></b></div>
+   <div class='mini'><span>Profit difference (full term)</span><b id='aDiffPro'></b></div>
+  </div>
+  <div class='btns'><button type='button' onclick='resetAdj()'>Reset to suggested rate</button></div>
+  <div class='btns'>
+   <button type='button' onclick='syncGuards()'>Sync to suggested</button>
+   <button type='button' onclick='resetAll()'>Reset defaults</button>
+   <button type='button' onclick='window.print()'>Print / PDF</button>
+  </div>
+ </div>
+</div>
+</div>
+</div>
+</div>
+<!--
+  ============================================================================
+  EMBEDDED BUILD — served from this CRM's own public/quotation-calculator/
+  folder and opened inside an <iframe> by src/pages/QuotationCalculatorPage.tsx.
+  It shares the CRM's own Firebase project ("ipsb-crm") rather than a separate
+  one, the same way public/duty-roster/index.html does: firebase-config.js
+  (sitting next to this file) carries that project's real web app config, and
+  initSync() below calls firebase.auth() to pick up the CRM's already-signed-in
+  user (Firebase Auth's persisted session is shared across app instances
+  pointed at the same project, in the same browser) so Firestore's security
+  rules can see request.auth — no separate Google sign-in inside this page.
+  Only admin and branchManager accounts can do anything here; see
+  firestore.rules' /quotations block for the real enforcement, and the access
+  check in initSync() below for the in-page message shown to anyone else who
+  reaches this URL directly.
+  ============================================================================
+-->
+<script src='https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js'></script>
+<script src='https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js'></script>
+<script src='https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js'></script>
+<script src='firebase-config.js'></script>
+<script>
+window.onerror = function(msg, src, line, col){
+ var b=document.getElementById('errBar');
+ if(b){ b.style.display='block'; b.textContent='Script error: '+msg+'  (line '+line+', col '+col+')'; }
+ return false;
+};
+var WEEKS_PER_MONTH = 4.348;
+var DAYS_PER_MONTH = 4.348*7;
+function contractTermMonths(o){
+ var u = o.contractUnit || 'M';
+ var q = isFinite(o.contractMonths) ? o.contractMonths : 0;
+ var m = (u==='Y') ? q*12 : ((u==='D') ? q/DAYS_PER_MONTH : q);
+ if(!(m>0)) m = 1;
+ return m;
+}
+var DAYS_PER_WEEK = 7;
+var defaults = {};
+var guardsTouched = false;
+var adjTouched = false;
+var sliders = {};
+var R = null;
+var scen = [null,null,null];
+var SCEN_NAMES = ['Base','Best','Worst'];
+var ids = ['postsU','postsDay','postsNight','postsWd','postsWe','postsWdDay','postsWdNight','postsWeDay','postsWeNight','hoursDay','daysWeek','shiftHrs','restDays','normalHrs','guards','basic','workDaysMo','otHrs','otRate','otMult','rdDays','rdMult','rdOtHrs','rdOtRate','rdOtMult','phDays','phMult','phOtHrs','phOtRate','phOtMult','epf','socso','eis','ceiling','markup','compMarkup','contractMonths','rosterStart'];
+function v(id){ var n = parseFloat(document.getElementById(id).value); return isFinite(n)?n:0; }
+function fmt(val,dp){ return isFinite(val)? val.toLocaleString('en-MY',{minimumFractionDigits:dp,maximumFractionDigits:dp}) : '-'; }
+function put(id,val,dp){ document.getElementById(id).textContent = fmt(val,dp); }
+function pct(id,val){ document.getElementById(id).textContent = isFinite(val)? (val*100).toFixed(1)+'%' : '-'; }
+var miscItems = [
+ {type:'C', name:'Guard uniform (set)', qty:3, unit:85},
+ {type:'C', name:'Safety shoes (pair)', qty:2, unit:70}
+];
+function miscNum(val, step, w){
+ var e=document.createElement('input');
+ e.type='number'; e.step=step; e.min=0; e.value=val; e.style.width=w;
+ return e;
+}
+function miscCost(guards, periods, dayBasis){
+ var per=0, tt=0;
+ for(var i=0;i<miscItems.length;i++){
+  var it=miscItems[i], p=0, t=0;
+  var q=isFinite(it.qty)?it.qty:0, u=isFinite(it.unit)?it.unit:0;
+  if(it.type==='C'){ t=q*u*guards; p=periods>0? t/periods : 0; }
+  else if(it.type==='L'){ t=q*u; p=periods>0? t/periods : 0; }
+  else { var pm=q*u; p = dayBasis ? pm/DAYS_PER_MONTH : pm; t=p*periods; }
+  it._m=p; it._t=t; per+=p; tt+=t;
+ }
+ return {per:per, total:tt};
+}
+function addMiscC(){ miscItems.push({type:'C', name:'New compulsory item', qty:1, unit:0}); renderMisc(); calc(); }
+function addMiscL(){ miscItems.push({type:'L', name:'New lump sum item', qty:1, unit:0}); renderMisc(); calc(); }
+function addMiscR(){ miscItems.push({type:'R', name:'New rental item', qty:1, unit:0}); renderMisc(); calc(); }
+function removeMisc(it){ var i=miscItems.indexOf(it); if(i>-1){ miscItems.splice(i,1); renderMisc(); calc(); } }
+function renderMisc(){
+ var hc=document.getElementById('miscC'), ho=document.getElementById('miscO');
+ if(!hc||!ho) return;
+ while(hc.firstChild) hc.removeChild(hc.firstChild);
+ while(ho.firstChild) ho.removeChild(ho.firstChild);
+ for(var i=0;i<miscItems.length;i++){
+  (function(it){
+   var row=document.createElement('div'); row.className='row mrow';
+   var lbl=document.createElement('span'); lbl.className='lbl';
+   var nm=document.createElement('input'); nm.type='text'; nm.value=it.name; nm.style.width='150px';
+   nm.addEventListener('input',function(){ it.name=nm.value; });
+   lbl.appendChild(nm);
+   if(it.type==='C'){
+    var q=miscNum(it.qty,1,'58px'), u=miscNum(it.unit,1,'78px');
+    lbl.appendChild(document.createTextNode('qty per guard'));
+    lbl.appendChild(q);
+    lbl.appendChild(document.createTextNode('x RM'));
+    lbl.appendChild(u);
+    q.addEventListener('input',function(){ it.qty=parseFloat(q.value); if(!isFinite(it.qty)) it.qty=0; calc(); });
+    u.addEventListener('input',function(){ it.unit=parseFloat(u.value); if(!isFinite(it.unit)) it.unit=0; calc(); });
+   } else {
+    var q2=miscNum(it.qty,1,'58px'), u2=miscNum(it.unit,1,'88px');
+    lbl.appendChild(document.createTextNode('units'));
+    lbl.appendChild(q2);
+    lbl.appendChild(document.createTextNode('x RM'));
+    lbl.appendChild(u2);
+    lbl.appendChild(document.createTextNode(it.type==='L'? 'per unit, one-off' : 'per unit per month'));
+    q2.addEventListener('input',function(){ it.qty=parseFloat(q2.value); if(!isFinite(it.qty)) it.qty=0; calc(); });
+    u2.addEventListener('input',function(){ it.unit=parseFloat(u2.value); if(!isFinite(it.unit)) it.unit=0; calc(); });
+   }
+   var mEl=document.createElement('span'); mEl.className='out';
+   var tEl=document.createElement('span'); tEl.className='out';
+   it._mEl=mEl; it._tEl=tEl;
+   var rm=document.createElement('button'); rm.type='button'; rm.className='xbtn'; rm.textContent='Remove';
+   rm.addEventListener('click',function(){ removeMisc(it); });
+   row.appendChild(lbl); row.appendChild(mEl); row.appendChild(tEl); row.appendChild(rm);
+   (it.type==='C'? hc : ho).appendChild(row);
+  })(miscItems[i]);
+ }
+}
+function updateMiscAmounts(){
+ for(var i=0;i<miscItems.length;i++){
+  var it=miscItems[i];
+  if(it._mEl) it._mEl.textContent=fmt(it._m*(R?R.pf:1),2);
+  if(it._tEl) it._tEl.textContent=fmt(it._t,2);
+ }
+ put('miscMonthlyOut', R? R.miscPP : NaN, 2);
+ put('miscTotalOut', R? R.miscTotal : NaN, 2);
+}
+var feeItems = [ {name:'Head office management fee', pct:5} ];
+function feeTotalRate(){
+ var s=0;
+ for(var i=0;i<feeItems.length;i++){ var p=parseFloat(feeItems[i].pct); if(isFinite(p)) s+=p/100; }
+ return s;
+}
+function addFee(){ feeItems.push({name:'New fee item', pct:0}); renderFees(); calc(); }
+function removeFee(it){ var i=feeItems.indexOf(it); if(i>-1){ feeItems.splice(i,1); renderFees(); calc(); } }
+function renderFees(){
+ var host=document.getElementById('feeList');
+ if(!host) return;
+ while(host.firstChild) host.removeChild(host.firstChild);
+ for(var i=0;i<feeItems.length;i++){
+  (function(it){
+   var row=document.createElement('div'); row.className='row mrow';
+   var lbl=document.createElement('span'); lbl.className='lbl';
+   var nm=document.createElement('input'); nm.type='text'; nm.value=it.name; nm.style.width='170px';
+   nm.addEventListener('input',function(){ it.name=nm.value; });
+   var pc=document.createElement('input'); pc.type='number'; pc.step='0.1'; pc.min=0; pc.value=it.pct; pc.style.width='72px';
+   pc.addEventListener('input',function(){ it.pct=parseFloat(pc.value); if(!isFinite(it.pct)) it.pct=0; calc(); });
+   lbl.appendChild(nm);
+   lbl.appendChild(document.createTextNode('rate'));
+   lbl.appendChild(pc);
+   lbl.appendChild(document.createTextNode('% of revenue'));
+   var mEl=document.createElement('span'); mEl.className='out';
+   var tEl=document.createElement('span'); tEl.className='out';
+   it._fm=mEl; it._ft=tEl;
+   var rm=document.createElement('button'); rm.type='button'; rm.className='xbtn'; rm.textContent='Remove';
+   rm.addEventListener('click',function(){ removeFee(it); });
+   row.appendChild(lbl); row.appendChild(mEl); row.appendChild(tEl); row.appendChild(rm);
+   host.appendChild(row);
+  })(feeItems[i]);
+ }
+}
+function updateFeeAmounts(){
+ var rev = (R && isFinite(R.revenuePP)) ? R.revenuePP : 0;
+ var per = (R && isFinite(R.periods)) ? R.periods : 1;
+ for(var i=0;i<feeItems.length;i++){
+  var it=feeItems[i];
+  var p=parseFloat(it.pct); if(!isFinite(p)) p=0;
+  var amt = rev*p/100;
+  if(it._fm) it._fm.textContent=fmt(amt,2);
+  if(it._ft) it._ft.textContent=fmt(amt*per,2);
+ }
+ put('feeTotalOut', R? R.feeAmt : NaN, 2);
+ put('feeTermOut', R? R.contractFee : NaN, 2);
+ pct('feeRateOut', R? R.feeRate : NaN);
+ var w=document.getElementById('feeWarn');
+ while(w.firstChild) w.removeChild(w.firstChild);
+ if(R && !R.feasible){
+  var d=document.createElement('div'); d.className='warn';
+  d.textContent='Total fee rate is 100% or more of revenue, which would wipe out all gross profit. Reduce the fee rate.';
+  w.appendChild(d);
+ }
+}
+var gradeItems = [
+ {kind:'C', name:'Site Supervisor', n:1, basic:2200, allow:300, na:1},
+ {kind:'C', name:'Site Leader', n:2, basic:1900, allow:200, na:2},
+ {kind:'S', name:'Armed / Special Guard', n:2, basic:1900, allow:150, na:2}
+];
+function gradeAggregate(o, dayBasis, kind){
+ var out={n:0, cost:0, basic:0, allow:0, otPay:0, rdPay:0, rdOtPay:0, phPay:0, phOtPay:0, gross:0, epf:0, socso:0, eis:0};
+ for(var i=0;i<gradeItems.length;i++){
+  var g=gradeItems[i];
+  if(kind && (g.kind||'S')!==kind) continue;
+  var n=Math.max(0, Math.round(parseFloat(g.n)||0));
+  var na=Math.max(0, Math.round(parseFloat(g.na)||0));
+  if(na>n) na=n;
+  var gb=parseFloat(g.basic); if(!isFinite(gb)) gb=0;
+  var ga=parseFloat(g.allow); if(!isFinite(ga)) ga=0;
+  g._cp=0; g._tc=0;
+  if(n<=0) continue;
+  if(dayBasis){
+   var dR=(o.salaryBasis==='D')? gb : (o.workDaysMo>0? gb/o.workDaysMo : 0);
+   var dA=(o.salaryBasis==='D')? ga : (o.workDaysMo>0? ga/o.workDaysMo : 0);
+   var tot=n*dR + na*dA;
+   out.n+=n; out.basic+=n*dR; out.allow+=na*dA; out.gross+=tot; out.cost+=tot;
+   g._cp=tot/n; g._tc=tot;
+   continue;
+  }
+  var bm=(o.salaryBasis==='D')? gb*o.workDaysMo : gb;
+  var am=(o.salaryBasis==='D')? ga*o.workDaysMo : ga;
+  var nh=o.workDaysMo*o.normalHrs;
+  var hr=nh>0? bm/nh : 0;
+  var ot=(o.otMode==='M') ? o.otHrs*hr*o.otMult : o.otHrs*o.otRate;
+  var rd=o.rdDays*o.normalHrs*hr*o.rdMult;
+  var rdo=(o.otMode==='M') ? o.rdOtHrs*hr*o.rdOtMult : o.rdOtHrs*o.rdOtRate;
+  var ph=o.phDays*o.shiftHrs*hr*o.phMult;
+  var pho=(o.otMode==='M') ? o.phOtHrs*hr*o.phOtMult : o.phOtHrs*o.phOtRate;
+  var gTot=0;
+  for(var k=0;k<2;k++){
+   var cnt=(k===0)? na : (n-na);
+   if(cnt<=0) continue;
+   var al=(k===0)? am : 0;
+   var gr=bm+al+ot+rd+rdo+ph+pho;
+   var cap=Math.min(gr,o.ceiling);
+   var ep=bm*o.epf/100, so=cap*o.socso/100, ei=cap*o.eis/100;
+   var per=gr+ep+so+ei;
+   gTot+=cnt*per;
+   out.cost+=cnt*per; out.gross+=cnt*gr; out.epf+=cnt*ep; out.socso+=cnt*so; out.eis+=cnt*ei;
+   out.basic+=cnt*bm; out.allow+=cnt*al;
+   out.otPay+=cnt*ot; out.rdPay+=cnt*rd; out.rdOtPay+=cnt*rdo; out.phPay+=cnt*ph; out.phOtPay+=cnt*pho;
+  }
+  out.n+=n; g._cp=gTot/n; g._tc=gTot;
+ }
+ return out;
+}
+function addGradeC(){ gradeItems.push({kind:'C', name:'New compulsory grade', n:1, basic:2000, allow:0, na:0}); renderGrades(); calc(); }
+function addGradeS(){ gradeItems.push({kind:'S', name:'New special grade', n:1, basic:1800, allow:0, na:0}); renderGrades(); calc(); }
+function removeGrade(it){ var i=gradeItems.indexOf(it); if(i>-1){ gradeItems.splice(i,1); renderGrades(); calc(); } }
+function gradeNum(val,step,w){ var e=document.createElement('input'); e.type='number'; e.step=step; e.min=0; e.value=val; e.style.width=w; return e; }
+function renderGrades(){
+ var hc=document.getElementById('gradeListC'), hs=document.getElementById('gradeListS');
+ if(!hc||!hs) return;
+ while(hc.firstChild) hc.removeChild(hc.firstChild);
+ while(hs.firstChild) hs.removeChild(hs.firstChild);
+ for(var i=0;i<gradeItems.length;i++){
+  (function(it){
+   var row=document.createElement('div'); row.className='row mrow';
+   var lbl=document.createElement('span'); lbl.className='lbl';
+   var nm=document.createElement('input'); nm.type='text'; nm.value=it.name; nm.style.width='124px';
+   nm.addEventListener('input',function(){ it.name=nm.value; renderRoster(); });
+   var qn=gradeNum(it.n,1,'50px'), qb=gradeNum(it.basic,50,'78px'), qa=gradeNum(it.allow,10,'68px'), qna=gradeNum(it.na,1,'50px');
+   qn.addEventListener('input',function(){ it.n=parseFloat(qn.value); calc(); });
+   qb.addEventListener('input',function(){ it.basic=parseFloat(qb.value); calc(); });
+   qa.addEventListener('input',function(){ it.allow=parseFloat(qa.value); calc(); });
+   qna.addEventListener('input',function(){ it.na=parseFloat(qna.value); calc(); });
+   lbl.appendChild(nm);
+   lbl.appendChild(document.createTextNode('pax'));      lbl.appendChild(qn);
+   lbl.appendChild(document.createTextNode('basic RM')); lbl.appendChild(qb);
+   lbl.appendChild(document.createTextNode('allow RM')); lbl.appendChild(qa);
+   lbl.appendChild(document.createTextNode('to'));       lbl.appendChild(qna);
+   lbl.appendChild(document.createTextNode('pax'));
+   var cEl=document.createElement('span'); cEl.className='out';
+   var tEl=document.createElement('span'); tEl.className='out';
+   it._cpEl=cEl; it._tcEl=tEl;
+   var rm=document.createElement('button'); rm.type='button'; rm.className='xbtn'; rm.textContent='Remove';
+   rm.addEventListener('click',function(){ removeGrade(it); });
+   row.appendChild(lbl); row.appendChild(cEl); row.appendChild(tEl); row.appendChild(rm);
+   ((it.kind||'S')==='C'? hc : hs).appendChild(row);
+  })(gradeItems[i]);
+ }
+}
+function updateGradeVisibility(){
+ var on = (document.getElementById('gradesOn').value==='Y');
+ var gb = document.getElementById('gradeBody');
+ if(gb) gb.style.display = on ? '' : 'none';
+ var c6 = document.getElementById('card6b');
+ if(c6) c6.style.display = on ? '' : 'none';
+}
+function updateGradeAmounts(){
+ for(var i=0;i<gradeItems.length;i++){
+  var it=gradeItems[i];
+  if(it._cpEl) it._cpEl.textContent = fmt(it._cp,2);
+  if(it._tcEl) it._tcEl.textContent = fmt(it._tc,2);
+ }
+ put('gradeHeadOut', R? R.headGraded : NaN, 0);
+ put('gradeRemainOut', R? R.remaining : NaN, 0);
+ put('gradeTotHeadOut', R? R.totalHead : NaN, 0);
+ put('gradeCostOut', R? R.gradeCost : NaN, 2);
+ var w=document.getElementById('gradeWarn');
+ while(w.firstChild) w.removeChild(w.firstChild);
+ if(!R) return;
+ var msgs=[];
+ if(!R.gradesOn){ msgs.push(['okmsg','Guard grades are switched off - every guard is costed on the single Basic Salary in section 4.']); }
+ else {
+  var over=[];
+  for(var j=0;j<gradeItems.length;j++){
+   var g=gradeItems[j];
+   var n=Math.round(parseFloat(g.n)||0), na=Math.round(parseFloat(g.na)||0);
+   if(na>n) over.push(g.name);
+  }
+  if(over.length) msgs.push(['warn','With-allowance headcount exceeds total headcount for: '+over.join(', ')+'. Capped at the grade headcount.']);
+  if(R.headGraded > R.guardsRequired){
+   msgs.push(['warn','Graded headcount '+R.headGraded+' exceeds Guards Required '+R.guardsRequired+', so there are no remaining security guards and total headcount has risen to '+R.totalHead+'.']);
+  } else {
+   msgs.push(['okmsg',R.headGraded+' graded plus '+R.remaining+' remaining security guards = '+R.totalHead+' total headcount.']);
+  }
+  if(R.headC<=0) msgs.push(['warn','No compulsory grades entered, so section 6b has nothing to bill separately.']);
+ }
+ for(var k=0;k<msgs.length;k++){
+  var d=document.createElement('div'); d.className=msgs[k][0]; d.textContent=msgs[k][1]; w.appendChild(d);
+ }
+}
+function guardLabel(i){
+ if(!(R && R.gradesOn)) return 'Guard '+(i+1);
+ var k=0, j;
+ for(j=0;j<gradeItems.length;j++){
+  if((gradeItems[j].kind||'S')!=='C') continue;
+  var nc=Math.max(0,Math.round(parseFloat(gradeItems[j].n)||0));
+  if(i<k+nc) return gradeItems[j].name+' '+(i-k+1);
+  k+=nc;
+ }
+ for(j=0;j<gradeItems.length;j++){
+  if((gradeItems[j].kind||'S')==='C') continue;
+  var ns=Math.max(0,Math.round(parseFloat(gradeItems[j].n)||0));
+  if(i<k+ns) return gradeItems[j].name+' '+(i-k+1);
+  k+=ns;
+ }
+ return 'Security Guard '+(i-k+1);
+}
+var postItems = [
+ {dayType:'WD', period:'D', posts:1, hours:12},
+ {dayType:'WD', period:'D', posts:2, hours:16},
+ {dayType:'WE', period:'N', posts:1, hours:12}
+];
+function postMatches(e, dow){
+ var dt=e.dayType||'ALL';
+ if(dt==='ALL') return true;
+ if(dt==='WD') return dow<5;
+ return dow>=5;
+}
+function postWindow(e){
+ var st=v('rosterStart') + ((e.period==='N')? 12 : 0);
+ var h=parseFloat(e.hours); if(!isFinite(h)) h=0;
+ var a=((st%24)+24)%24, b=(((st+h)%24)+24)%24;
+ return pad2(a)+':00-'+pad2(b)+':00';
+}
+function postTag(e){
+ var h=parseFloat(e.hours); if(!isFinite(h)) h=0;
+ return (e.period==='N'?'N':'D')+h;
+}
+function customWeek(o){
+ var cov=Math.min(7, Math.max(0, Math.round(o.daysWeek)));
+ var slots=0, mh=0, maxDay=0;
+ for(var i=0;i<postItems.length;i++){ postItems[i]._sl=0; postItems[i]._mh=0; }
+ for(var dow=0; dow<cov; dow++){
+  var ds=0;
+  for(var j=0;j<postItems.length;j++){
+   var e=postItems[j];
+   if(!postMatches(e,dow)) continue;
+   var n=Math.max(0, Math.round(parseFloat(e.posts)||0));
+   var h=parseFloat(e.hours); if(!isFinite(h)||h<0) h=0;
+   ds+=n; slots+=n; mh+=n*h;
+   e._sl+=n; e._mh+=n*h;
+  }
+  if(ds>maxDay) maxDay=ds;
+ }
+ return {slots:slots, mh:mh, maxDay:maxDay};
+}
+function addPost(){ postItems.push({dayType:'WD', period:'D', posts:1, hours:12}); renderPosts(); calc(); }
+function removePost(e){ var i=postItems.indexOf(e); if(i>-1){ postItems.splice(i,1); renderPosts(); calc(); } }
+function postSel(opts, val){
+ var s=document.createElement('select');
+ for(var i=0;i<opts.length;i++){
+  var o=document.createElement('option'); o.value=opts[i][0]; o.textContent=opts[i][1];
+  if(opts[i][0]===val) o.selected=true;
+  s.appendChild(o);
+ }
+ s.value=val;
+ return s;
+}
+function renderPosts(){
+ var host=document.getElementById('postList');
+ if(!host) return;
+ while(host.firstChild) host.removeChild(host.firstChild);
+ for(var i=0;i<postItems.length;i++){
+  (function(e){
+   var row=document.createElement('div'); row.className='row mrow';
+   var lbl=document.createElement('span'); lbl.className='lbl';
+   var qn=gradeNum(e.posts,1,'52px');
+   var qh=gradeNum(e.hours,0.5,'58px');
+   var sd=postSel([['WD','Weekday'],['WE','Weekend'],['ALL','Every day']], e.dayType||'ALL');
+   var sp=postSel([['D','Day shift'],['N','Night shift']], e.period||'D');
+   qn.addEventListener('input',function(){ e.posts=parseFloat(qn.value); calc(); });
+   qh.addEventListener('input',function(){ e.hours=parseFloat(qh.value); calc(); });
+   sd.addEventListener('change',function(){ e.dayType=sd.value; calc(); });
+   sp.addEventListener('change',function(){ e.period=sp.value; calc(); });
+   lbl.appendChild(qn);
+   lbl.appendChild(document.createTextNode('post(s)'));
+   lbl.appendChild(sp);
+   lbl.appendChild(document.createTextNode('at'));
+   lbl.appendChild(qh);
+   lbl.appendChild(document.createTextNode('hour shift on'));
+   lbl.appendChild(sd);
+   var sEl=document.createElement('span'); sEl.className='out';
+   var mEl=document.createElement('span'); mEl.className='out';
+   e._slEl=sEl; e._mhEl=mEl;
+   var rm=document.createElement('button'); rm.type='button'; rm.className='xbtn'; rm.textContent='Remove';
+   rm.addEventListener('click',function(){ removePost(e); });
+   row.appendChild(lbl); row.appendChild(sEl); row.appendChild(mEl); row.appendChild(rm);
+   host.appendChild(row);
+  })(postItems[i]);
+ }
+}
+function updatePostAmounts(){
+ var ts=0, tm=0;
+ for(var i=0;i<postItems.length;i++){
+  var e=postItems[i];
+  if(e._slEl) e._slEl.textContent=fmt(e._sl,0);
+  if(e._mhEl) e._mhEl.textContent=fmt(e._mh,1);
+  ts+=(e._sl||0); tm+=(e._mh||0);
+ }
+ put('pcSlots',ts,0); put('pcMh',tm,1);
+}
+function engine(o, touched){
+ var shiftsPerDay = o.shiftHrs>0 ? Math.round(o.hoursDay/o.shiftHrs) : 0;
+ var cov = Math.min(7, Math.max(0, Math.round(o.daysWeek)));
+ var slotsWeek=0, manhoursWeek=0, maxDaySlots=0;
+ if(o.pattern==='CUSTOM'){
+  var cw=customWeek(o);
+  slotsWeek=cw.slots; manhoursWeek=cw.mh; maxDaySlots=cw.maxDay;
+  shiftsPerDay=postItems.length;
+ } else {
+ for(var dow=0; dow<cov; dow++){
+  var dayS=0;
+  for(var s=0; s<shiftsPerDay; s++){
+   var p=postsAt(o,dow,s);
+   if(!isFinite(p) || p<0) p=0;
+   dayS+=p; slotsWeek+=p; manhoursWeek+=p*o.shiftHrs;
+  }
+  if(dayS>maxDaySlots) maxDaySlots=dayS;
+ }
+ }
+ var dayBasis = (o.contractUnit==='D');
+ var workDaysWeek = DAYS_PER_WEEK - o.restDays;
+ var byRoster = workDaysWeek>0 ? Math.ceil(slotsWeek/workDaysWeek) : NaN;
+ var suggested = dayBasis ? maxDaySlots : (isFinite(byRoster) ? Math.max(byRoster, maxDaySlots) : NaN);
+ var guards = touched ? o.guards : (isFinite(suggested) ? suggested : o.guards);
+ var basicMonthly = (o.salaryBasis==='D') ? o.basic*o.workDaysMo : o.basic;
+ var dailyRate = (o.salaryBasis==='D') ? o.basic : (o.workDaysMo>0 ? o.basic/o.workDaysMo : 0);
+ var months = contractTermMonths(o);
+ var periods = dayBasis ? Math.max(1, o.contractMonths) : months;
+ var pw = dayBasis ? 'Daily' : 'Monthly';
+ var normalHrsMo, hourly, otPay, rdPay, rdOtPay, phPay, phOtPay, gross, epfAmt, socsoAmt, eisAmt, costGuard, allowPay;
+ if(dayBasis){
+  normalHrsMo = o.shiftHrs;
+  hourly = o.shiftHrs>0 ? dailyRate/o.shiftHrs : NaN;
+  otPay=0; rdPay=0; rdOtPay=0; phPay=0; phOtPay=0;
+  gross = dailyRate;
+  epfAmt=0; socsoAmt=0; eisAmt=0;
+  costGuard = dailyRate;
+ } else {
+  normalHrsMo = o.workDaysMo*o.normalHrs;
+  hourly = normalHrsMo>0 ? basicMonthly/normalHrsMo : NaN;
+  otPay = (o.otMode==='M') ? o.otHrs*hourly*o.otMult : o.otHrs*o.otRate;
+  rdPay = o.rdDays*o.normalHrs*hourly*o.rdMult;
+  rdOtPay = (o.otMode==='M') ? o.rdOtHrs*hourly*o.rdOtMult : o.rdOtHrs*o.rdOtRate;
+  phPay = o.phDays*o.shiftHrs*hourly*o.phMult;
+  phOtPay = (o.otMode==='M') ? o.phOtHrs*hourly*o.phOtMult : o.phOtHrs*o.phOtRate;
+  gross = basicMonthly+otPay+rdPay+rdOtPay+phPay+phOtPay;
+  var capped = Math.min(gross,o.ceiling);
+  epfAmt = basicMonthly*o.epf/100;
+  socsoAmt = capped*o.socso/100;
+  eisAmt = capped*o.eis/100;
+  costGuard = gross+epfAmt+socsoAmt+eisAmt;
+ }
+ allowPay = 0;
+ var bBasic=basicMonthly, bOt=otPay, bRd=rdPay, bRdo=rdOtPay, bPh=phPay, bPho=phOtPay;
+ var bGross=gross, bEpf=epfAmt, bSo=socsoAmt, bEis=eisAmt, bCost=costGuard;
+ var gradesOn = (o.gradesOn==='Y');
+ var guardsRequired = guards;
+ var aggC = gradesOn ? gradeAggregate(o, dayBasis, 'C') : null;
+ var aggS = gradesOn ? gradeAggregate(o, dayBasis, 'S') : null;
+ var headC = aggC? aggC.n : 0;
+ var headSg = aggS? aggS.n : 0;
+ var headGraded = headC + headSg;
+ var remaining = Math.max(0, guardsRequired - headGraded);
+ var headS = headSg + remaining;
+ var totalHead = headC + headS;
+ var costC = aggC? aggC.cost : 0;
+ var costS = (aggS? aggS.cost : 0) + remaining*bCost;
+ if(!gradesOn){ headC=0; headGraded=0; remaining=guardsRequired; headS=guardsRequired; totalHead=guardsRequired; costC=0; costS=guardsRequired*bCost; }
+ guards = totalHead;
+ if(totalHead>0){
+  var sB=(aggC?aggC.basic:0)+(aggS?aggS.basic:0)+remaining*bBasic;
+  var sA=(aggC?aggC.allow:0)+(aggS?aggS.allow:0);
+  var sOt=(aggC?aggC.otPay:0)+(aggS?aggS.otPay:0)+remaining*bOt;
+  var sRd=(aggC?aggC.rdPay:0)+(aggS?aggS.rdPay:0)+remaining*bRd;
+  var sRdo=(aggC?aggC.rdOtPay:0)+(aggS?aggS.rdOtPay:0)+remaining*bRdo;
+  var sPh=(aggC?aggC.phPay:0)+(aggS?aggS.phPay:0)+remaining*bPh;
+  var sPho=(aggC?aggC.phOtPay:0)+(aggS?aggS.phOtPay:0)+remaining*bPho;
+  var sGr=(aggC?aggC.gross:0)+(aggS?aggS.gross:0)+remaining*bGross;
+  var sEp=(aggC?aggC.epf:0)+(aggS?aggS.epf:0)+remaining*bEpf;
+  var sSo=(aggC?aggC.socso:0)+(aggS?aggS.socso:0)+remaining*bSo;
+  var sEi=(aggC?aggC.eis:0)+(aggS?aggS.eis:0)+remaining*bEis;
+  costGuard=(costC+costS)/totalHead; basicMonthly=sB/totalHead; allowPay=sA/totalHead;
+  otPay=sOt/totalHead; rdPay=sRd/totalHead; rdOtPay=sRdo/totalHead;
+  phPay=sPh/totalHead; phOtPay=sPho/totalHead;
+  gross=sGr/totalHead; epfAmt=sEp/totalHead; socsoAmt=sSo/totalHead; eisAmt=sEi/totalHead;
+ }
+ var siteGuardCost = costC + costS;
+ var misc = miscCost(totalHead, periods, dayBasis);
+ var costBase = siteGuardCost + misc.per;
+ var fRate = feeTotalRate();
+ var feasible = fRate < 1;
+ var manhours = dayBasis ? (cov>0 ? manhoursWeek/cov : 0) : manhoursWeek*WEEKS_PER_MONTH;
+ var shareC = totalHead>0 ? headC/totalHead : 0;
+ var mhC = manhours*shareC, mhS = manhours - mhC;
+ var miscC = misc.per*shareC, miscS = misc.per - miscC;
+ var siteCostC = costC + miscC, siteCostS = costS + miscS;
+ var siteCost = siteCostC + siteCostS;
+ var cpmC = mhC>0 ? siteCostC/mhC : NaN;
+ var quoteC = cpmC*(1+o.compMarkup/100);
+ var revenueC = isFinite(quoteC) ? quoteC*mhC : 0;
+ var profitC = revenueC - siteCostC;
+ var cpmBill = mhS>0 ? siteCostS/mhS : NaN;
+ var quote = cpmBill*(1+o.markup/100);
+ var revenueS = isFinite(quote) ? quote*mhS : 0;
+ var revenue = revenueS + revenueC;
+ var profit = revenue - siteCost;
+ var margin = quote>0 ? (quote-cpmBill)/quote : NaN;
+ var marginTotal = revenue>0 ? profit/revenue : NaN;
+ var guardHrs = dayBasis ? o.shiftHrs : (normalHrsMo + o.otHrs + o.rdDays*o.shiftHrs + o.rdOtHrs + o.phDays*o.shiftHrs + o.phOtHrs);
+ var cpmGuard = guardHrs>0 ? costGuard/guardHrs : NaN;
+ return {shiftsDay:shiftsPerDay, slotsWeek:slotsWeek, maxDaySlots:maxDaySlots,
+  workDaysWeek:workDaysWeek, byRoster:byRoster, suggested:suggested, guards:guards,
+  normalHrsMo:normalHrsMo, hourly:hourly, otPay:otPay, rdPay:rdPay, rdOtPay:rdOtPay,
+  phPay:phPay, phOtPay:phOtPay, gross:gross, epfAmt:epfAmt, socsoAmt:socsoAmt, eisAmt:eisAmt,
+  costGuard:costGuard, siteCost:siteCost, manhours:manhours, cpmBill:cpmBill, cpmGuard:cpmGuard,
+  quote:quote, margin:margin, revenue:revenue, profit:profit, basic:basicMonthly, dailyRate:dailyRate,
+  months:months, periods:periods, dayBasis:dayBasis,
+  siteGuardCost:siteGuardCost, miscMonthly:misc.per, miscTotal:misc.total,
+  pf:1, pw:pw, costGuardPP:costGuard, siteGuardCostPP:siteGuardCost,
+  miscPP:misc.per, siteCostPP:siteCost, manhoursPP:manhours,
+  revenuePP:revenue, profitPP:profit,
+  contractManhours:manhours*periods, contractRevenue:revenue*periods,
+  contractCost:siteCost*periods, contractProfit:profit*periods,
+  contractGuardCost:siteGuardCost*periods,
+  costBase:costBase, feeRate:fRate, feasible:feasible,
+  feeAmt:fRate*revenue, contractFee:fRate*revenue*periods,
+  finalProfit:(profit - fRate*revenue), contractFinalProfit:((profit - fRate*revenue)*periods),
+  finalMargin:(revenue>0 ? (profit - fRate*revenue)/revenue : NaN),
+  gradesOn:gradesOn, allowPay:allowPay,
+  gradeCost:siteGuardCost, guardsRequired:guardsRequired, headGraded:headGraded,
+  remaining:remaining, totalHead:totalHead, headC:headC, headS:headS,
+  mhC:mhC, mhS:mhS, siteCostC:siteCostC, siteCostS:siteCostS,
+  cpmC:cpmC, quoteC:quoteC, revenueC:revenueC, profitC:profitC,
+  marginC:(quoteC>0 ? (quoteC-cpmC)/quoteC : NaN), marginTotal:marginTotal};
+}
+var otMode = 'F';
+function setOtMode(which){
+ otMode = (which===2) ? 'M' : 'F';
+ document.getElementById('tabF').className = (otMode==='F') ? 'tab on' : 'tab';
+ document.getElementById('tabM').className = (otMode==='M') ? 'tab on' : 'tab';
+ updateOtModeVisibility();
+ calc();
+}
+function updateOtModeVisibility(){
+ var f=document.getElementsByClassName('mF'), m=document.getElementsByClassName('mM'), i;
+ for(i=0;i<f.length;i++) f[i].style.display = (otMode==='F') ? '' : 'none';
+ for(i=0;i<m.length;i++) m[i].style.display = (otMode==='M') ? '' : 'none';
+ var n=document.getElementById('otModeNote');
+ if(n) n.textContent = (otMode==='F')
+  ? 'Overtime mode: FIXED RATE. Every overtime hour is paid at the RM per hour entered above, independent of the basic hourly rate.'
+  : 'Overtime mode: MULTIPLIER. Every overtime hour is paid at the multiplier times the basic hourly rate, so it moves with basic salary.';
+}
+function readInputs(){
+ var o={};
+ for(var i=0;i<ids.length;i++){ o[ids[i]] = v(ids[i]); }
+ o.pattern = document.getElementById('postPattern').value;
+ o.contractUnit = document.getElementById('contractUnit').value;
+ o.salaryBasis = document.getElementById('salaryBasis').value;
+ o.gradesOn = document.getElementById('gradesOn').value;
+ o.otMode = otMode;
+ return o;
+}
+function isNightShift(o,s){
+ var h=(((o.rosterStart+s*o.shiftHrs)%24)+24)%24;
+ return !(h>=6 && h<18);
+}
+function postsAt(o,dow,s){
+ var we = dow>=5, ni = isNightShift(o,s);
+ if(o.pattern==='DN') return ni? o.postsNight : o.postsDay;
+ if(o.pattern==='WW') return we? o.postsWe : o.postsWd;
+ if(o.pattern==='FULL'){
+  if(we) return ni? o.postsWeNight : o.postsWeDay;
+  return ni? o.postsWdNight : o.postsWdDay;
+ }
+ return o.postsU;
+}
+function togglePattern(){
+ var p=document.getElementById('postPattern').value;
+ var groups={U:'pU', DN:'pDN', WW:'pWW', FULL:'pFULL', CUSTOM:'pCUSTOM'};
+ var all=['pU','pDN','pWW','pFULL','pCUSTOM'];
+ for(var i=0;i<all.length;i++){
+  var els=document.getElementsByClassName(all[i]);
+  for(var j=0;j<els.length;j++){ els[j].style.display = (all[i]===groups[p]) ? '' : 'none'; }
+ }
+}
+function calc(){
+ try{
+  calcCore();
+  var b=document.getElementById('errBar'); if(b) b.style.display='none';
+ } catch(err){
+  var b2=document.getElementById('errBar');
+  if(b2){ b2.style.display='block'; b2.textContent='Calculation error: '+(err && err.message ? err.message : err); }
+ }
+}
+function calcCore(){
+ var o = readInputs();
+ var r = engine(o, guardsTouched);
+ if(!guardsTouched && isFinite(r.suggested)){ setVal('guards', r.suggested); }
+ if(r.gradesOn && isFinite(r.guards)){ setVal('guards', r.guards); }
+ R = r;
+ put('shiftsDay',r.shiftsDay,2); put('slotsWeek',r.slotsWeek,1); put('slotsWeekTop',r.slotsWeek,1);
+ put('workDaysWeek',r.workDaysWeek,0); put('guardsSuggested',r.suggested,0);
+ document.getElementById('guardsTag').textContent = guardsTouched ? '(manual override)' : '(tracking suggested)';
+ put('normalHrsMo',r.normalHrsMo,1); put('hourly',r.hourly,2); put('basicMoEq',r.basic,2);
+ put('allowPay',r.allowPay,2);
+ put('otPay',r.otPay,2); put('rdPay',r.rdPay,2); put('rdOtPay',r.rdOtPay,2);
+ put('phPay',r.phPay,2); put('phOtPay',r.phOtPay,2); put('gross',r.gross,2);
+ put('epfAmt',r.epfAmt,2); put('socsoAmt',r.socsoAmt,2); put('eisAmt',r.eisAmt,2);
+ put('costGuard',r.costGuardPP,2);
+ document.getElementById('costGuardLbl').textContent='Total '+r.pw+' Cost per Guard (RM)';
+ document.getElementById('breakLbl').textContent='Cost Breakdown - One Guard per '+(r.dayBasis?'Day':'Month');
+ put('guardsUsedOut',r.guards,0); put('siteCost',r.siteGuardCostPP,2);
+ put('siteMisc',r.miscPP,2); put('siteTotal',r.siteCostPP,2);
+ put('siteCostC',r.siteCostC,2); put('siteCostS',r.siteCostS,2);
+ document.getElementById('siteCostLbl').textContent=r.pw+' Guard Wage Cost - Site (RM)';
+ document.getElementById('siteMiscLbl').textContent=r.pw+' Misc / Equipment Cost - Site (RM)';
+ document.getElementById('siteTotalLbl').textContent='TOTAL '+r.pw+' Site Cost (RM)';
+ document.getElementById('manhoursLbl').textContent='Total Site Coverage Manhours per '+(r.dayBasis?'Day':'Month');
+ put('manhours',r.manhoursPP,1);
+ put('cpmBill',r.cpmBill,4); put('cpmGuard',r.cpmGuard,4);
+ put('quote',r.quote,4); pct('margin',r.margin);
+ put('bcHead',r.headC,0); put('bcMh',r.mhC,1); put('bcCost',r.siteCostC,2);
+ put('bcCpm',r.cpmC,4); put('bcQuote',r.quoteC,4); pct('bcMargin',r.marginC);
+ put('bcRev',r.revenueC,2); put('bcPro',r.profitC,2);
+ renderCompBilling(r);
+ document.getElementById('bcMhLbl').textContent='Coverage manhours per '+(r.dayBasis?'day':'month')+' (pro-rata)';
+ document.getElementById('bcCostLbl').textContent=r.pw+' Cost - compulsory grades (RM)';
+ document.getElementById('bcRevLbl').textContent=r.pw+' Revenue - Compulsory (RM)';
+ document.getElementById('bcProLbl').textContent=r.pw+' Gross profit - Compulsory (RM)';
+ put('revenue',r.revenuePP,2); put('profit',r.profitPP,2);
+ put('feeSite',r.feeAmt,2); put('finalProfit',r.finalProfit,2); pct('finalMargin',r.finalMargin);
+ pct('marginTotal',r.marginTotal);
+ document.getElementById('feeSiteLbl').textContent='Less: '+r.pw+' Management Fee (RM)';
+ document.getElementById('finalProfitLbl').textContent='FINAL '+r.pw+' Gross Profit after Management Fee (RM)';
+ document.getElementById('revenueLbl').textContent=r.pw+' Revenue - Site (RM)';
+ document.getElementById('profitLbl').textContent=r.pw+' Gross Profit - Site (RM)';
+ document.getElementById('heroRate').textContent = fmt(r.quote,2);
+ put('mGuards',r.guards,0); put('mCost',r.cpmBill,2); pct('mMargin',r.margin);
+ var uSel=document.getElementById('contractUnit').value;
+ var uWord=(uSel==='D')? ' days' : ((uSel==='Y')? ' years' : ' months');
+ document.getElementById('mContract').textContent = fmt(v('contractMonths'),0) + uWord;
+ var isDayTerm=(uSel==='D');
+ put('mCRev',r.contractRevenue,0); put('mCPro',r.contractProfit,0);
+ put('mFee',r.feeAmt, r.dayBasis?2:0); put('mFinal',r.finalProfit, r.dayBasis?2:0);
+ pct('mFinalMargin',r.finalMargin);
+ document.getElementById('mFinalLbl').textContent=(r.dayBasis?'Daily':'Monthly')+' final gross profit';
+ if(isDayTerm){
+  document.getElementById('mBasicLbl').textContent='Basic salary per guard (per day)';
+  put('mBasic', r.basic/Math.max(1,v('workDaysMo')), 2);
+  document.getElementById('mRevLbl').textContent='Daily revenue';
+  document.getElementById('mProfitLbl').textContent='Daily gross profit';
+  put('mRev',r.revenuePP,2);
+  put('mProfit',r.profitPP,2);
+ } else {
+  document.getElementById('mBasicLbl').textContent='Basic salary per guard';
+  put('mBasic', r.basic, 0);
+  document.getElementById('mRevLbl').textContent='Monthly revenue';
+  document.getElementById('mProfitLbl').textContent='Monthly gross profit';
+  put('mRev',r.revenue,0); put('mProfit',r.profit,0);
+ }
+ drawBreakdown(r);
+ drawChart();
+ renderScen();
+ renderRoster();
+ updateMiscAmounts();
+ updateFeeAmounts();
+ updateGradeAmounts();
+ updateGradeVisibility();
+ updatePostAmounts();
+ renderContract();
+ renderAdjusted(r);
+}
+function setVal(id,val){
+ var el=document.getElementById(id);
+ if(String(el.value) !== String(val)){ el.value = val; }
+ if(sliders[id]){ syncSlider(id); }
+}
+function syncSlider(id){
+ var num=document.getElementById(id), s=sliders[id], n=parseFloat(num.value);
+ if(!isFinite(n)) return;
+ if(n > parseFloat(s.max)) s.max = n;
+ if(n < parseFloat(s.min)) s.min = n;
+ s.value = n;
+}
+function drawBreakdown(r){
+ var items = [['Basic Salary', r.basic, '#1f4e78'],['Allowance', r.allowPay, '#7c3aed'],['Overtime', r.otPay, '#2e75b6'],
+  ['Rest Day', r.rdPay, '#5b9bd5'],['Rest Day OT', r.rdOtPay, '#9dc3e6'],
+  ['Public Holiday', r.phPay, '#c55a11'],['Public Holiday OT', r.phOtPay, '#f4b183'],
+  ['EPF', r.epfAmt, '#548235'],['SOCSO', r.socsoAmt, '#a9d18e'],['EIS', r.eisAmt, '#d6e4c8']];
+ var total = r.costGuardPP;
+ var bar = document.getElementById('bar');
+ var leg = document.getElementById('legend');
+ while(bar.firstChild) bar.removeChild(bar.firstChild);
+ while(leg.firstChild) leg.removeChild(leg.firstChild);
+ for(var i=0;i<items.length;i++){
+  var nm=items[i][0], amt=items[i][1]*r.pf, col=items[i][2];
+  if(!isFinite(amt) || amt<=0) continue;
+  var share = total>0 ? amt/total : 0;
+  var seg = document.createElement('div');
+  seg.style.width = (share*100)+'%';
+  seg.style.background = col;
+  seg.title = nm+': RM '+fmt(amt,2)+' ('+(share*100).toFixed(1)+'%)';
+  bar.appendChild(seg);
+  var lg = document.createElement('div'); lg.className='lg';
+  var sw = document.createElement('span'); sw.className='sw'; sw.style.background=col;
+  var nmEl = document.createElement('span'); nmEl.className='nm'; nmEl.textContent = nm;
+  var amtEl = document.createElement('span'); amtEl.className='amt';
+  amtEl.textContent = fmt(amt,2)+'  ('+(share*100).toFixed(1)+'%)';
+  lg.appendChild(sw); lg.appendChild(nmEl); lg.appendChild(amtEl);
+  leg.appendChild(lg);
+ }
+}
+function svgEl(tag,attrs){
+ var e=document.createElementNS('http://www.w3.org/2000/svg',tag);
+ for(var k in attrs){ e.setAttribute(k,attrs[k]); }
+ return e;
+}
+function driverRange(key,cur){
+ if(key==='markup') return [0,60,1];
+ if(key==='guards') return [Math.max(1,Math.round(cur*0.5)), Math.round(cur*1.5)+2, 2];
+ if(key==='basic') return [Math.max(0,Math.round(cur*0.6/50)*50), Math.round(cur*1.4/50)*50, 0];
+ if(key==='otHrs') return [0, Math.max(40,Math.round(cur*2)), 0];
+ if(key==='otRate') return [0, Math.max(10,Math.round(cur*2)), 2];
+ if(key==='otMult') return [0, Math.max(2,cur*2), 2];
+ return [0,1,2];
+}
+function drawChart(){
+ var host = document.getElementById('chart');
+ while(host.firstChild) host.removeChild(host.firstChild);
+ var key = document.getElementById('sensDriver').value;
+ if(key==='otX') key = (otMode==='M') ? 'otMult' : 'otRate';
+ var o = readInputs();
+ var cur = o[key];
+ var cfg = driverRange(key,cur), lo=cfg[0], hi=cfg[1], dp=cfg[2];
+ if(!(hi>lo)) return;
+ var N=40, xs=[], ys=[];
+ for(var i=0;i<=N;i++){
+  var x = lo + (hi-lo)*i/N;
+  var o2 = readInputs();
+  o2[key] = x;
+  var touched = guardsTouched;
+  if(key==='guards'){ touched = true; }
+  var q = engine(o2, touched).quote;
+  xs.push(x); ys.push(q);
+ }
+ var valid = ys.filter(function(y){ return isFinite(y); });
+ if(!valid.length) return;
+ var ymin=Math.min.apply(null,valid), ymax=Math.max.apply(null,valid);
+ if(ymax-ymin < 0.001){ ymin -= 1; ymax += 1; }
+ var W=470,H=210,ml=54,mr=12,mt=12,mb=30;
+ var pw=W-ml-mr, ph=H-mt-mb;
+ var svg = svgEl('svg',{viewBox:'0 0 '+W+' '+H, width:'100%', height:H});
+ function px(x){ return ml + (x-lo)/(hi-lo)*pw; }
+ function py(y){ return mt + (ymax-y)/(ymax-ymin)*ph; }
+ for(var g=0; g<=4; g++){
+  var yv = ymin + (ymax-ymin)*g/4;
+  svg.appendChild(svgEl('line',{x1:ml, y1:py(yv), x2:ml+pw, y2:py(yv), stroke:'#e6ecf2', 'stroke-width':1}));
+  var lb = svgEl('text',{x:ml-8, y:py(yv)+4, 'text-anchor':'end', 'font-size':10, fill:'#5b6b7f'});
+  lb.textContent = fmt(yv,2);
+  svg.appendChild(lb);
+ }
+ var pts='';
+ for(var j=0;j<xs.length;j++){ if(isFinite(ys[j])){ pts += px(xs[j])+','+py(ys[j])+' '; } }
+ svg.appendChild(svgEl('polyline',{points:pts.replace(/\s+$/,''), fill:'none', stroke:'#1e6f9f', 'stroke-width':2.5}));
+ svg.appendChild(svgEl('line',{x1:ml, y1:mt+ph, x2:ml+pw, y2:mt+ph, stroke:'#b7c4d1', 'stroke-width':1}));
+ var t1=svgEl('text',{x:ml, y:H-8, 'font-size':10, fill:'#5b6b7f'}); t1.textContent=fmt(lo,dp);
+ var t2=svgEl('text',{x:ml+pw, y:H-8, 'text-anchor':'end', 'font-size':10, fill:'#5b6b7f'}); t2.textContent=fmt(hi,dp);
+ svg.appendChild(t1); svg.appendChild(t2);
+ if(cur>=lo && cur<=hi){
+  var cq = engine((function(){ var oo=readInputs(); oo[key]=cur; return oo; })(), key==='guards'? true : guardsTouched).quote;
+  if(isFinite(cq)){
+   svg.appendChild(svgEl('line',{x1:px(cur), y1:mt, x2:px(cur), y2:mt+ph, stroke:'#b3261e', 'stroke-width':1, 'stroke-dasharray':'4 3'}));
+   svg.appendChild(svgEl('circle',{cx:px(cur), cy:py(cq), r:4.5, fill:'#b3261e'}));
+   var lbl=svgEl('text',{x:Math.min(px(cur)+8, ml+pw-4), y:Math.max(py(cq)-9, mt+10), 'font-size':11, fill:'#b3261e', 'font-weight':'700'});
+   lbl.textContent = fmt(cq,2);
+   svg.appendChild(lbl);
+  }
+ }
+ host.appendChild(svg);
+}
+var METRICS = [['Basic salary (RM)','basic',0],['Guards used','guards',0],['Cost per guard per period (RM)','costGuardPP',2],['Billing cost / hour (RM)','cpmBill',4],['Quoted rate (RM/hr)','quote',4],['Gross margin','margin',-1],['Revenue per period (RM)','revenuePP',2],['Gross profit per period (RM)','profitPP',2],['Contract revenue (RM)','contractRevenue',0],['Contract gross profit (RM)','contractProfit',0]];
+function saveScen(i){ scen[i] = {inp: readInputs(), touched: guardsTouched, pat: document.getElementById('postPattern').value, res: R}; renderScen(); }
+function clearScen(){ scen=[null,null,null]; renderScen(); }
+function loadScen(i){
+ if(!scen[i]) return;
+ var o = scen[i].inp;
+ for(var k=0;k<ids.length;k++){ setVal(ids[k], o[ids[k]]); }
+ guardsTouched = scen[i].touched;
+ if(scen[i].pat){ document.getElementById('postPattern').value = scen[i].pat; togglePattern(); }
+ calc();
+}
+function cellText(val,dp){ return dp<0 ? (isFinite(val)? (val*100).toFixed(1)+'%' : '-') : fmt(val,dp); }
+function renderScen(){
+ var body = document.getElementById('scenBody');
+ while(body.firstChild) body.removeChild(body.firstChild);
+ for(var m=0;m<METRICS.length;m++){
+  var name=METRICS[m][0], key=METRICS[m][1], dp=METRICS[m][2];
+  var tr=document.createElement('tr');
+  var td0=document.createElement('td'); td0.textContent=name; tr.appendChild(td0);
+  var tdC=document.createElement('td'); tdC.textContent = R? cellText(R[key],dp) : '-'; tr.appendChild(tdC);
+  for(var s=0;s<3;s++){
+   var td=document.createElement('td');
+   if(scen[s] && scen[s].res){
+    td.textContent = cellText(scen[s].res[key],dp);
+    if(s>0 && scen[0] && scen[0].res){
+     var d = scen[s].res[key] - scen[0].res[key];
+     if(isFinite(d) && Math.abs(d) > 0.0000001){
+      var sp=document.createElement('span');
+      sp.className = 'dlt ' + (d>0 ? 'up' : 'dn');
+      sp.textContent = (d>0?'+':'') + cellText(d,dp);
+      td.appendChild(sp);
+     }
+    }
+   } else { td.textContent = '-'; }
+   tr.appendChild(td);
+  }
+  body.appendChild(tr);
+ }
+ var hdr = document.getElementById('scenTable').querySelectorAll('thead th');
+ for(var h=0;h<3;h++){ hdr[h+2].textContent = SCEN_NAMES[h] + (scen[h] ? '' : ' (empty)'); }
+}
+function addSlider(id,mn,mx,st){
+ var num=document.getElementById(id);
+ if(!num) return;
+ var s=document.createElement('input');
+ s.type='range'; s.min=mn; s.max=mx; s.step=st;
+ num.parentNode.insertBefore(s,num);
+ sliders[id]=s;
+ syncSlider(id);
+ s.addEventListener('input',function(){
+  num.value = s.value;
+  if(id==='guards'){ guardsTouched = true; }
+  calc();
+ });
+}
+var SHIFT_LETTERS = ['A','B','C','D','E','F'];
+var SHIFT_COLORS = ['#dbeafe','#dcfce7','#fef3c7','#fae8ff','#e0e7ff','#ffe4e6'];
+var DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function pad2(n){ n=Math.floor(n); return (n<10?'0':'')+n; }
+function shiftWindow(i){
+ var st=v('rosterStart'), sh=v('shiftHrs');
+ var a=((st+i*sh)%24+24)%24, b=((st+(i+1)*sh)%24+24)%24;
+ return pad2(a)+':00-'+pad2(b)+':00';
+}
+function monthMeta(){
+ var mSel=document.getElementById('rosterMonth'), ySel=document.getElementById('rosterYear');
+ var m=parseInt(mSel.value,10); var y=parseInt(ySel.value,10);
+ if(!isFinite(m)) m=new Date().getMonth();
+ if(!isFinite(y)) y=new Date().getFullYear();
+ var days=new Date(y,m+1,0).getDate();
+ var startDow=(new Date(y,m,1).getDay()+6)%7;
+ return {m:m, y:y, days:days, startDow:startDow};
+}
+function shiftMonth(delta){
+ var mSel=document.getElementById('rosterMonth'), ySel=document.getElementById('rosterYear');
+ var m=parseInt(mSel.value,10)+delta; var y=parseInt(ySel.value,10);
+ if(m<0){ m=11; y=y-1; }
+ if(m>11){ m=0; y=y+1; }
+ var opts=ySel.options; var okY=false;
+ for(var i=0;i<opts.length;i++){ if(parseInt(opts[i].value,10)===y) okY=true; }
+ if(!okY) return;
+ mSel.value=m; ySel.value=y;
+ document.getElementById('rosterView').value='M';
+ renderRoster();
+}
+function thisMonth(){
+ var d=new Date();
+ document.getElementById('rosterMonth').value=d.getMonth();
+ var ySel=document.getElementById('rosterYear');
+ for(var i=0;i<ySel.options.length;i++){ if(parseInt(ySel.options[i].value,10)===d.getFullYear()) ySel.value=d.getFullYear(); }
+ document.getElementById('rosterView').value='M';
+ renderRoster();
+}
+function rosterPlan(days, startDow, seed){
+ var o=readInputs();
+ var guards = (R && isFinite(R.guards)) ? R.guards : v('guards');
+ guards = Math.max(0, Math.round(guards));
+ var shiftsPerDay = o.shiftHrs>0 ? Math.round(o.hoursDay/o.shiftHrs) : 0;
+ var cov = Math.min(7, Math.max(0, Math.round(o.daysWeek)));
+ var grid=[], counts=[];
+ for(var g=0; g<guards; g++){ grid.push([]); counts.push(0); for(var d=0; d<days; d++){ grid[g].push(null); } }
+ var idx = guards>0 ? ((seed%guards)+guards)%guards : 0;
+ var unfilled=0, required=0, maxDaySlots=0;
+ for(var d2=0; d2<days; d2++){
+  var dow=(startDow+d2)%7;
+  if(dow >= cov) continue;
+  var dayS=0;
+  for(var s=0; s<shiftsPerDay; s++){
+   var np=postsAt(o,dow,s);
+   if(!isFinite(np) || np<0) np=0;
+   np=Math.round(np);
+   dayS+=np;
+   for(var pp=1; pp<=np; pp++){
+    required++;
+    var placed=false;
+    for(var t=0; t<guards; t++){
+     var g2=(idx+t)%guards;
+     if(!grid[g2][d2]){
+      grid[g2][d2] = {shift:s, post:pp};
+      counts[g2]++; idx = idx+t+1; placed=true; break;
+     }
+    }
+    if(!placed){ unfilled++; idx++; }
+   }
+  }
+  if(dayS>maxDaySlots) maxDaySlots=dayS;
+ }
+ return {grid:grid, counts:counts, guards:guards, shiftsPerDay:shiftsPerDay,
+  slotsPerDay:maxDaySlots, cov:cov, days:days, startDow:startDow,
+  unfilled:unfilled, required:required};
+}
+function renderAdjusted(r){
+ if(!r) return;
+ var el=document.getElementById('adjRate');
+ if(!adjTouched && isFinite(r.quote)){ el.value = r.quote.toFixed(4); }
+ var ar=parseFloat(el.value); if(!isFinite(ar)) ar=0;
+ var dp = r.dayBasis ? 2 : 0;
+ var aMargin = ar>0 ? (ar-r.cpmBill)/ar : NaN;
+ var aRev = ar*r.manhoursPP;
+ var aFee = aRev * (isFinite(r.feeRate)? r.feeRate : 0);
+ var aPro = aRev - r.costBase;
+ document.getElementById('adjTag').textContent = adjTouched ? ' (manual)' : ' (tracking suggested)';
+ put('aSug', r.quote, 4);
+ put('aDiffRate', ar-r.quote, 4);
+ put('aCost', r.cpmBill, 4);
+ pct('aMargin', aMargin);
+ document.getElementById('aRevLbl').textContent = (r.dayBasis?'Daily':'Monthly')+' revenue';
+ document.getElementById('aProLbl').textContent = (r.dayBasis?'Daily':'Monthly')+' gross profit';
+ put('aRev', aRev, dp);
+ put('aPro', aPro, dp);
+ put('aFee', aFee, dp);
+ put('aFinal', aPro-aFee, dp);
+ pct('aFinalMargin', aRev>0 ? (aPro-aFee)/aRev : NaN);
+ put('aCRev', aRev*r.periods, 0);
+ put('aCPro', aPro*r.periods, 0);
+ put('aDiffPro', (aPro-r.profitPP)*r.periods, 0);
+}
+function resetAdj(){ adjTouched=false; calc(); }
+function bcCell(tr, txt){ var td=document.createElement('td'); td.textContent=txt; tr.appendChild(td); }
+function renderCompBilling(r){
+ var body=document.getElementById('bcBody');
+ if(!body || !r) return;
+ while(body.firstChild) body.removeChild(body.firstChild);
+ if(!r.gradesOn || !(r.headC>0)){
+  var tr0=document.createElement('tr');
+  var td0=document.createElement('td'); td0.colSpan=8;
+  td0.textContent = r.gradesOn ? 'No compulsory grades entered.' : 'Guard grades are switched off.';
+  tr0.appendChild(td0); body.appendChild(tr0);
+  return;
+ }
+ var mk = 1 + v('compMarkup')/100;
+ for(var i=0;i<gradeItems.length;i++){
+  var g=gradeItems[i];
+  if((g.kind||'S')!=='C') continue;
+  var n=Math.max(0, Math.round(parseFloat(g.n)||0));
+  if(n<=0) continue;
+  var s = r.totalHead>0 ? n/r.totalHead : 0;
+  var mh = r.manhoursPP*s;
+  var cost = (isFinite(g._tc)? g._tc : 0) + r.miscPP*s;
+  var cpm = mh>0 ? cost/mh : NaN;
+  var rate = cpm*mk;
+  var rev = isFinite(rate) ? rate*mh : 0;
+  var pro = rev - cost;
+  var tr=document.createElement('tr');
+  bcCell(tr, g.name);
+  bcCell(tr, fmt(n,0));
+  bcCell(tr, fmt(mh,1));
+  bcCell(tr, fmt(cost,2));
+  bcCell(tr, fmt(cpm,4));
+  bcCell(tr, fmt(rate,4));
+  bcCell(tr, fmt(rev,2));
+  bcCell(tr, fmt(pro,2));
+  body.appendChild(tr);
+ }
+}
+function renderContract(){
+ if(!R) return;
+ document.getElementById('contractYears').textContent=(R.months/12).toFixed(2);
+ put('cMonthsEq',R.months,2);
+ put('cMhM',R.manhoursPP,1); put('cMhT',R.contractManhours,1);
+ put('cRevM',R.revenuePP,2); put('cRevT',R.contractRevenue,2);
+ put('cCostM',R.siteGuardCostPP,2); put('cCostT',R.contractGuardCost,2);
+ put('cMiscM',R.miscPP,2); put('cMiscT',R.miscTotal,2);
+ put('cFeeM',R.feeAmt,2); put('cFeeT',R.contractFee,2);
+ put('cFinalM',R.finalProfit,2); put('cFinalT',R.contractFinalProfit,2);
+ pct('cFinalMargin',R.finalMargin);
+ put('cTotM',R.siteCostPP,2); put('cTotT',R.contractCost,2);
+ put('cProM',R.profitPP,2); put('cProT',R.contractProfit,2);
+ pct('cMargin',R.margin);
+}
+function renderRoster(){
+ var host=document.getElementById('roster');
+ var leg=document.getElementById('rosterLegend');
+ var warn=document.getElementById('rosterWarn');
+ var ttl=document.getElementById('rosterTitle');
+ if(!host) return;
+ while(host.firstChild) host.removeChild(host.firstChild);
+ while(leg.firstChild) leg.removeChild(leg.firstChild);
+ while(warn.firstChild) warn.removeChild(warn.firstChild);
+ ttl.textContent='';
+ var mode=document.getElementById('rosterView').value;
+ var days, startDow, seed, monthly=(mode==='M');
+ if(monthly){
+  var mm=monthMeta();
+  days=mm.days; startDow=mm.startDow; seed=mm.y*12+mm.m;
+  ttl.textContent=MONTH_NAMES[mm.m]+' '+mm.y+' - '+days+' days, starting on a '+DAY_NAMES[startDow];
+ } else {
+  days=parseInt(mode,10); startDow=0; seed=0;
+ }
+ var p=rosterPlan(days, startDow, seed);
+ if(!(p.guards>0) || !(p.shiftsPerDay>0) || !(p.slotsPerDay>0)){
+  var m0=document.createElement('div'); m0.className='warn';
+  m0.textContent='Cannot build a roster - check guard posts, coverage hours, hours per shift and Guards Required.';
+  warn.appendChild(m0); return;
+ }
+ for(var i=0;i<p.shiftsPerDay;i++){
+  var lg=document.createElement('div'); lg.className='lg';
+  var sw=document.createElement('span'); sw.className='sw'; sw.style.background=SHIFT_COLORS[i%SHIFT_COLORS.length];
+  var nm=document.createElement('span'); nm.className='nm';
+  nm.textContent='Shift '+SHIFT_LETTERS[i%SHIFT_LETTERS.length];
+  var am=document.createElement('span'); am.className='amt'; am.textContent=shiftWindow(i);
+  lg.appendChild(sw); lg.appendChild(nm); lg.appendChild(am); leg.appendChild(lg);
+ }
+ var tbl=document.createElement('table'); tbl.className = (days>7 ? 'rt dense' : 'rt');
+ var thead=document.createElement('thead'); var hr=document.createElement('tr');
+ var h0=document.createElement('th'); h0.textContent='Guard'; hr.appendChild(h0);
+ for(var d=0; d<days; d++){
+  var th=document.createElement('th');
+  var dow=(startDow+d)%7;
+  if(monthly){ th.textContent=(d+1)+' '+DAY_NAMES[dow].charAt(0); }
+  else if(days>7){ th.textContent=DAY_NAMES[dow]+' W'+(Math.floor(d/7)+1); }
+  else { th.textContent=DAY_NAMES[dow]; }
+  if(dow>=5) th.className='wkend';
+  else if(!monthly && Math.floor(d/7)===1) th.className='wk';
+  hr.appendChild(th);
+ }
+ var hS=document.createElement('th'); hS.textContent='Shifts'; hr.appendChild(hS);
+ var hR=document.createElement('th'); hR.textContent='Rest days'; hr.appendChild(hR);
+ thead.appendChild(hr); tbl.appendChild(thead);
+ var tb=document.createElement('tbody');
+ for(var g=0; g<p.guards; g++){
+  var tr=document.createElement('tr');
+  var tg=document.createElement('td'); tg.className='g'; tg.textContent=guardLabel(g); tr.appendChild(tg);
+  for(var d3=0; d3<days; d3++){
+   var td=document.createElement('td');
+   var a=p.grid[g][d3];
+   if(a){
+    td.textContent=SHIFT_LETTERS[a.shift%SHIFT_LETTERS.length]+' P'+a.post;
+    td.style.background=SHIFT_COLORS[a.shift%SHIFT_COLORS.length];
+    td.title='Shift '+SHIFT_LETTERS[a.shift%SHIFT_LETTERS.length]+' '+shiftWindow(a.shift)+', Post '+a.post;
+   } else { td.textContent='OFF'; td.className='off'; }
+   tr.appendChild(td);
+  }
+  var ts=document.createElement('td'); ts.className='tot'; ts.textContent=p.counts[g]; tr.appendChild(ts);
+  var trd=document.createElement('td'); trd.className='tot'; trd.textContent=(days-p.counts[g]); tr.appendChild(trd);
+  tb.appendChild(tr);
+ }
+ tbl.appendChild(tb); host.appendChild(tbl);
+ var mn=Math.min.apply(null,p.counts), mx=Math.max.apply(null,p.counts);
+ var restMin=days-mx, restMax=days-mn;
+ var allowed=(7-v('restDays'))*(days/7);
+ var allowedTxt=(Math.round(allowed*10)/10);
+ var msg=document.createElement('div');
+ if(p.unfilled>0){
+  msg.className='warn';
+  msg.textContent='Short by '+p.unfilled+' shift slots over '+days+' days. '+p.slotsPerDay+' slots must be filled each covered day but only '+p.guards+' guards are available, and no guard is double-booked on the same day. Increase Guards Required to at least '+p.slotsPerDay+'.';
+ } else if(mx>allowed+0.0001){
+  msg.className='warn';
+  msg.textContent='Coverage is met, but the busiest guard works '+mx+' shifts in '+days+' days versus '+allowedTxt+' allowed by your rest-day rule. Add guards to stay within '+allowedTxt+'.';
+ } else {
+  msg.className='okmsg';
+  msg.textContent='Coverage met: all '+p.required+' shift slots filled over '+days+' days. Each guard works '+(mn===mx? mn : mn+' to '+mx)+' shifts and gets '+(restMin===restMax? restMin : restMin+' to '+restMax)+' rest days.';
+ }
+ warn.appendChild(msg);
+}
+(function initRosterControls(){
+ var ySel=document.getElementById('rosterYear');
+ var now=new Date(), yNow=now.getFullYear();
+ for(var y=yNow-1; y<=yNow+3; y++){
+  var op=document.createElement('option'); op.value=y; op.textContent=y;
+  ySel.appendChild(op);
+ }
+ ySel.value=yNow;
+ document.getElementById('rosterMonth').value=now.getMonth();
+ document.getElementById('rosterMonth').addEventListener('change',renderRoster);
+ ySel.addEventListener('change',renderRoster);
+})();
+function syncGuards(){ guardsTouched = false; calc(); }
+function resetAll(){
+ for(var i=0;i<ids.length;i++){ setVal(ids[i], defaults[ids[i]]); }
+ guardsTouched = false;
+ adjTouched = false;
+ calc();
+}
+for(var i=0;i<ids.length;i++){
+ (function(id){
+  var el=document.getElementById(id);
+  defaults[id]=el.value;
+  el.addEventListener('input',function(){
+   if(id==='guards'){ guardsTouched = true; }
+   if(sliders[id]){ syncSlider(id); }
+   calc();
+  });
+ })(ids[i]);
+}
+addSlider('postsU',1,30,1);
+addSlider('contractMonths',1,60,1);
+addSlider('guards',1,60,1);
+addSlider('basic',800,6000,50);
+addSlider('otHrs',0,200,2);
+addSlider('otRate',0,30,0.25);
+addSlider('otMult',0,3,0.05);
+addSlider('markup',0,60,1);
+document.getElementById('postPattern').addEventListener('change',function(){ togglePattern(); calc(); });
+togglePattern();
+document.getElementById('adjRate').addEventListener('input',function(){ adjTouched=true; calc(); });
+document.getElementById('contractUnit').addEventListener('change',calc);
+document.getElementById('salaryBasis').addEventListener('change',calc);
+document.getElementById('gradesOn').addEventListener('change',function(){ calc(); renderRoster(); });
+document.getElementById('sensDriver').addEventListener('change',drawChart);
+document.getElementById('rosterView').addEventListener('change',renderRoster);
+renderPosts();
+renderGrades();
+renderFees();
+renderMisc();
+updateOtModeVisibility();
+calc();
+
+/* ================= Quotation register / save / reload log ================= */
+var QUOTE_STORAGE_KEY = 'gdSecurityQuotes_v1';
+var QUOTES_COLLECTION = 'quotations';
+var DEFAULT_POST_ITEMS = JSON.parse(JSON.stringify(postItems));
+var DEFAULT_GRADE_ITEMS = JSON.parse(JSON.stringify(gradeItems));
+var DEFAULT_MISC_ITEMS = JSON.parse(JSON.stringify(miscItems));
+var DEFAULT_FEE_ITEMS = JSON.parse(JSON.stringify(feeItems));
+var savedQuotes = [];
+var currentQuoteId = null;
+var storageOk = true;
+var syncMode = 'checking'; /* 'checking' | 'live' | 'signedout' | 'denied' | 'local' */
+var dbApi = null;
+
+var firebaseAuth = null;
+var currentUser = null;
+var unsubscribeQuotes = null;
+
+// Who's signed in, via the CRM's own session (see the comment block near the top of this file)
+// — no separate sign-in flow inside this page. myRole/myDepartment come from this user's
+// /users/{uid} CRM profile, the same fields firestore.rules checks for the /quotations
+// collection. canUseCalculator mirrors the route gating in App.tsx (admin + branchManager
+// only); isPrivileged mirrors duty-roster's identical flag (admin, or department "HQ" —
+// reaches every branch, like elsewhere in the CRM).
+var myUid = null, myRole = null, myDepartment = null, myName = null;
+var isPrivileged = false;
+var canUseCalculator = false;
+
+function setSyncStatus(mode, text){
+ syncMode = mode;
+ var dot = document.getElementById('syncDot');
+ var txt = document.getElementById('syncText');
+ if(dot) dot.className = 'syncDot ' + mode;
+ if(txt) txt.textContent = text;
+}
+function updateAuthUI(){
+ var el = document.getElementById('authArea');
+ if(!el) return;
+ while(el.firstChild) el.removeChild(el.firstChild);
+ var span=document.createElement('span'); span.style.fontWeight='700'; span.style.fontSize='12.5px';
+ span.textContent = currentUser ? (myName || currentUser.email) + (myDepartment ? ' ('+myDepartment+')' : '') : '—';
+ el.appendChild(span);
+}
+function showAccessBlocked(msg){
+ var b=document.getElementById('accessBlocked'), m=document.getElementById('accessBlockedMsg'), c=document.getElementById('calcContent');
+ if(m && msg) m.textContent = msg;
+ if(b) b.style.display='';
+ if(c) c.style.display='none';
+}
+function hideAccessBlocked(){
+ var b=document.getElementById('accessBlocked'), c=document.getElementById('calcContent');
+ if(b) b.style.display='none';
+ if(c) c.style.display='';
+}
+function fallbackToLocal(text){
+ dbApi = null;
+ if(unsubscribeQuotes){ unsubscribeQuotes(); unsubscribeQuotes=null; }
+ savedQuotes = loadSavedQuotesFromStorage();
+ setSyncStatus('local', text || (storageOk ? 'Not connected — local storage only' : 'Not connected — storage unavailable, nothing persists'));
+ renderSavedLog();
+ updateEditingStatus();
+}
+function startLiveSync(firestoreDb){
+ setSyncStatus('checking','Connecting…');
+ if(unsubscribeQuotes){ unsubscribeQuotes(); unsubscribeQuotes=null; }
+ // A privileged account (admin, or department "HQ") reaches every saved quotation, same as
+ // every other branch-scoped collection in this CRM; a Branch Manager's query is filtered
+ // server-side to just their own branch — mirroring firestore.rules' /quotations rules, which
+ // reject anything wider than this for a non-privileged caller.
+ var query = isPrivileged
+  ? firestoreDb.collection(QUOTES_COLLECTION)
+  : firestoreDb.collection(QUOTES_COLLECTION).where('branch', '==', myDepartment || null);
+ unsubscribeQuotes = query.onSnapshot(function(snap){
+  dbApi = firestoreDb;
+  var list=[];
+  snap.forEach(function(doc){
+   var d = doc.data() || {};
+   var rec = {}; for(var k in d){ if(Object.prototype.hasOwnProperty.call(d,k)) rec[k]=d[k]; }
+   rec.id = doc.id;
+   list.push(rec);
+  });
+  savedQuotes = list;
+  setSyncStatus('live','Live — synced with your team');
+  renderSavedLog();
+  updateEditingStatus();
+ }, function(err){
+  dbApi = null;
+  if(unsubscribeQuotes){ unsubscribeQuotes=null; }
+  if(err && err.code==='permission-denied'){
+   setSyncStatus('denied','Signed in — no access to saved quotations');
+  } else {
+   setSyncStatus('local','Not connected — local storage only ('+(err&&err.code?err.code:'error')+')');
+  }
+  savedQuotes = loadSavedQuotesFromStorage();
+  renderSavedLog();
+  updateEditingStatus();
+ });
+}
+function renderQuoteBranchControl(){
+ var sel = document.getElementById('quoteBranch');
+ var badge = document.getElementById('quoteBranchBadge');
+ if(!sel || !badge) return;
+ if(isPrivileged){
+  badge.hidden = true;
+  sel.hidden = false;
+  if(!sel.options.length || sel.getAttribute('data-populated') !== '1'){
+   var opts = '<option value="">Unassigned (Admin/HQ only)</option>';
+   for(var i=0;i<branchOptionsList.length;i++){
+    if(branchOptionsList[i]==='HQ') continue;
+    opts += '<option value="'+escapeAttr(branchOptionsList[i])+'">'+escapeAttr(branchOptionsList[i])+'</option>';
+   }
+   sel.innerHTML = opts;
+   sel.setAttribute('data-populated','1');
+  }
+ } else {
+  sel.hidden = true;
+  badge.hidden = false;
+  badge.textContent = myDepartment || 'Unassigned';
+ }
+}
+function escapeAttr(s){
+ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+var branchOptionsList = [];
+async function initSync(){
+ setSyncStatus('checking','Checking sync…');
+ updateAuthUI();
+ if(typeof firebase === 'undefined' || !window.FIREBASE_CONFIG){
+  fallbackToLocal('Not connected — could not load Firebase.');
+  showAccessBlocked('Could not verify your CRM account. Reload the page, and check your internet connection.');
+  return;
+ }
+ try{
+  if(!firebase.apps || !firebase.apps.length){ firebase.initializeApp(window.FIREBASE_CONFIG); }
+  firebaseAuth = firebase.auth();
+  // Rehydrate the CRM's already-signed-in user — see the comment block at the top of this
+  // file for why this works without a separate sign-in step here.
+  await new Promise(function(resolve){
+   var unsub = firebaseAuth.onAuthStateChanged(function(){ unsub(); resolve(); });
+   setTimeout(resolve, 4000);
+  });
+  currentUser = firebaseAuth.currentUser;
+  updateAuthUI();
+  if(!currentUser){
+   fallbackToLocal('Not signed in.');
+   showAccessBlocked('You need to be signed in to the CRM to use the Quotation Calculator. Go back and sign in, then reopen this tab.');
+   return;
+  }
+  var db = firebase.firestore();
+  var profileSnap = await db.doc('users/'+currentUser.uid).get().catch(function(){ return null; });
+  var profile = (profileSnap && profileSnap.exists) ? (profileSnap.data()||{}) : {};
+  myUid = currentUser.uid;
+  myRole = profile.role || null;
+  myDepartment = profile.department || null;
+  myName = profile.name || currentUser.email || 'Unknown';
+  isPrivileged = (myRole==='admin' || myDepartment==='HQ');
+  canUseCalculator = (myRole==='admin' || myRole==='branchManager');
+  updateAuthUI();
+  if(!canUseCalculator){
+   showAccessBlocked('The Quotation Calculator is only available to Admin and Branch Manager accounts. Your account is signed in as "'+(myRole||'unknown role')+'".');
+   fallbackToLocal('Not available for your role.');
+   return;
+  }
+  hideAccessBlocked();
+  var branchesSnap = await db.collection('branches').get().catch(function(){ return {docs:[]}; });
+  branchOptionsList = branchesSnap.docs.map(function(d){ return (d.data()||{}).name; }).filter(Boolean);
+  renderQuoteBranchControl();
+  startLiveSync(db);
+ } catch(e){
+  fallbackToLocal();
+  showAccessBlocked('Something went wrong while checking your CRM account. Reload the page and try again.');
+ }
+}
+function loadSavedQuotesFromStorage(){
+ try{
+  var raw = window.localStorage ? localStorage.getItem(QUOTE_STORAGE_KEY) : null;
+  var arr = raw ? JSON.parse(raw) : [];
+  return Array.isArray(arr) ? arr : [];
+ } catch(e){ storageOk = false; return []; }
+}
+function writeSavedQuotesToStorage(arr){
+ try{ localStorage.setItem(QUOTE_STORAGE_KEY, JSON.stringify(arr)); storageOk = true; return true; }
+ catch(e){ storageOk = false; return false; }
+}
+function fmtDateTime(iso){
+ var d = new Date(iso);
+ if(isNaN(d.getTime())) return iso || '-';
+ var dd = pad2(d.getDate()), mo = pad2(d.getMonth()+1), yyyy = d.getFullYear();
+ var hh = pad2(d.getHours()), mi = pad2(d.getMinutes());
+ return dd+'/'+mo+'/'+yyyy+' '+hh+':'+mi;
+}
+function sanitizeArr(arr, fields){
+ var out=[];
+ arr = arr || [];
+ for(var i=0;i<arr.length;i++){
+  var it=arr[i], o={};
+  for(var j=0;j<fields.length;j++){ o[fields[j]] = it[fields[j]]; }
+  out.push(o);
+ }
+ return out;
+}
+function collectState(){
+ var o = {vals:{}, selects:{}};
+ for(var i=0;i<ids.length;i++){ o.vals[ids[i]] = document.getElementById(ids[i]).value; }
+ o.selects.postPattern = document.getElementById('postPattern').value;
+ o.selects.contractUnit = document.getElementById('contractUnit').value;
+ o.selects.salaryBasis = document.getElementById('salaryBasis').value;
+ o.selects.gradesOn = document.getElementById('gradesOn').value;
+ o.selects.rosterView = document.getElementById('rosterView').value;
+ o.selects.rosterMonth = document.getElementById('rosterMonth').value;
+ o.selects.rosterYear = document.getElementById('rosterYear').value;
+ o.otMode = otMode;
+ o.guardsTouched = guardsTouched;
+ o.adjTouched = adjTouched;
+ o.adjRate = document.getElementById('adjRate').value;
+ o.postItems = sanitizeArr(postItems, ['dayType','period','posts','hours']);
+ o.gradeItems = sanitizeArr(gradeItems, ['kind','name','n','basic','allow','na']);
+ o.miscItems = sanitizeArr(miscItems, ['type','name','qty','unit']);
+ o.feeItems = sanitizeArr(feeItems, ['name','pct']);
+ return o;
+}
+function ensureYearOption(y){
+ var ySel = document.getElementById('rosterYear');
+ var opts = ySel.options, found=false;
+ for(var i=0;i<opts.length;i++){ if(parseInt(opts[i].value,10)===parseInt(y,10)){ found=true; break; } }
+ if(!found){ var op=document.createElement('option'); op.value=y; op.textContent=y; ySel.appendChild(op); }
+}
+function applyState(o){
+ if(!o) return;
+ postItems = sanitizeArr(o.postItems, ['dayType','period','posts','hours']);
+ gradeItems = sanitizeArr(o.gradeItems, ['kind','name','n','basic','allow','na']);
+ miscItems = sanitizeArr(o.miscItems, ['type','name','qty','unit']);
+ feeItems = sanitizeArr(o.feeItems, ['name','pct']);
+ renderPosts(); renderGrades(); renderMisc(); renderFees();
+ var vals = o.vals || {};
+ for(var i=0;i<ids.length;i++){ if(vals[ids[i]] !== undefined) setVal(ids[i], vals[ids[i]]); }
+ var sel = o.selects || {};
+ if(sel.postPattern){ document.getElementById('postPattern').value = sel.postPattern; }
+ if(sel.contractUnit){ document.getElementById('contractUnit').value = sel.contractUnit; }
+ if(sel.salaryBasis){ document.getElementById('salaryBasis').value = sel.salaryBasis; }
+ if(sel.gradesOn){ document.getElementById('gradesOn').value = sel.gradesOn; }
+ if(sel.rosterYear){ ensureYearOption(sel.rosterYear); }
+ if(sel.rosterView){ document.getElementById('rosterView').value = sel.rosterView; }
+ if(sel.rosterMonth !== undefined){ document.getElementById('rosterMonth').value = sel.rosterMonth; }
+ if(sel.rosterYear){ document.getElementById('rosterYear').value = sel.rosterYear; }
+ guardsTouched = !!o.guardsTouched;
+ adjTouched = !!o.adjTouched;
+ if(o.adjRate !== undefined){ document.getElementById('adjRate').value = o.adjRate; }
+ togglePattern();
+ updateGradeVisibility();
+ setOtMode(o.otMode==='M' ? 2 : 1);
+ renderRoster();
+}
+function updateClientDisplay(){
+ var name = document.getElementById('clientName').value.trim();
+ var site = document.getElementById('quoteSite').value.trim();
+ var hc = document.getElementById('headerClient');
+ if(hc) hc.textContent = name ? ('Client: '+name+(site? '  —  '+site : '')) : '';
+ var mc = document.getElementById('mClient');
+ if(mc) mc.textContent = name || '-';
+}
+function updateEditingStatus(){
+ var el = document.getElementById('editingStatus');
+ if(!el) return;
+ var rec = null;
+ if(currentQuoteId){
+  for(var i=0;i<savedQuotes.length;i++){ if(savedQuotes[i].id===currentQuoteId){ rec=savedQuotes[i]; break; } }
+ }
+ el.textContent = rec ? ('Loaded: '+rec.clientName+' (saved '+fmtDateTime(rec.savedAt)+')') : 'New, unsaved quotation';
+}
+function showSaveMsg(cls, text){
+ var el = document.getElementById('saveMsg');
+ if(!el) return;
+ while(el.firstChild) el.removeChild(el.firstChild);
+ var d=document.createElement('div'); d.className=cls; d.textContent=text; el.appendChild(d);
+}
+function findQuote(id){
+ for(var i=0;i<savedQuotes.length;i++){ if(savedQuotes[i].id===id) return savedQuotes[i]; }
+ return null;
+}
+function matchesLogSearch(rec, term){
+ if(!term) return true;
+ var hay = ((rec.clientName||'')+' '+(rec.site||'')+' '+(rec.notes||'')).toLowerCase();
+ return hay.indexOf(term) > -1;
+}
+function renderSavedLog(){
+ var body = document.getElementById('logBody');
+ var emptyNote = document.getElementById('logEmptyNote');
+ var countNote = document.getElementById('logCountNote');
+ var searchEl = document.getElementById('logSearch');
+ if(!body) return;
+ while(body.firstChild) body.removeChild(body.firstChild);
+ var term = searchEl ? searchEl.value.trim().toLowerCase() : '';
+ var all = savedQuotes.slice().sort(function(a,b){ return (b.savedAt||'').localeCompare(a.savedAt||''); });
+ var sorted = term ? all.filter(function(rec){ return matchesLogSearch(rec, term); }) : all;
+ if(!all.length){
+  if(emptyNote){ emptyNote.style.display=''; emptyNote.textContent='No quotations saved yet in this browser.'; }
+  if(countNote) countNote.style.display='none';
+ } else if(term && !sorted.length){
+  if(emptyNote) emptyNote.style.display='none';
+  if(countNote){ countNote.style.display=''; countNote.textContent='No saved quotations match "'+searchEl.value.trim()+'".'; }
+ } else {
+  if(emptyNote) emptyNote.style.display='none';
+  if(countNote){
+   countNote.style.display='';
+   countNote.textContent = term
+    ? ('Showing '+sorted.length+' of '+all.length+' saved quotation(s) matching "'+searchEl.value.trim()+'".')
+    : ('Showing all '+all.length+' saved quotation(s).');
+  }
+ }
+ for(var i=0;i<sorted.length;i++){
+  (function(rec){
+   var tr=document.createElement('tr');
+   if(rec.id===currentQuoteId) tr.style.background='#eaf7ee';
+   var tdD=document.createElement('td'); tdD.style.textAlign='left'; tdD.textContent=fmtDateTime(rec.savedAt);
+   var tdC=document.createElement('td'); tdC.style.textAlign='left'; tdC.textContent=rec.clientName||'-';
+   var siteNotes=[]; if(rec.site) siteNotes.push(rec.site); if(rec.notes) siteNotes.push(rec.notes);
+   var tdS=document.createElement('td'); tdS.style.textAlign='left'; tdS.textContent=siteNotes.length? siteNotes.join(' - ') : '-';
+   var tdR=document.createElement('td'); tdR.textContent=fmt(rec.quotedRate,2);
+   var tdG=document.createElement('td'); tdG.textContent=fmt(rec.guardsUsed,0);
+   var tdBr=document.createElement('td'); tdBr.style.textAlign='left'; tdBr.textContent=rec.branch||'—';
+   var tdCb=document.createElement('td'); tdCb.style.textAlign='left'; tdCb.textContent=rec.createdByName||'—';
+   var tdA=document.createElement('td');
+   var wrap=document.createElement('div'); wrap.className='logActions';
+   var bLoad=document.createElement('button'); bLoad.type='button'; bLoad.className='xbtn'; bLoad.textContent='Load';
+   bLoad.addEventListener('click', function(){ loadQuotation(rec.id); });
+   var bDel=document.createElement('button'); bDel.type='button'; bDel.className='xbtn'; bDel.textContent='Delete';
+   bDel.addEventListener('click', function(){ deleteQuotation(rec.id); });
+   wrap.appendChild(bLoad); wrap.appendChild(bDel);
+   tdA.appendChild(wrap);
+   tr.appendChild(tdD); tr.appendChild(tdC); tr.appendChild(tdS); tr.appendChild(tdR); tr.appendChild(tdG); tr.appendChild(tdBr); tr.appendChild(tdCb); tr.appendChild(tdA);
+   body.appendChild(tr);
+  })(sorted[i]);
+ }
+}
+function saveQuotation(){
+ if(!canUseCalculator){ showSaveMsg('warn','Your account cannot save quotations.'); return; }
+ var name = document.getElementById('clientName').value.trim();
+ if(!name){
+  showSaveMsg('warn','Please enter a Client Name before saving.');
+  document.getElementById('clientName').focus();
+  return;
+ }
+ var isUpdate = false;
+ var existing = currentQuoteId ? findQuote(currentQuoteId) : null;
+ if(existing){
+  isUpdate = confirm('A quotation for "'+existing.clientName+'" saved '+fmtDateTime(existing.savedAt)+' is currently loaded.\n\nOK = overwrite that saved record with the current figures\nCancel = save this as a brand new record');
+ }
+ var id = isUpdate ? currentQuoteId : ('q_'+Date.now()+'_'+Math.random().toString(36).slice(2,8));
+ // A Branch Manager's save is always tagged with their own branch — there's no picker for
+ // them (see renderQuoteBranchControl()), so this can never disagree with what
+ // firestore.rules' /quotations create/update rule requires. Admin/HQ can file it under any
+ // branch via #quoteBranch, or leave it unassigned.
+ var branchSel = document.getElementById('quoteBranch');
+ var branch = isPrivileged ? ((branchSel && branchSel.value) || null) : (myDepartment || null);
+ var body = {
+  clientName: name,
+  site: document.getElementById('quoteSite').value.trim(),
+  notes: document.getElementById('quoteNotes').value.trim(),
+  savedAt: new Date().toISOString(),
+  quotedRate: R ? R.quote : NaN,
+  guardsUsed: R ? R.guards : NaN,
+  state: collectState(),
+  branch: branch,
+  createdByUid: myUid,
+  createdByName: myName
+ };
+ if(syncMode==='live' && dbApi){
+  dbApi.collection(QUOTES_COLLECTION).doc(id).set(body).then(function(){
+   currentQuoteId = id;
+   updateEditingStatus();
+   showSaveMsg('okmsg', (isUpdate?'Updated':'Saved')+' quotation for "'+name+'" at '+fmtDateTime(body.savedAt)+' — synced to your team.');
+  }).catch(function(err){
+   showSaveMsg('warn','Could not save to the shared team store ('+(err&&err.code?err.code:'error')+'). Nothing was saved - try again.');
+  });
+ } else {
+  var rec = Object.assign({id:id}, body);
+  if(isUpdate){
+   for(var i=0;i<savedQuotes.length;i++){ if(savedQuotes[i].id===currentQuoteId){ savedQuotes[i]=rec; break; } }
+  } else {
+   savedQuotes.push(rec);
+  }
+  currentQuoteId = id;
+  var ok = writeSavedQuotesToStorage(savedQuotes);
+  renderSavedLog();
+  updateEditingStatus();
+  if(ok){ showSaveMsg('okmsg', (isUpdate?'Updated':'Saved')+' quotation for "'+name+'" at '+fmtDateTime(body.savedAt)+' (saved to this browser only).'); }
+  else { showSaveMsg('warn','This browser could not store the save (storage may be full, disabled, or this is a private-browsing window). Use Export Backup to keep this quotation as a file.'); }
+ }
+}
+function loadQuotation(id){
+ var rec = findQuote(id);
+ if(!rec) return;
+ document.getElementById('clientName').value = rec.clientName||'';
+ document.getElementById('quoteSite').value = rec.site||'';
+ document.getElementById('quoteNotes').value = rec.notes||'';
+ applyState(rec.state);
+ currentQuoteId = rec.id;
+ updateClientDisplay();
+ updateEditingStatus();
+ renderSavedLog();
+ showSaveMsg('okmsg','Loaded quotation for "'+rec.clientName+'" saved '+fmtDateTime(rec.savedAt)+'.');
+}
+function deleteQuotation(id){
+ var rec = findQuote(id);
+ if(!rec) return;
+ if(!confirm('Delete the saved quotation for "'+rec.clientName+'" (saved '+fmtDateTime(rec.savedAt)+')? This cannot be undone.')) return;
+ if(syncMode==='live' && dbApi){
+  dbApi.collection(QUOTES_COLLECTION).doc(id).delete().then(function(){
+   if(currentQuoteId===id) currentQuoteId=null;
+   updateEditingStatus();
+  }).catch(function(err){
+   showSaveMsg('warn','Could not delete from the shared team store ('+(err&&err.code?err.code:'error')+').');
+  });
+ } else {
+  var next=[];
+  for(var i=0;i<savedQuotes.length;i++){ if(savedQuotes[i].id!==id) next.push(savedQuotes[i]); }
+  savedQuotes = next;
+  writeSavedQuotesToStorage(savedQuotes);
+  if(currentQuoteId===id) currentQuoteId=null;
+  renderSavedLog();
+  updateEditingStatus();
+ }
+}
+function newQuotation(){
+ if(!confirm('Start a new blank quotation? Client Name, Site and Notes will be cleared and all figures reset to the calculator defaults. This does not delete anything already saved.')) return;
+ currentQuoteId = null;
+ document.getElementById('clientName').value='';
+ document.getElementById('quoteSite').value='';
+ document.getElementById('quoteNotes').value='';
+ postItems = JSON.parse(JSON.stringify(DEFAULT_POST_ITEMS));
+ gradeItems = JSON.parse(JSON.stringify(DEFAULT_GRADE_ITEMS));
+ miscItems = JSON.parse(JSON.stringify(DEFAULT_MISC_ITEMS));
+ feeItems = JSON.parse(JSON.stringify(DEFAULT_FEE_ITEMS));
+ renderPosts(); renderGrades(); renderMisc(); renderFees();
+ document.getElementById('postPattern').value='U'; togglePattern();
+ document.getElementById('salaryBasis').value='M';
+ document.getElementById('gradesOn').value='N'; updateGradeVisibility();
+ document.getElementById('contractUnit').value='M';
+ resetAll();
+ setOtMode(1);
+ thisMonth();
+ updateClientDisplay();
+ updateEditingStatus();
+ renderSavedLog();
+ showSaveMsg('okmsg','Started a new blank quotation.');
+}
+function exportAllQuotes(){
+ if(!savedQuotes.length){ showSaveMsg('warn','No saved quotations to export yet.'); return; }
+ var payload = {exportedAt:new Date().toISOString(), source:'Guard Quotation Calculator', quotes:savedQuotes};
+ var text = JSON.stringify(payload,null,2);
+ var stamp = new Date().toISOString().slice(0,10);
+ var filename = 'quotation-backup-'+stamp+'.json';
+ if(window.claude && typeof window.claude.use === 'function'){
+  window.claude.use('downloads').then(function(dl){
+   if(!dl){ showSaveMsg('warn','File downloads are not available in this view.'); return; }
+   dl.save({filename:filename, data:text}).then(function(){
+    showSaveMsg('okmsg','Exported '+savedQuotes.length+' saved quotation(s) to a backup file.');
+   }).catch(function(err){
+    if(err && err.code==='declined') return;
+    showSaveMsg('warn','Could not export backup ('+(err&&err.code?err.code:'error')+').');
+   });
+  }).catch(function(){ showSaveMsg('warn','File downloads are not available in this view.'); });
+ } else {
+  var blob = new Blob([text], {type:'application/json'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  showSaveMsg('okmsg','Exported '+savedQuotes.length+' saved quotation(s) to a backup file.');
+ }
+}
+function importQuotesFile(input){
+ if(!canUseCalculator){ showSaveMsg('warn','Your account cannot import quotations.'); input.value=''; return; }
+ var file = input.files && input.files[0];
+ if(!file) return;
+ var reader = new FileReader();
+ reader.onload = function(){
+  try{
+   var data = JSON.parse(reader.result);
+   var incoming = null;
+   if(Object.prototype.toString.call(data)==='[object Array]') incoming = data;
+   else if(data && Object.prototype.toString.call(data.quotes)==='[object Array]') incoming = data.quotes;
+   if(!incoming) throw new Error('File does not contain a recognised quotations backup.');
+   var existingIds = {};
+   for(var i=0;i<savedQuotes.length;i++){ existingIds[savedQuotes[i].id]=true; }
+   var toAdd = [];
+   for(var j=0;j<incoming.length;j++){
+    var q = incoming[j];
+    if(!q || !q.state) continue;
+    var id = q.id;
+    if(!id || existingIds[id]){ id = 'q_'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'_'+j; }
+    existingIds[id]=true;
+    toAdd.push({id:id, clientName:q.clientName||'(no name)', site:q.site||'', notes:q.notes||'', savedAt:q.savedAt||new Date().toISOString(), quotedRate:q.quotedRate, guardsUsed:q.guardsUsed, state:q.state});
+   }
+   if(syncMode==='live' && dbApi){
+    // Every imported record is stamped with whoever is running the import and their own
+    // branch (Branch Manager) — a backup file's own branch/creator fields, if any, are not
+    // trusted, since firestore.rules would reject a write that disagreed with the importer's
+    // own branch anyway. Admin/HQ can leave a record unassigned by clearing #quoteBranch
+    // first, same as a fresh save.
+    var branchSelImp = document.getElementById('quoteBranch');
+    var importBranch = isPrivileged ? ((branchSelImp && branchSelImp.value) || null) : (myDepartment || null);
+    var writes = [];
+    for(var m=0;m<toAdd.length;m++){
+     var rec2 = toAdd[m];
+     var body2 = {clientName:rec2.clientName, site:rec2.site, notes:rec2.notes, savedAt:rec2.savedAt, quotedRate:rec2.quotedRate, guardsUsed:rec2.guardsUsed, state:rec2.state, branch:importBranch, createdByUid:myUid, createdByName:myName};
+     writes.push(dbApi.collection(QUOTES_COLLECTION).doc(rec2.id).set(body2));
+    }
+    Promise.all(writes).then(function(){
+     showSaveMsg('okmsg','Imported '+toAdd.length+' quotation(s) into the shared team store.');
+    }).catch(function(err){
+     showSaveMsg('warn','Some quotations could not be imported to the shared team store ('+(err&&err.code?err.code:'error')+').');
+    });
+   } else {
+    for(var n=0;n<toAdd.length;n++){ savedQuotes.push(toAdd[n]); }
+    writeSavedQuotesToStorage(savedQuotes);
+    renderSavedLog();
+    showSaveMsg('okmsg','Imported '+toAdd.length+' quotation(s) (saved to this browser only).');
+   }
+  } catch(e){
+   showSaveMsg('warn','Could not read that backup file: '+(e && e.message ? e.message : e));
+  }
+  input.value = '';
+ };
+ reader.readAsText(file);
+}
+document.getElementById('clientName').addEventListener('input', updateClientDisplay);
+document.getElementById('quoteSite').addEventListener('input', updateClientDisplay);
+document.getElementById('logSearch').addEventListener('input', renderSavedLog);
+renderSavedLog();
+updateEditingStatus();
+updateClientDisplay();
+initSync();
+</script>
+</body>
+</html>

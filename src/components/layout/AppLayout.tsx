@@ -42,6 +42,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               <NavLink to="/past-projects" className={navItemClass}>
                 <span aria-hidden>📦</span> Past Projects
               </NavLink>
+              <NavLink to="/quotation-calculator" className={navItemClass}>
+                <span aria-hidden>🧮</span> Quotation Calculator
+              </NavLink>
             </>
           )}
           <NavLink to="/duty-roster" className={navItemClass}>

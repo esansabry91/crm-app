@@ -8,6 +8,7 @@ import AnalysisPage from './pages/AnalysisPage';
 import ActiveProjectsPage from './pages/ActiveProjectsPage';
 import PastProjectsPage from './pages/PastProjectsPage';
 import DutyRosterPage from './pages/DutyRosterPage';
+import QuotationCalculatorPage from './pages/QuotationCalculatorPage';
 import AdminPage from './pages/AdminPage';
 
 /** A "Staff" or "Payroll" account can only ever reach Duty Roster; everyone else's home is Pipeline. */
@@ -81,6 +82,19 @@ export default function App() {
               <ProtectedRoute>
                 <AppLayout>
                   <DutyRosterPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/quotation-calculator"
+            element={
+              // hideFromStaff alone restricts this to exactly admin + branchManager — those are
+              // the only two roles it doesn't bounce to Duty Roster, since dutyStaff and payroll
+              // are the only roles it excludes.
+              <ProtectedRoute hideFromStaff>
+                <AppLayout>
+                  <QuotationCalculatorPage />
                 </AppLayout>
               </ProtectedRoute>
             }

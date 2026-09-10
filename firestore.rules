@@ -35,6 +35,15 @@ service cloud.firestore {
         && userDoc(request.auth.uid).data.active != false;
     }
 
+    // True only for a signed-in, active user with role "branchManager" — used below to scope
+    // the Quotation Calculator to admin + branchManager only (dutyStaff and payroll get none
+    // of this collection).
+    function isBranchManager() {
+      return isSignedIn()
+        && userDoc(request.auth.uid).data.role == 'branchManager'
+        && userDoc(request.auth.uid).data.active != false;
+    }
+
     // This user's own department (branch name, or "HQ").
     function myDepartment() {
       return userDoc(request.auth.uid).data.department;
@@ -167,6 +176,40 @@ service cloud.firestore {
         allow write: if isActiveUser() && !isPayroll()
           && canReachSite(get(/databases/$(database)/documents/sites/$(siteId)).data);
       }
+    }
+
+    // ---- Quotation Calculator (public/quotation-calculator/index.html, embedded via an
+    // <iframe> on /quotation-calculator) ----
+    // Only admin and branchManager ever reach this tool at all (gated in the CRM's own
+    // routing/nav, and independently re-checked here — dutyStaff and payroll get isActiveUser()
+    // but neither isAdmin() nor isBranchManager(), so canReachQuote() is false for them no
+    // matter what). Every saved quotation is tagged with the branch it belongs to (the saving
+    // Branch Manager's own department, always — never a value they choose) plus who created it
+    // (createdByUid/createdByName), mirroring the same branch-scoping /sites already uses.
+    // Unlike /sites, a quotation with no branch set is NOT open to everyone — pricing data is
+    // sensitive, so an unassigned quotation is admin/HQ-only until it's tagged to a branch.
+    match /quotations/{quoteId} {
+      function quoteBranch(data) {
+        return data.get('branch', null);
+      }
+      function canReachQuote(data) {
+        return isAdmin()
+          || myDepartment() == 'HQ'
+          || (isBranchManager() && quoteBranch(data) == myDepartment());
+      }
+
+      allow read: if isActiveUser() && canReachQuote(resource.data);
+      // createdByUid must match the signed-in caller — mirrors tenders' ownerUid check — so a
+      // save can never be filed under someone else's name.
+      allow create: if isActiveUser()
+        && (isAdmin() || isBranchManager())
+        && request.resource.data.createdByUid == request.auth.uid
+        && canReachQuote(request.resource.data);
+      // Both old and new data must be in reach, same reasoning as /sites' update rule: keeps a
+      // Branch Manager from touching a quotation outside their branch, and from moving a
+      // reachable one to a branch they don't belong to.
+      allow update: if isActiveUser() && canReachQuote(resource.data) && canReachQuote(request.resource.data);
+      allow delete: if isActiveUser() && canReachQuote(resource.data);
     }
   }
 }
