@@ -22,7 +22,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             </div>
             <div>
               <p className="text-sm font-semibold text-slate-900 leading-tight">Inter Prominent</p>
-              <p className="text-xs text-slate-400 leading-tight">Tender Pipeline CRM</p>
+              <p className="text-xs text-slate-400 leading-tight">Customer Relationship Management Portal</p>
             </div>
           </div>
         </div>

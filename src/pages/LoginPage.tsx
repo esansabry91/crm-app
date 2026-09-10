@@ -56,7 +56,7 @@ export default function LoginPage() {
           <div className="mx-auto mb-3 h-11 w-16 rounded-xl bg-blue-600 text-white flex items-center justify-center font-semibold text-base">
             IPSB
           </div>
-          <h1 className="text-xl font-semibold text-slate-900">Tender Pipeline CRM</h1>
+          <h1 className="text-xl font-semibold text-slate-900">Customer Relationship Management Portal</h1>
           <p className="text-sm text-slate-500 mt-1">
             {mode === 'signin' ? 'Sign in with your team account' : 'Reset your password'}
           </p>
