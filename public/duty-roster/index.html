@@ -533,6 +533,30 @@
           <p class="empty" id="tempGuardEmpty" hidden>No temporary guards used this month yet.</p>
           <p class="sub" id="tempGuardTotal" style="margin-top:8px;"></p>
         </div>
+
+        <!-- Admin + Branch Manager only (see canAssignSupportGuard()) — a Staff/dutyStaff
+             account never sees this panel at all, since picking a guard out of ANOTHER site's
+             roster is a cross-site action, unlike everything else on this tab. -->
+        <div class="panel" id="supportGuardPanel" hidden>
+          <h2>Assign a support guard</h2>
+          <p class="sub">Cover an empty slot with a real guard borrowed from another site in the same branch &mdash; unlike a temporary guard, this links back to his own record and counts toward his own hours, without ever touching his home site's own man-hour totals (see the Summary Report's "Combined" column there)</p>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">Unfilled slot to cover</label><select id="supportSlotSelect"></select></div>
+          </div>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">From site (same branch)</label><select id="supportOriginSite"></select></div>
+            <div style="flex:1;"><label class="small">Guard</label><select id="supportGuardSelect"></select></div>
+          </div>
+          <p class="empty" id="supportNoOtherSites" hidden>No other sites in this branch yet &mdash; nothing to borrow a guard from.</p>
+          <button class="btn primary sm" id="assignSupportBtn">Assign support guard</button>
+          <p class="empty" id="supportSlotEmpty" hidden>No unfilled slots this month &mdash; nothing needs a support guard right now.</p>
+          <table class="simple" style="margin-top:12px;">
+            <thead><tr><th>Date</th><th>Shift / Slot</th><th>Name</th><th>From site</th><th></th></tr></thead>
+            <tbody id="supportGuardTableBody"></tbody>
+          </table>
+          <p class="empty" id="supportGuardEmpty" hidden>No support guards used this month yet.</p>
+          <p class="sub" style="margin-top:8px;">Also mark him "Support (Other Site)" under "Mark a guard on leave" at his OWN site for this date, so his home roster doesn't also schedule him there.</p>
+        </div>
       </div>
 
       <div>
@@ -568,6 +592,8 @@
       <h2>Summary report</h2>
       <p class="sub" id="summaryReportSub">Per-guard totals for the month shown on the Roster tab</p>
       <button class="btn primary sm" id="exportTimeAttendanceBtn" type="button" style="margin-bottom:10px;">Export to Excel (TimeAttendance format)</button>
+      <button class="btn sm" id="refreshCombinedBtn" type="button" style="margin-bottom:10px;">Refresh combined hours</button>
+      <p class="empty" id="combinedHoursNote" style="margin:0 0 10px;">"Combined" totals a guard's own man-hours here plus any hours he picked up as a support guard at other sites this month &mdash; for reference only, it never changes this site's own Man-hours column or its exports. Click "Refresh combined hours" to (re)load it.</p>
       <div class="tablewrap" style="overflow-x:auto;">
         <table class="simple">
           <thead><tr>
@@ -584,6 +610,7 @@
             <th>Absent</th>
             <th>Leave</th>
             <th>Unpaid leave</th>
+            <th>Combined (incl. support elsewhere)</th>
           </tr></thead>
           <tbody id="summaryReportBody"></tbody>
         </table>
@@ -778,10 +805,19 @@
     // tempGuards: id -> {name, rate, createdAt} for one-off relief guards covering a specific
     // unfilled slot this month — see "Assign a temporary guard" in Adjustments. Referenced from
     // monthState.overrides exactly like a real guard id (see guardById()'s temp-guard fallback).
-    return { month:key, overrides:{}, leaves:{}, log:[], tempGuards:{}, updatedAt: nowIso() };
+    //
+    // supportGuards: id -> {homeSiteId, homeSiteName, homeGuardId, name, employeeId, createdAt}
+    // for a REAL guard from another site in the same branch, covering a slot here for one shift
+    // — see "Assign a support guard" in Adjustments. Referenced from monthState.overrides the
+    // same way (see guardById()'s support-guard fallback) and tallied into THIS site's own
+    // manHours totals (he really worked here), but never written into the home site's own
+    // month doc at all — see computeIncomingSupportHours() for how the home site instead reads
+    // this back, live, to show his combined total without touching its own official numbers.
+    return { month:key, overrides:{}, leaves:{}, log:[], tempGuards:{}, supportGuards:{}, updatedAt: nowIso() };
   }
-  // Defensive accessors: months/configs saved before these two fields existed won't have them.
+  // Defensive accessors: months/configs saved before these fields existed won't have them.
   function monthTempGuards(ms){ if(!ms.tempGuards) ms.tempGuards = {}; return ms.tempGuards; }
+  function monthSupportGuards(ms){ if(!ms.supportGuards) ms.supportGuards = {}; return ms.supportGuards; }
   function configHolidays(cfg){ if(!cfg.publicHolidays) cfg.publicHolidays = []; return cfg.publicHolidays; }
   function configStateHolidayDates(cfg){ if(!cfg.stateHolidayDates) cfg.stateHolidayDates = []; return cfg.stateHolidayDates; }
   // date ("YYYY-MM-DD") -> holiday name, for dates in configHolidays(cfg). Populated automatically
@@ -971,7 +1007,10 @@
     isPayroll: false,       // "payroll" role — reaches every branch's sites like a privileged user, but strictly view/export only
     canEdit: true,          // false for payroll — drives the read-only lockdown
     payrollBranchFilterValue: "", // currently selected branch in the payroll-only branch filter dropdown ("" = all)
-    branchOptions: []      // branch names from the CRM's own branch list, for the "assign to branch" picker
+    branchOptions: [],     // branch names from the CRM's own branch list, for the "assign to branch" picker
+    // "siteId::monthKey" -> {homeGuardId: hours}. Populated on demand by the "Refresh combined
+    // hours" button (computeIncomingSupportHours()) — see the Summary Report's Combined column.
+    combinedHoursCache: {}
   };
   function currentConfig(){
     if(!state.currentSiteId){
@@ -1027,17 +1066,30 @@
     if(g) return g;
     const ms = currentMonthState();
     const t = ms.tempGuards && ms.tempGuards[id];
-    return t ? { id, name:t.name, active:true, inactiveFrom:null, isTemp:true, rate:t.rate } : null;
+    if(t) return { id, name:t.name, active:true, inactiveFrom:null, isTemp:true, rate:t.rate };
+    const s = ms.supportGuards && ms.supportGuards[id];
+    if(s) return { id, name:s.name, employeeId:s.employeeId, active:true, inactiveFrom:null,
+      isSupport:true, homeSiteId:s.homeSiteId, homeSiteName:s.homeSiteName, homeGuardId:s.homeGuardId };
+    return null;
   }
   function guardName(id){
     const g = guardById(id);
     if(!g) return "(removed guard)";
-    return g.isTemp ? `${g.name} (Temp)` : g.name;
+    if(g.isTemp) return `${g.name} (Temp)`;
+    if(g.isSupport) return `${g.name} (Support — ${g.homeSiteName})`;
+    return g.name;
   }
   function activeGuardsOn(dateStr){
     return currentConfig().guards.filter(g => g.active !== false && (!g.inactiveFrom || dateStr < g.inactiveFrom));
   }
-  const LEAVE_REASONS = ["Leave", "Absent", "Medical leave (MC)", "Unpaid Leave"];
+  // "Support (Other Site)" marks a guard as temporarily working a shift at a different client
+  // site within the branch, rather than actually being away — see "Assign a support guard" in
+  // Adjustments for the other half of this: recording that shift at the site he's covering.
+  // Excluded on purpose from the MC/Absent/Leave/Unpaid-leave tallies in computeGuardSummary()
+  // below, so a support day never shows up as an absence on his record here — his vacated slot
+  // at THIS site still goes through the normal Replacement flow (temp guard / rest-day guard)
+  // exactly like any other leave reason, so this site's own coverage isn't affected either way.
+  const LEAVE_REASONS = ["Leave", "Absent", "Medical leave (MC)", "Unpaid Leave", "Support (Other Site)"];
   // A sentinel override value meaning "keep this slot a genuine conflict — don't auto-fill it —
   // until a temporary guard is assigned." Written by the "Mark a guard on leave" flow when the
   // Temporary Guard replacement mode is chosen (see generateMonth below and the addLeaveBtn
@@ -1343,6 +1395,7 @@
     renderRestInputs();
     renderLeaveGuardSelect();
     renderTempGuardPanel(lastResult);
+    renderSupportGuardPanel(lastResult);
     renderLeaveTable();
     renderSwapControls();
     renderLog();
@@ -1583,6 +1636,7 @@
       if(reason === "Absent") return "ABS";
       if(reason && reason.toLowerCase().indexOf("medical") !== -1) return "MC";
       if(reason === "Unpaid Leave") return "UPL";
+      if(reason === "Support (Other Site)") return "SUP";
       return "LV";
     }
 
@@ -1670,6 +1724,7 @@
       if(reason === "Absent") return "ABS";
       if(reason && reason.toLowerCase().indexOf("medical") !== -1) return "MC";
       if(reason === "Unpaid Leave") return "UPL";
+      if(reason === "Support (Other Site)") return "SUP";
       return "LV";
     }
 
@@ -1700,20 +1755,27 @@
     return rows;
   }
 
-  function summaryReportExportRows(y, m, config, monthState, result){
+  // `incoming`, when passed, is a {homeGuardId: hours} map from computeIncomingSupportHours()
+  // (see the "Refresh combined hours" button) — omit it (or pass null) to leave the Combined
+  // column blank, e.g. when it's never been refreshed for this site/month.
+  function summaryReportExportRows(y, m, config, monthState, result, incoming){
     const summary = computeGuardSummary(y, m, config, monthState, result);
     const guards = config.guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
     const tempGuards = monthTempGuards(monthState);
     const tempIds = Object.keys(tempGuards);
+    const supportGuards = monthSupportGuards(monthState);
+    const supportIds = Object.keys(supportGuards);
     const n = v => v || 0;
     const header = ["Employee ID","Guard","Man-hours","Normal worked days","Worked rest days","Worked public holidays",
-      "Normal OT (hrs)","Rest-day OT (hrs)","Public holiday OT (hrs)","MC","Absent","Leave","Unpaid leave"];
+      "Normal OT (hrs)","Rest-day OT (hrs)","Public holiday OT (hrs)","MC","Absent","Leave","Unpaid leave",
+      "Combined (incl. support elsewhere)"];
 
     const totals = {
       manHours:0, normalDays:0, restDaysWorked:0, holidayDaysWorked:0,
       normalOTHours:0, restOTHours:0, holidayOTHours:0,
-      mc:0, absent:0, leave:0, unpaidLeave:0
+      mc:0, absent:0, leave:0, unpaidLeave:0, combined:0
     };
+    let combinedKnown = false;
 
     const rows = guards.map(g => {
       const s = summary[g.id] || {};
@@ -1722,8 +1784,15 @@
       totals.normalOTHours += n(s.normalOTHours); totals.restOTHours += n(s.restOTHours);
       totals.holidayOTHours += n(s.holidayOTHours); totals.mc += n(s.mc);
       totals.absent += n(s.absent); totals.leave += n(s.leave); totals.unpaidLeave += n(s.unpaidLeave);
+      let combinedCell = "";
+      if(incoming){
+        combinedKnown = true;
+        const combined = n(s.manHours) + n(incoming[g.id]);
+        totals.combined += combined;
+        combinedCell = combined;
+      }
       return [g.employeeId||"", g.name, n(s.manHours), n(s.normalDays), n(s.restDaysWorked), n(s.holidayDaysWorked),
-        n(s.normalOTHours), n(s.restOTHours), n(s.holidayOTHours), n(s.mc), n(s.absent), n(s.leave), n(s.unpaidLeave)];
+        n(s.normalOTHours), n(s.restOTHours), n(s.holidayOTHours), n(s.mc), n(s.absent), n(s.leave), n(s.unpaidLeave), combinedCell];
     });
 
     const out = [header, ...rows];
@@ -1731,16 +1800,29 @@
     // Temporary/relief guards, listed separately below the permanent roster — only their own
     // man-hours are meaningful here, but those hours still roll into the grand total below.
     if(tempIds.length){
-      out.push(["", "Temporary guards this month", "", "", "", "", "", "", "", "", "", "", ""]);
+      out.push(["", "Temporary guards this month", "", "", "", "", "", "", "", "", "", "", "", ""]);
       tempIds.forEach(id => {
         const s = summary[id] || {};
         totals.manHours += n(s.manHours);
-        out.push(["", `${(tempGuards[id]||{}).name || "(unknown)"} (Temp)`, n(s.manHours), "", "", "", "", "", "", "", "", "", ""]);
+        out.push(["", `${(tempGuards[id]||{}).name || "(unknown)"} (Temp)`, n(s.manHours), "", "", "", "", "", "", "", "", "", "", ""]);
+      });
+    }
+
+    // Support guards — real guards borrowed from another site — also feed the grand total below
+    // (they really worked here) but never touch their home site's own numbers.
+    if(supportIds.length){
+      out.push(["", "Support guards this month", "", "", "", "", "", "", "", "", "", "", "", ""]);
+      supportIds.forEach(id => {
+        const s = summary[id] || {};
+        const entry = supportGuards[id] || {};
+        totals.manHours += n(s.manHours);
+        out.push([entry.employeeId||"", `${entry.name || "(unknown)"} (Support — ${entry.homeSiteName||"?"})`, n(s.manHours), "", "", "", "", "", "", "", "", "", "", ""]);
       });
     }
 
     out.push(["", "Total — all guards", totals.manHours, totals.normalDays, totals.restDaysWorked, totals.holidayDaysWorked,
-      totals.normalOTHours, totals.restOTHours, totals.holidayOTHours, totals.mc, totals.absent, totals.leave, totals.unpaidLeave]);
+      totals.normalOTHours, totals.restOTHours, totals.holidayOTHours, totals.mc, totals.absent, totals.leave, totals.unpaidLeave,
+      combinedKnown ? totals.combined : ""]);
 
     return out;
   }
@@ -1756,6 +1838,19 @@
     }).filter(Boolean).sort((a,b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
     const total = rows.reduce((sum,r) => sum + r[4], 0);
     return rows.length ? [header, ...rows, ["", "", "", "Total", total]] : [header];
+  }
+
+  function supportGuardExportRows(monthState){
+    const sg = monthSupportGuards(monthState);
+    const header = ["Date","Shift","Slot","Employee ID","Name","From site"];
+    const rows = Object.keys(sg).map(supportId => {
+      const key = Object.keys(monthState.overrides).find(k => monthState.overrides[k] === supportId);
+      if(!key) return null;
+      const [date, shiftId, slot] = key.split("|");
+      const entry = sg[supportId] || {};
+      return [date, shiftLabelForKey(date, shiftId), Number(slot)+1, entry.employeeId||"", entry.name||"", entry.homeSiteName||""];
+    }).filter(Boolean).sort((a,b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+    return rows.length ? [header, ...rows] : [header];
   }
 
   // Same per-guard totals as the Summary Report, remapped to the column order + 3-row header
@@ -1804,7 +1899,25 @@
         "", "", "", ""]; // Lateness/Early Out — not tracked by this tool, left blank
     });
 
-    return [descRow, typeRow, headerRow, ...rows];
+    // Support guards — real guards borrowed from another site for a shift here — DO get a row,
+    // unlike temp/relief guards above (they have a real Employee Code to put in column A). This
+    // assumes your payroll importer sums separate uploads that share the same Employee Code
+    // (one row from his home site's own file, one row from here) rather than only keeping the
+    // last one it sees — worth confirming with whoever runs your payroll import. If that
+    // assumption doesn't hold, drop this block and pay support shifts by hand instead, using
+    // the Combined column on the Summary Report to know the extra amount owed.
+    const supportGuardsMap = monthSupportGuards(monthState);
+    const supportRows = Object.keys(supportGuardsMap).map(id => {
+      const entry = supportGuardsMap[id] || {};
+      if(!entry.employeeId) return null; // no Employee Code on file for this guard — can't import a row for them
+      const s = summary[id] || {};
+      return [entry.employeeId, entry.name || "", NORMAL_WORK_DAYS, n(s.normalDays), n(s.absent),
+        n(s.leave), n(s.unpaidLeave), n(s.restDaysWorked), n(s.holidayDaysWorked),
+        n(s.normalOTHours), n(s.restOTHours), n(s.holidayOTHours),
+        "", "", "", ""];
+    }).filter(Boolean);
+
+    return [descRow, typeRow, headerRow, ...rows, ...supportRows];
   }
 
   function exportCurrentMonthToExcel(){
@@ -1821,8 +1934,11 @@
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(guardsExportRows()), "Guards");
     const sheetName = monthLabel(y, m).slice(0, 31);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rosterGridExportRows(y, m, result)), sheetName);
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryReportExportRows(y, m, config, monthState, result)), "Summary Report");
+    // Combined column: whatever "Refresh combined hours" last loaded for this site/month, or
+    // blank if that's never been clicked — see summaryReportExportRows()'s own comment.
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryReportExportRows(y, m, config, monthState, result, currentCombinedHours())), "Summary Report");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(tempGuardExportRows(monthState)), "Temp Guards");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(supportGuardExportRows(monthState)), "Support Guards");
 
     const siteName = ((state.sites.find(s => s.id === state.currentSiteId) || {}).name || "Site").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_");
     XLSX.writeFile(wb, `${siteName || "Site"}_${state.currentMonth}_roster.xlsx`);
@@ -1911,6 +2027,10 @@
     // Temp/relief guards get an entry too (same shape) so their own shifts are tallied below —
     // callers that only want permanent-guard stats should look up by config.guards ids only.
     Object.keys(monthTempGuards(monthState)).forEach(id => { summary[id] = initEntry(); });
+    // Same for support guards — a real guard from another site covering a slot HERE. Their
+    // hours count toward THIS site's manHours total (see emptyMonthState's supportGuards
+    // comment for why that's the intended behavior — this site genuinely had them working).
+    Object.keys(monthSupportGuards(monthState)).forEach(id => { summary[id] = initEntry(); });
 
     result.days.forEach(day => {
       const dateStr = day.dateStr;
@@ -1923,6 +2043,7 @@
         if(e.reason === "Medical leave (MC)") s.mc++;
         else if(e.reason === "Absent") s.absent++;
         else if(e.reason === "Unpaid Leave") s.unpaidLeave++;
+        else if(e.reason === "Support (Other Site)") { /* not an absence — see LEAVE_REASONS comment; deliberately not tallied here */ }
         else s.leave++; // "Leave", or any legacy/unrecognized reason
       });
 
@@ -1962,6 +2083,9 @@
     const guards = config.guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
     const tempGuards = monthTempGuards(monthState);
     const tempIds = Object.keys(tempGuards);
+    const supportGuards = monthSupportGuards(monthState);
+    const supportIds = Object.keys(supportGuards);
+    const incoming = currentCombinedHours(); // {homeGuardId: hours} or null if never refreshed
     const body = $("#summaryReportBody");
     if(!body) return;
 
@@ -1972,8 +2096,9 @@
     const totals = {
       manHours:0, normalDays:0, restDaysWorked:0, holidayDaysWorked:0,
       normalOTHours:0, restOTHours:0, holidayOTHours:0,
-      mc:0, absent:0, leave:0, unpaidLeave:0
+      mc:0, absent:0, leave:0, unpaidLeave:0, combined:0
     };
+    let combinedKnown = false;
 
     const permanentRows = guards.map(g => {
       const s = summary[g.id] || {};
@@ -1988,6 +2113,17 @@
       totals.absent += n(s.absent);
       totals.leave += n(s.leave);
       totals.unpaidLeave += n(s.unpaidLeave);
+      // Combined = this site's own man-hours (unchanged, official figure) + whatever the same
+      // guard picked up as a support guard elsewhere this month, purely for reference — see
+      // computeIncomingSupportHours()'s comment. Shows "—" until "Refresh combined hours" has
+      // been clicked at least once for this site/month.
+      let combinedCell = dash;
+      if(incoming){
+        combinedKnown = true;
+        const combined = n(s.manHours) + n(incoming[g.id]);
+        totals.combined += combined;
+        combinedCell = `<td class="mono">${h(combined)}</td>`;
+      }
       return `<tr>
         <td class="mono">${escapeHtml(g.employeeId || "—")}</td>
         <td>${escapeHtml(g.name)}</td>
@@ -2002,6 +2138,7 @@
         <td class="mono">${n(s.absent)}</td>
         <td class="mono">${n(s.leave)}</td>
         <td class="mono">${n(s.unpaidLeave)}</td>
+        ${combinedCell}
       </tr>`;
     });
 
@@ -2010,7 +2147,7 @@
     // their man-hours still feed into the grand total below so the overall figure is complete.
     let tempSection = "";
     if(tempIds.length){
-      tempSection += `<tr><td colspan="13" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Temporary guards this month</td></tr>`;
+      tempSection += `<tr><td colspan="14" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Temporary guards this month</td></tr>`;
       tempSection += tempIds.map(id => {
         const s = summary[id] || {};
         const name = (tempGuards[id] || {}).name || "(unknown)";
@@ -2019,12 +2156,33 @@
           <td class="mono">—</td>
           <td>${escapeHtml(name)} <span style="color:var(--muted, #64748b);font-size:12px;">(Temp)</span></td>
           <td class="mono">${h(s.manHours)}</td>
-          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
+          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
         </tr>`;
       }).join("");
     }
 
-    const totalsRow = (guards.length || tempIds.length) ? `<tr style="border-top:2px solid var(--border-strong,#94a3b8);">
+    // Support guards — real guards borrowed from another site — get their own section too, same
+    // shape as Temp above, tagged with which site they came from. Their man-hours also feed
+    // into THIS site's grand total below (they really worked here) but are never written back
+    // into their home site's own numbers — see emptyMonthState's supportGuards comment.
+    let supportSection = "";
+    if(supportIds.length){
+      supportSection += `<tr><td colspan="14" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Support guards this month</td></tr>`;
+      supportSection += supportIds.map(id => {
+        const s = summary[id] || {};
+        const entry = supportGuards[id] || {};
+        const name = entry.name || "(unknown)";
+        totals.manHours += n(s.manHours);
+        return `<tr>
+          <td class="mono">${escapeHtml(entry.employeeId || "—")}</td>
+          <td>${escapeHtml(name)} <span style="color:var(--muted, #64748b);font-size:12px;">(Support — ${escapeHtml(entry.homeSiteName || "?")})</span></td>
+          <td class="mono">${h(s.manHours)}</td>
+          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
+        </tr>`;
+      }).join("");
+    }
+
+    const totalsRow = (guards.length || tempIds.length || supportIds.length) ? `<tr style="border-top:2px solid var(--border-strong,#94a3b8);">
       <td></td>
       <td><strong>Total — all guards</strong></td>
       <td class="mono"><strong>${h(totals.manHours)}</strong></td>
@@ -2038,11 +2196,12 @@
       <td class="mono"><strong>${n(totals.absent)}</strong></td>
       <td class="mono"><strong>${n(totals.leave)}</strong></td>
       <td class="mono"><strong>${n(totals.unpaidLeave)}</strong></td>
+      <td class="mono"><strong>${combinedKnown ? h(totals.combined) : "—"}</strong></td>
     </tr>` : "";
 
-    body.innerHTML = (guards.length || tempIds.length)
-      ? permanentRows.join("") + tempSection + totalsRow
-      : `<tr><td colspan="13" class="empty">Add guards to see the summary report.</td></tr>`;
+    body.innerHTML = (guards.length || tempIds.length || supportIds.length)
+      ? permanentRows.join("") + tempSection + supportSection + totalsRow
+      : `<tr><td colspan="14" class="empty">Add guards to see the summary report.</td></tr>`;
 
     const holidayCount = configHolidays(config).filter(d => d.slice(0,7) === state.currentMonth).length;
     const sub = $("#summaryReportSub");
@@ -2433,6 +2592,164 @@
       });
     });
   }
+
+  // ---- Support Guard: cover an unfilled slot HERE with a REAL guard borrowed from another
+  // site in the same branch — not an ad-hoc name like Temp Guard. See emptyMonthState's
+  // supportGuards comment for the data shape, guardById()/guardName() for how it's resolved
+  // everywhere else (grid, calendar, exports) with no separate code path, and
+  // computeGuardSummary for why the hours count toward THIS site's own totals.
+  //
+  // Admin + Branch Manager only — picking a guard out of ANOTHER site's roster is a cross-site
+  // action, unlike everything else on this tab, which a dutyStaff/Payroll account never gets.
+  // This is enforced here in the UI only (same as every other write this tool makes) — see
+  // firestore.rules' /sites/{id}/months block, which doesn't distinguish roles beyond Payroll's
+  // read-only lockdown.
+  function canAssignSupportGuard(){
+    return state.canEdit && (state.isPrivileged || state.myRole === "branchManager");
+  }
+
+  // Guards from another site in the same branch, straight out of state.configsCache — already
+  // kept live for every site this user can reach (see recombineSitesAndRender's onSnapshot), so
+  // no extra Firestore read is needed just to populate this picker.
+  function otherBranchSites(){
+    const here = state.sites.find(s => s.id === state.currentSiteId);
+    if(!here || here.branch == null) return [];
+    return state.sites.filter(s => s.id !== here.id && !s.archived && s.branch === here.branch);
+  }
+
+  // Populates #supportGuardSelect from whichever site is chosen in #supportOriginSite.
+  function fillSupportGuardSelect(){
+    const sel = $("#supportGuardSelect");
+    if(!sel) return;
+    const originId = $("#supportOriginSite").value;
+    const prev = sel.value;
+    const cfg = state.configsCache[originId];
+    const guards = (cfg && cfg.guards) ? cfg.guards.filter(g => g.active !== false) : [];
+    sel.innerHTML = guards.map(g => `<option value="${g.id}">${escapeHtml(g.name)}${g.employeeId ? " ("+escapeHtml(g.employeeId)+")" : ""}</option>`).join("");
+    if(prev && guards.some(g => g.id === prev)) sel.value = prev;
+  }
+
+  function renderSupportGuardPanel(result){
+    const panel = $("#supportGuardPanel");
+    if(!panel) return;
+    const allowed = canAssignSupportGuard();
+    panel.hidden = !allowed;
+    if(!allowed) return;
+
+    const ms = currentMonthState();
+    const sg = monthSupportGuards(ms);
+
+    // --- unfilled-slot picker, same source as "Assign a temporary guard" above ---
+    const slotSel = $("#supportSlotSelect");
+    const prevSlot = slotSel.value;
+    const conflicts = result.conflicts;
+    $("#supportSlotEmpty").hidden = conflicts.length > 0;
+    slotSel.innerHTML = conflicts.map(c => {
+      const key = c.date+"|"+c.shiftId+"|"+c.slot;
+      return `<option value="${escapeHtml(key)}">${escapeHtml(c.date)} — ${escapeHtml(c.shiftLabel)}, Slot ${c.slot+1}</option>`;
+    }).join("");
+    if(prevSlot) slotSel.value = prevSlot;
+
+    // --- origin-site picker ---
+    const sites = otherBranchSites();
+    const originSel = $("#supportOriginSite");
+    const prevOrigin = originSel.value;
+    $("#supportNoOtherSites").hidden = sites.length > 0;
+    originSel.innerHTML = sites.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join("");
+    if(prevOrigin && sites.some(s => s.id === prevOrigin)) originSel.value = prevOrigin;
+    fillSupportGuardSelect();
+
+    $("#assignSupportBtn").disabled = conflicts.length === 0 || sites.length === 0;
+
+    // --- support guards already assigned this month, for reference ---
+    const rows = Object.keys(sg).map(supportId => {
+      const key = Object.keys(ms.overrides).find(k => ms.overrides[k] === supportId);
+      if(!key) return null; // orphaned (shouldn't normally happen) — just don't render it
+      const [date, shiftId, slot] = key.split("|");
+      return { supportId, key, date, shiftId, slot:Number(slot), name:sg[supportId].name, homeSiteName:sg[supportId].homeSiteName };
+    }).filter(Boolean).sort((a,b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+
+    const body = $("#supportGuardTableBody");
+    $("#supportGuardEmpty").hidden = rows.length > 0;
+    body.innerHTML = rows.map(r => `
+      <tr>
+        <td class="mono">${escapeHtml(r.date)}</td>
+        <td>${escapeHtml(shiftLabelForKey(r.date, r.shiftId))}, Slot ${r.slot+1}</td>
+        <td>${escapeHtml(r.name)}</td>
+        <td>${escapeHtml(r.homeSiteName)}</td>
+        <td><button class="btn sm danger" data-remove-support="${escapeHtml(r.supportId)}" data-remove-support-key="${escapeHtml(r.key)}">Remove</button></td>
+      </tr>
+    `).join("");
+
+    $$("[data-remove-support]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const supportId = btn.getAttribute("data-remove-support");
+        const key = btn.getAttribute("data-remove-support-key");
+        const name = (sg[supportId] || {}).name || "support guard";
+        openConfirmModal({
+          title: "Remove support guard",
+          message: `Remove ${name} from this slot? It goes back to unfilled unless another guard covers it.`,
+          okLabel: "Remove",
+          danger: true,
+          onConfirm: () => {
+            if(ms.overrides[key] === supportId) delete ms.overrides[key];
+            delete sg[supportId];
+            addLog(`Removed support guard ${name}.`);
+            persistMonth();
+            showToast(`Removed ${name}.`);
+            render();
+          }
+        });
+      });
+    });
+  }
+
+  function combinedHoursCacheKey(siteId, monthKeyStr){ return siteId + "::" + monthKeyStr; }
+  // Whatever was last loaded by "Refresh combined hours" for the site/month on screen right
+  // now — null until that button's been clicked at least once this session (nothing is
+  // fetched automatically; see the button's own handler for why).
+  function currentCombinedHours(){
+    return state.combinedHoursCache[combinedHoursCacheKey(state.currentSiteId, state.currentMonth)] || null;
+  }
+
+  // Cross-site, read-only: for the given site/month, sums up every hour ITS OWN guards picked
+  // up as a support guard at OTHER sites in the same branch — read live off those sites' own
+  // month docs (a one-off .get() per sibling site, not a live subscription — kept to an
+  // explicit "Refresh combined hours" click rather than every render(), since render() fires
+  // very often and this is a cross-site read). Nothing this returns is ever written back into
+  // this site's own month doc or folded into its manHours/OT/leave totals or its exports to the
+  // payroll TimeAttendance format — purely a display-only "combined" figure. See
+  // emptyMonthState's supportGuards comment and the Summary Report's Combined column note.
+  async function computeIncomingSupportHours(siteId, monthKeyStr){
+    const out = {}; // homeGuardId -> hours
+    if(!dbHandle) return out;
+    const here = state.sites.find(s => s.id === siteId);
+    if(!here || here.branch == null) return out;
+    const siblings = state.sites.filter(s => s.id !== siteId && !s.archived && s.branch === here.branch);
+    await Promise.all(siblings.map(async sib => {
+      const sibConfig = state.configsCache[sib.id];
+      if(!sibConfig) return;
+      let msData = null;
+      try{
+        const snap = await dbHandle.doc("sites/"+sib.id).collection("months").doc(monthKeyStr).get();
+        msData = snap.exists ? snap.data() : null;
+      }catch(e){ return; }
+      if(!msData || !msData.supportGuards) return;
+      Object.keys(msData.supportGuards).forEach(supportId => {
+        const entry = msData.supportGuards[supportId];
+        if(!entry || entry.homeSiteId !== siteId) return;
+        const overrideKey = Object.keys(msData.overrides || {}).find(k => msData.overrides[k] === supportId);
+        if(!overrideKey) return;
+        const [date, shiftId] = overrideKey.split("|");
+        const defs = computeShiftDefsForDay(sibConfig.site, dowMon(date));
+        const st = defs.find(d => d.id === shiftId);
+        if(!st) return;
+        out[entry.homeGuardId] = (out[entry.homeGuardId] || 0) + st.hours;
+      });
+    }));
+    return out;
+  }
+
   function fillGuardSelect(sel){
     const prev = sel.value;
     sel.innerHTML = currentConfig().guards.filter(g=>g.active!==false).map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join("");
@@ -2758,6 +3075,7 @@
     if(reason === "Absent") return "absent";
     if(reason && reason.toLowerCase().indexOf("medical") !== -1) return "on medical leave";
     if(reason === "Unpaid Leave") return "on unpaid leave";
+    if(reason === "Support (Other Site)") return "supporting another site";
     return "on leave";
   }
   // Noun form for possessive phrasing ("covering X's ___"), as opposed to
@@ -2766,6 +3084,7 @@
     if(reason === "Absent") return "absence";
     if(reason && reason.toLowerCase().indexOf("medical") !== -1) return "medical leave";
     if(reason === "Unpaid Leave") return "unpaid leave";
+    if(reason === "Support (Other Site)") return "supporting another site";
     return "leave";
   }
   // Keep the Replacement controls in sync as the guard, date or mode selection changes — see
@@ -2858,6 +3177,53 @@
     persistMonth();
     showToast(`Assigned ${name} to cover ${date}.`);
     render();
+  });
+
+  $("#supportOriginSite").addEventListener("change", fillSupportGuardSelect);
+
+  $("#assignSupportBtn").addEventListener("click", () => {
+    if(!canAssignSupportGuard()) return;
+    const key = $("#supportSlotSelect").value;
+    const originId = $("#supportOriginSite").value;
+    const guardId = $("#supportGuardSelect").value;
+    if(!key){ showToast("Pick an unfilled slot first.", true); return; }
+    if(!originId){ showToast("Pick which site he's coming from.", true); return; }
+    if(!guardId){ showToast("Pick which guard is covering this shift.", true); return; }
+    const originSite = state.sites.find(s => s.id === originId);
+    const originConfig = state.configsCache[originId];
+    const originGuard = originConfig && originConfig.guards.find(g => g.id === guardId);
+    if(!originSite || !originGuard){ showToast("Couldn't find that guard — try again.", true); return; }
+    const ms = currentMonthState();
+    const sg = monthSupportGuards(ms);
+    const supportId = newId("sup");
+    sg[supportId] = {
+      homeSiteId: originId, homeSiteName: originSite.name, homeGuardId: originGuard.id,
+      name: originGuard.name, employeeId: originGuard.employeeId || "", createdAt: nowIso()
+    };
+    ms.overrides[key] = supportId;
+    const [date, shiftId, slot] = key.split("|");
+    const label = shiftLabelForKey(date, shiftId);
+    addLog(`Assigned ${originGuard.name} (support from ${originSite.name}) to ${label}, Slot ${Number(slot)+1} on ${date}.`);
+    persistMonth();
+    showToast(`Assigned ${originGuard.name} to cover ${date}. Remember to also mark him "Support (Other Site)" at ${originSite.name}.`);
+    render();
+  });
+
+  // Cross-site read, so it's kept to an explicit click rather than firing on every render() —
+  // see computeIncomingSupportHours()'s own comment for why.
+  $("#refreshCombinedBtn").addEventListener("click", async () => {
+    const btn = $("#refreshCombinedBtn");
+    const originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Refreshing…";
+    const siteId = state.currentSiteId;
+    const monthKeyStr = state.currentMonth;
+    const hoursMap = await computeIncomingSupportHours(siteId, monthKeyStr);
+    state.combinedHoursCache[combinedHoursCacheKey(siteId, monthKeyStr)] = hoursMap;
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+    if(lastResult) renderSummaryReport(lastResult);
+    showToast("Combined hours refreshed.");
   });
 
   // A date change can move a FULLH swap between weekday/weekend, which can
