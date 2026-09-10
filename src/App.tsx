@@ -11,6 +11,7 @@ import DutyRosterPage from './pages/DutyRosterPage';
 import QuotationCalculatorPage from './pages/QuotationCalculatorPage';
 import AdminPage from './pages/AdminPage';
 import NewTenderWatcher from './components/notifications/NewTenderWatcher';
+import TenderAssignedWatcher from './components/notifications/TenderAssignedWatcher';
 
 /** A "Staff" or "Payroll" account can only ever reach Duty Roster; everyone else's home is Pipeline. */
 function defaultRouteFor(role: string | undefined): string {
@@ -36,8 +37,11 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         {/* Mounted once here (not inside AppLayout, which remounts on every route change) so the
-            live "new tender" listener survives page navigation instead of resetting each time. */}
+            live "new tender" listeners survive page navigation instead of resetting each time.
+            Each watcher checks the signed-in role itself and renders nothing for every other
+            role, so it's safe to always mount both. */}
         <NewTenderWatcher />
+        <TenderAssignedWatcher />
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
           <Route
