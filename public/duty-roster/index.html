@@ -981,14 +981,17 @@
       // action silently writing into a config nobody keeps a reference to.
       //
       // This runs on the very first render() at the bottom of the file, which fires
-      // synchronously BEFORE initDb() gets to do any of its async work — so in practice this
-      // self-heal path, not bootLocalFallback()'s own (structurally identical) check, is what
-      // actually wins the race whenever Firebase never becomes available at all. It needs the
-      // same tenderId-deep-link awareness as bootLocalFallback() for that reason: without it, a
-      // pending deep link would be silently swallowed by a generic "Site 1" nobody ever revisits
-      // (and firebase.auth() rehydrating successfully, e.g. the ordinary live-Firestore case,
-      // supersedes this self-heal a moment later via recombineSitesAndRender() — this branch
-      // only actually matters when Firebase never comes up).
+      // synchronously BEFORE initDb() gets to do any of its async work — so this self-heal path
+      // wins the race on EVERY page load, live Firestore or not, for the brief gap before
+      // initDb()'s async work resolves. When a tenderId deep link is pending we still want to
+      // show something reasonable for that gap (the deep-linked client's name rather than a
+      // generic "Site 1") — but this placeholder is local-only and never persisted to Firestore,
+      // so deepLinkHandled must stay FALSE here: recombineSitesAndRender()'s later call to
+      // handleTenderDeepLinkIfNeeded() is what actually looks up-or-creates the real,
+      // Firestore-persisted site once the live site list is known, and it will no-op forever if
+      // this synchronous placeholder already claimed deepLinkHandled first (that was the bug —
+      // it left the "Duty Roster" deep link never actually creating/selecting a Firestore site at
+      // all, falling back to whatever site was already selected/first for the branch instead).
       const id = newId("site");
       const cfg = makeSampleConfig();
       cfg.id = id; cfg.createdAt = nowIso();
@@ -998,7 +1001,7 @@
         cfg.tenderId = deepLinkTenderId;
         cfg.archived = false;
         state.sites = [{ id, name:cfg.name, branch:cfg.branch, tenderId:deepLinkTenderId, archived:false }];
-        deepLinkHandled = true;
+        // deliberately NOT setting deepLinkHandled here — see comment above.
       } else {
         cfg.name = "Site 1";
         state.sites = [{ id, name:"Site 1" }];
