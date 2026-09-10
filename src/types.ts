@@ -8,8 +8,15 @@
  * legacy value some old 'branchManager' accounts haven't been migrated off yet (see the
  * migration banner in UserManager.tsx); reusing it here would make the two unrelated meanings
  * indistinguishable for any account caught mid-migration.
+ *
+ * 'payroll' is Duty-Roster-only like 'dutyStaff' (same hideFromStaff gating), but strictly
+ * view/export — it can see every tab in the Duty Roster tool across every branch/site, but
+ * can't edit anything there beyond using the two Export to Excel buttons. The lockdown itself
+ * lives in public/duty-roster/index.html (state.isPayroll / the "readonly-mode" body class) and
+ * in firestore.rules (isPayroll() is read-only everywhere); this Role value is just what routes
+ * an account into that mode.
  */
-export type Role = 'admin' | 'branchManager' | 'dutyStaff';
+export type Role = 'admin' | 'branchManager' | 'dutyStaff' | 'payroll';
 
 /** The 7 fixed pipeline stages, in kanban column order. */
 export const STAGES = [

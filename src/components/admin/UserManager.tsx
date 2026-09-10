@@ -135,6 +135,7 @@ export default function UserManager() {
             <option value="branchManager">Branch Manager — sees only their own tenders</option>
             <option value="admin">HQ Admin — sees everything</option>
             <option value="dutyStaff">Staff — Duty Roster only, nothing else</option>
+            <option value="payroll">Payroll — Duty Roster only, view &amp; export only, all branches</option>
           </select>
           <select value={department} onChange={(e) => setDepartment(e.target.value)} className="input">
             {departmentOptions.map((d) => (
@@ -183,6 +184,7 @@ export default function UserManager() {
                       <option value="branchManager">Branch Manager</option>
                       <option value="admin">HQ Admin</option>
                       <option value="dutyStaff">Staff</option>
+                      <option value="payroll">Payroll</option>
                     </select>
                   </td>
                   <td className="py-2 pr-4">

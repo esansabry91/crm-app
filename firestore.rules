@@ -19,6 +19,16 @@ service cloud.firestore {
         && userDoc(request.auth.uid).data.active != false;
     }
 
+    // True only for a signed-in, active user with role "payroll" — a strictly view/export-only
+    // Duty Roster role (see the /sites block below). Never grant this function's result write
+    // access to anything; it exists so read rules can include payroll alongside admin/HQ
+    // without also handing it the write access those roles get.
+    function isPayroll() {
+      return isSignedIn()
+        && userDoc(request.auth.uid).data.role == 'payroll'
+        && userDoc(request.auth.uid).data.active != false;
+    }
+
     // True for any signed-in user whose profile exists and is still active (staff or admin).
     function isActiveUser() {
       return isSignedIn()
@@ -135,17 +145,26 @@ service cloud.firestore {
           || siteBranch(data) == null
           || siteBranch(data) == myDepartment();
       }
+      // Payroll reads every site regardless of branch (same reach as admin/HQ) but must never
+      // write — kept as a separate function from canReachSite so it's easy to see that the
+      // create/update/delete rules below deliberately do NOT call this one.
+      function canReadSite(data) {
+        return canReachSite(data) || isPayroll();
+      }
 
-      allow read: if isActiveUser() && canReachSite(resource.data);
-      allow create: if isActiveUser() && canReachSite(request.resource.data);
+      allow read: if isActiveUser() && canReadSite(resource.data);
+      allow create: if isActiveUser() && !isPayroll() && canReachSite(request.resource.data);
       // Both old and new data must be in reach — the first clause keeps a non-privileged
       // user from touching a site outside their branch at all, the second keeps them from
-      // reassigning a reachable site's branch to one they don't belong to.
-      allow update: if isActiveUser() && canReachSite(resource.data) && canReachSite(request.resource.data);
-      allow delete: if isActiveUser() && canReachSite(resource.data);
+      // reassigning a reachable site's branch to one they don't belong to. !isPayroll() blocks
+      // the Payroll role from writing at all, even to a site it can read.
+      allow update: if isActiveUser() && !isPayroll() && canReachSite(resource.data) && canReachSite(request.resource.data);
+      allow delete: if isActiveUser() && !isPayroll() && canReachSite(resource.data);
 
       match /months/{monthKey} {
-        allow read, write: if isActiveUser()
+        allow read: if isActiveUser()
+          && canReadSite(get(/databases/$(database)/documents/sites/$(siteId)).data);
+        allow write: if isActiveUser() && !isPayroll()
           && canReachSite(get(/databases/$(database)/documents/sites/$(siteId)).data);
       }
     }

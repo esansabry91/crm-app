@@ -12,6 +12,7 @@ export default function ProtectedRoute({
   /**
    * The "Staff" role can only ever reach Duty Roster — every other route passes this so a
    * Staff account bounces straight there instead of landing wherever this route would show.
+   * "Payroll" accounts are Duty-Roster-only in the same way, so they're gated by this too.
    */
   hideFromStaff?: boolean;
 }) {
@@ -48,7 +49,7 @@ export default function ProtectedRoute({
     );
   }
 
-  if (hideFromStaff && profile?.role === 'dutyStaff') {
+  if (hideFromStaff && (profile?.role === 'dutyStaff' || profile?.role === 'payroll')) {
     return <Navigate to="/duty-roster" replace />;
   }
 

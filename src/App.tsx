@@ -10,9 +10,9 @@ import PastProjectsPage from './pages/PastProjectsPage';
 import DutyRosterPage from './pages/DutyRosterPage';
 import AdminPage from './pages/AdminPage';
 
-/** A "Staff" account can only ever reach Duty Roster; everyone else's home is Pipeline. */
+/** A "Staff" or "Payroll" account can only ever reach Duty Roster; everyone else's home is Pipeline. */
 function defaultRouteFor(role: string | undefined): string {
-  return role === 'dutyStaff' ? '/duty-roster' : '/pipeline';
+  return role === 'dutyStaff' || role === 'payroll' ? '/duty-roster' : '/pipeline';
 }
 
 function LoginRoute() {

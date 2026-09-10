@@ -28,7 +28,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-1">
-          {profile?.role !== 'dutyStaff' && (
+          {profile?.role !== 'dutyStaff' && profile?.role !== 'payroll' && (
             <>
               <NavLink to="/pipeline" className={navItemClass}>
                 <span aria-hidden>🗂️</span> Pipeline
@@ -57,7 +57,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <div className="px-4 py-4 border-t border-slate-100">
           <p className="text-sm font-medium text-slate-800 truncate">{profile?.name}</p>
           <p className="text-xs text-slate-400 truncate">
-            {profile?.role === 'admin' ? 'HQ Admin' : profile?.role === 'dutyStaff' ? 'Staff' : 'Branch Manager'} ·{' '}
+            {profile?.role === 'admin'
+              ? 'HQ Admin'
+              : profile?.role === 'dutyStaff'
+                ? 'Staff'
+                : profile?.role === 'payroll'
+                  ? 'Payroll'
+                  : 'Branch Manager'}{' '}
+            ·{' '}
             {profile?.department}
           </p>
           <button

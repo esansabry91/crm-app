@@ -269,6 +269,30 @@
   .modalcard p.msg{ font-size:13px; color:var(--muted); margin:0 0 14px; }
   .modalcard input[type=text]{ width:100%; margin-bottom:14px; }
   .modalcard .modalbtns{ display:flex; justify-content:flex-end; gap:8px; }
+
+  /* Read-only lockdown for the "Payroll" role: view every tab, change nothing. Every
+     input/select/button/textarea inside the four tab views (.view) is disabled — that covers
+     every edit control on every tab (Roster, Guards & Shifts, Adjustments, Summary Report),
+     since none of them use drag/drop or contenteditable. Explicit higher-specificity
+     exceptions below re-enable pure navigation/viewing controls and the two Export to Excel
+     buttons, which happen to live inside .view alongside the controls they must stay next to. */
+  body.readonly-mode .view input,
+  body.readonly-mode .view select,
+  body.readonly-mode .view textarea,
+  body.readonly-mode .view button{
+    pointer-events:none;
+    opacity:0.55;
+    cursor:not-allowed;
+  }
+  body.readonly-mode #prevMonth,
+  body.readonly-mode #nextMonth,
+  body.readonly-mode .viewtoggle .vt,
+  body.readonly-mode #exportExcelBtn,
+  body.readonly-mode #exportTimeAttendanceBtn{
+    pointer-events:auto;
+    opacity:1;
+    cursor:pointer;
+  }
 </style>
 
 <div class="app">
@@ -284,6 +308,8 @@
   </div>
 
   <div class="sitebar">
+    <label class="small" style="margin:0;" id="payrollBranchFilterLabel" hidden>Branch</label>
+    <select id="payrollBranchFilter" hidden></select>
     <label class="small" style="margin:0;">Client site</label>
     <select id="siteSelect"></select>
     <span class="small" id="siteBranchBadge" style="color:var(--muted, #64748b);"></span>
@@ -913,6 +939,9 @@
     myDepartment: null,    // this signed-in user's branch/department (or "HQ"), from their CRM profile
     myRole: null,          // this signed-in user's CRM role
     isPrivileged: false,   // admin, or department "HQ" — reaches every branch's sites, like elsewhere in the CRM
+    isPayroll: false,       // "payroll" role — reaches every branch's sites like a privileged user, but strictly view/export only
+    canEdit: true,          // false for payroll — drives the read-only lockdown
+    payrollBranchFilterValue: "", // currently selected branch in the payroll-only branch filter dropdown ("" = all)
     branchOptions: []      // branch names from the CRM's own branch list, for the "assign to branch" picker
   };
   function currentConfig(){
@@ -1234,6 +1263,23 @@
     renderLeaveTable();
     renderSwapControls();
     renderLog();
+    enforceReadonlyLockdown();
+  }
+
+  // Belt-and-braces for the Payroll role, on top of the CSS in the <style> block above (which
+  // blocks mouse clicks visually/immediately). Every render() call rebuilds large chunks of
+  // each tab via innerHTML — new guard rows, calendar cells, holiday rows, and so on — so this
+  // runs at the end of every render() to actually set .disabled on every input/select/button/
+  // textarea inside a .view, which also blocks keyboard activation (Tab+Enter/Space) and form
+  // submission, not just pointer clicks. The same short exception list as the CSS keeps
+  // navigation and the two Export to Excel buttons usable.
+  const READONLY_EXEMPT_IDS = new Set(["prevMonth", "nextMonth", "exportExcelBtn", "exportTimeAttendanceBtn"]);
+  function enforceReadonlyLockdown(){
+    if(!state.isPayroll) return;
+    $$(".view input, .view select, .view textarea, .view button").forEach(el => {
+      if(READONLY_EXEMPT_IDS.has(el.id) || el.classList.contains("vt")) return;
+      el.disabled = true;
+    });
   }
 
   function renderSampleBanner(){
@@ -2304,6 +2350,12 @@
   $("#siteSelect").addEventListener("change", () => {
     switchSite($("#siteSelect").value);
   });
+  $("#payrollBranchFilter").addEventListener("change", () => {
+    state.payrollBranchFilterValue = $("#payrollBranchFilter").value;
+    renderSiteSelect();
+    const sel = $("#siteSelect");
+    if(sel && sel.value && sel.value !== state.currentSiteId) switchSite(sel.value);
+  });
   $("#newSiteBtn").addEventListener("click", () => {
     openNewSiteModal();
   });
@@ -2709,8 +2761,16 @@
   function renderSiteSelect(){
     const sel = $("#siteSelect");
     if(!sel) return;
-    sel.innerHTML = state.sites.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
-    if(state.currentSiteId) sel.value = state.currentSiteId;
+    applyPayrollUiLockdown();
+    let visibleSites = state.sites;
+    if(state.isPayroll && state.payrollBranchFilterValue){
+      visibleSites = state.payrollBranchFilterValue === "__unassigned__"
+        ? state.sites.filter(s => !s.branch)
+        : state.sites.filter(s => s.branch === state.payrollBranchFilterValue);
+    }
+    sel.innerHTML = (visibleSites.length ? visibleSites : state.sites)
+      .map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
+    if(state.currentSiteId && visibleSites.some(s => s.id === state.currentSiteId)) sel.value = state.currentSiteId;
     const delBtn = $("#deleteSiteBtn");
     if(delBtn) delBtn.disabled = state.sites.length <= 1;
     renderSiteBranchControl();
@@ -2725,8 +2785,37 @@
   function updateBrandSubtitle(){
     const el = $("#brandSubtitle");
     if(!el) return;
-    if(state.isPrivileged) el.textContent = "Master Schedule";
+    if(state.isPayroll) el.textContent = "Payroll — all branches, view & export only";
+    else if(state.isPrivileged) el.textContent = "Master Schedule";
     else if(state.myDepartment) el.textContent = `${state.myDepartment} — security guard scheduling`;
+  }
+
+  // Payroll accounts get a read-only view across every branch/site, reached via the two
+  // dropdowns in the sitebar (branch filter + client site), but none of the actions that
+  // change what sites exist or which branch owns one. Runs once the role is known (called
+  // from initDb()) and again whenever the site list re-renders, since #payrollBranchFilter's
+  // own <option>s need to stay in sync with state.branchOptions.
+  function applyPayrollUiLockdown(){
+    const filterLabel = $("#payrollBranchFilterLabel");
+    const filterSel = $("#payrollBranchFilter");
+    const newBtn = $("#newSiteBtn");
+    const renameBtn = $("#renameSiteBtn");
+    const delBtn = $("#deleteSiteBtn");
+    if(!filterSel) return;
+    if(state.isPayroll){
+      if(filterLabel) filterLabel.hidden = false;
+      filterSel.hidden = false;
+      filterSel.innerHTML = `<option value="">All branches</option>` +
+        state.branchOptions.filter(b => b !== "HQ").map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join("") +
+        `<option value="__unassigned__">Unassigned</option>`;
+      filterSel.value = state.payrollBranchFilterValue || "";
+      if(newBtn) newBtn.hidden = true;
+      if(renameBtn) renameBtn.hidden = true;
+      if(delBtn) delBtn.hidden = true;
+    } else {
+      if(filterLabel) filterLabel.hidden = true;
+      filterSel.hidden = true;
+    }
   }
 
   // Non-privileged users just see which branch owns the current site (read-only — they can
@@ -2880,7 +2969,19 @@
         }
       }
       state.isPrivileged = state.myRole === "admin" || state.myDepartment === "HQ";
+      // "Payroll" is a strictly view/export-only role: it reaches every branch's sites like a
+      // privileged user (so it must be included in the unfiltered query below), but it must
+      // never be treated as privileged elsewhere — it doesn't get the branch-reassignment
+      // picker, "+ New site"/Rename/Delete, or any edit control. document.body carries a
+      // "readonly-mode" class (see the CSS block near the top of this file) that disables every
+      // input/select/button inside the four tab views except navigation and the two Export to
+      // Excel buttons, which are explicitly exempted there.
+      state.isPayroll = state.myRole === "payroll";
+      state.canEdit = !state.isPayroll;
+      document.body.classList.toggle("readonly-mode", state.isPayroll);
       updateBrandSubtitle();
+      applyPayrollUiLockdown();
+      if(state.isPayroll) render();
 
       const branchesSnap = await dbHandle.collection("branches").get().catch(() => ({docs:[]}));
       state.branchOptions = branchesSnap.docs.map(d => (d.data()||{}).name).filter(Boolean);
@@ -2894,7 +2995,7 @@
       // (No orderBy here on purpose — combining it with a where() on a different field would
       // need a composite index; the merged list is sorted client-side below instead.)
       function reachableSiteQueries(){
-        if(state.isPrivileged) return [dbHandle.collection("sites")];
+        if(state.isPrivileged || state.isPayroll) return [dbHandle.collection("sites")];
         return [
           dbHandle.collection("sites").where("branch", "==", state.myDepartment || null),
           dbHandle.collection("sites").where("branch", "==", null)
