@@ -277,7 +277,7 @@
       <div class="brand-mark">DR</div>
       <div class="brand-text">
         <h1>Duty Roster Console</h1>
-        <p>Global Density &mdash; security guard scheduling</p>
+        <p id="brandSubtitle">Global Density &mdash; security guard scheduling</p>
       </div>
     </div>
     <div class="sync" id="syncIndicator"><span class="dot"></span><span id="syncLabel">Connecting&hellip;</span></div>
@@ -935,8 +935,8 @@
         </div>
       </div>`;
     $("#modalOk").addEventListener("click", () => { closeModal(); opts.onConfirm(); });
-    $("#modalCancel").addEventListener("click", closeModal);
-    $("#modalVeil").addEventListener("click", e => { if(e.target.id === "modalVeil") closeModal(); });
+    $("#modalCancel").addEventListener("click", () => { closeModal(); if(opts.onCancel) opts.onCancel(); });
+    $("#modalVeil").addEventListener("click", e => { if(e.target.id === "modalVeil"){ closeModal(); if(opts.onCancel) opts.onCancel(); } });
   }
   function openAlertModal(title, message){
     const root = $("#modalRoot");
@@ -1608,7 +1608,26 @@
     openNewSiteModal();
   });
   $("#siteBranchSelect").addEventListener("change", () => {
-    setSiteBranch(state.currentSiteId, $("#siteBranchSelect").value || null);
+    const sel = $("#siteBranchSelect");
+    const site = state.sites.find(s => s.id === state.currentSiteId);
+    const previousBranch = site ? (site.branch || null) : null;
+    const newBranch = sel.value || null;
+    if(newBranch === previousBranch) return;
+    const siteName = site ? site.name : "This site";
+    const fromLabel = previousBranch || "Unassigned";
+    const toLabel = newBranch || "Unassigned";
+    openConfirmModal({
+      title: "Reassign branch",
+      message: `Move "${siteName}" from ${fromLabel} to ${toLabel}? Everyone in ${fromLabel} will lose access to this site's roster, and everyone in ${toLabel} will gain it.`,
+      okLabel: "Reassign",
+      onConfirm: () => {
+        setSiteBranch(state.currentSiteId, newBranch);
+        showToast(`Moved "${siteName}" to ${toLabel}.`);
+      },
+      // Cancel or dismiss leaves the dropdown showing the branch it actually reassigned to
+      // (the select already flipped to the newly picked option on its own) — put it back.
+      onCancel: () => { sel.value = previousBranch || ""; }
+    });
   });
   $("#renameSiteBtn").addEventListener("click", () => {
     const site = state.sites.find(s => s.id === state.currentSiteId);
@@ -1933,6 +1952,19 @@
     renderSiteBranchControl();
   }
 
+  // The header under "Duty Roster Console" starts out as the generic "Global Density —
+  // security guard scheduling" (the local/offline fallback default, when there's no signed-in
+  // profile to go on yet). Once we know who's looking at it, this replaces that with something
+  // specific to them: their own branch's name for a Branch Manager or Staff account, or
+  // "Master Schedule" for anyone privileged (admin, or HQ department) who oversees every
+  // branch's rosters rather than just one.
+  function updateBrandSubtitle(){
+    const el = $("#brandSubtitle");
+    if(!el) return;
+    if(state.isPrivileged) el.textContent = "Master Schedule";
+    else if(state.myDepartment) el.textContent = `${state.myDepartment} — security guard scheduling`;
+  }
+
   // Non-privileged users just see which branch owns the current site (read-only — they can
   // only ever create/reach sites in their own branch anyway, so there's nothing to change).
   // Privileged users (admin, or HQ department) get an actual picker, since they're the ones
@@ -2084,6 +2116,7 @@
         }
       }
       state.isPrivileged = state.myRole === "admin" || state.myDepartment === "HQ";
+      updateBrandSubtitle();
 
       const branchesSnap = await dbHandle.collection("branches").get().catch(() => ({docs:[]}));
       state.branchOptions = branchesSnap.docs.map(d => (d.data()||{}).name).filter(Boolean);
