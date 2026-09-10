@@ -2357,9 +2357,10 @@
   });
   $("#payrollBranchFilter").addEventListener("change", () => {
     state.payrollBranchFilterValue = $("#payrollBranchFilter").value;
-    renderSiteSelect();
-    const sel = $("#siteSelect");
-    if(sel && sel.value && sel.value !== state.currentSiteId) switchSite(sel.value);
+    // A full render() (rather than just renderSiteSelect()) so everything on the page —
+    // stats, calendar, the read-only branch badge, etc. — reflects whichever site
+    // renderSiteSelect() lands on for the newly-selected branch, not just the dropdown itself.
+    render();
   });
   $("#newSiteBtn").addEventListener("click", () => {
     openNewSiteModal();
@@ -2708,13 +2709,18 @@
   });
 
   /* ---------------- site management ---------------- */
-  function switchSite(id){
+  // opts.skipRender lets renderSiteSelect() (called from inside render() itself) switch sites
+  // without kicking off a second, nested render() pass — the caller's own in-progress render()
+  // already runs the rest of the page against the updated state.currentSiteId once this
+  // returns, since renderSiteSelect() runs first in render()'s sequence, before currentConfig()
+  // is read for anything else.
+  function switchSite(id, opts){
     if(!state.sites.find(s => s.id === id)) return;
     Object.keys(monthUnsubs).forEach(k => { monthUnsubs[k](); delete monthUnsubs[k]; });
     state.currentSiteId = id;
     try{ localStorage.setItem("dutyRosterLastSite", id); }catch(e){}
     if(dbHandle) subscribeMonth(id, state.currentMonth);
-    render();
+    if(!(opts && opts.skipRender)) render();
   }
 
   function createSite(name, branch){
@@ -2773,9 +2779,29 @@
         ? state.sites.filter(s => !s.branch)
         : state.sites.filter(s => s.branch === state.payrollBranchFilterValue);
     }
-    sel.innerHTML = (visibleSites.length ? visibleSites : state.sites)
-      .map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
-    if(state.currentSiteId && visibleSites.some(s => s.id === state.currentSiteId)) sel.value = state.currentSiteId;
+    if(!visibleSites.length){
+      // The selected branch genuinely has no client sites — show that plainly rather than
+      // silently falling back to every site (which is what used to make the Client Site
+      // dropdown show a site from a DIFFERENT branch than the one just picked in the Branch
+      // filter, with the read-only branch badge then correctly-but-confusingly disagreeing
+      // with it).
+      sel.innerHTML = `<option value="">No client sites in this branch</option>`;
+    } else {
+      sel.innerHTML = visibleSites.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
+      const currentStillVisible = state.currentSiteId && visibleSites.some(s => s.id === state.currentSiteId);
+      if(currentStillVisible){
+        sel.value = state.currentSiteId;
+      } else {
+        // The branch filter just changed to one that doesn't include the site we were
+        // looking at — jump to the first site in the newly-filtered list so the rest of the
+        // page (including the read-only branch badge in renderSiteBranchControl(), called at
+        // the end of this function) reflects the branch that's actually selected, instead of
+        // trailing behind the old site. skipRender:true avoids a nested render() call — this
+        // function already runs inside one, before currentConfig() is read for anything else.
+        switchSite(visibleSites[0].id, {skipRender:true});
+        sel.value = visibleSites[0].id;
+      }
+    }
     const delBtn = $("#deleteSiteBtn");
     if(delBtn) delBtn.disabled = state.sites.length <= 1;
     renderSiteBranchControl();
