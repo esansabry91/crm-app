@@ -164,6 +164,7 @@ tbody tr:hover td{background:#f8fbfe}
  <div class='tabs'>
   <button type='button' class='tab on' id='tabF' onclick='setOtMode(1)'>Fixed OT Rate</button>
   <button type='button' class='tab' id='tabM' onclick='setOtMode(2)'>Multiplier OT Rate</button>
+  <button type='button' class='tab' id='tabB' onclick='setOtMode(3)'>Only Basic</button>
  </div>
 </header>
 <div class='errbar' id='errBar'></div>
@@ -171,8 +172,8 @@ tbody tr:hover td{background:#f8fbfe}
 <div>
  <div class='card' id='saveCard'>
   <h2>Quotation Details &amp; Save</h2>
-  <div class='row'><span class='lbl'>Sync status</span><span class='syncBadge' id='syncStatus'><span class='syncDot checking' id='syncDot'></span><span id='syncText'>Checking sync…</span></span></div>
-  <div class='row'><span class='lbl'>Signed in as</span><span id='authArea' style='text-align:right'></span></div>
+  <div class='row' id='syncStatusRow' style='display:none'><span class='lbl'>Sync status</span><span class='syncBadge' id='syncStatus'><span class='syncDot checking' id='syncDot'></span><span id='syncText'>Checking sync…</span></span></div>
+  <div class='row' id='authAreaRow' style='display:none'><span class='lbl'>Signed in as</span><span id='authArea' style='text-align:right'></span></div>
   <div class='row'><label for='clientName'>Client Name<span class='tag'>required to save</span></label><input id='clientName' type='text' style='width:220px;text-align:left' placeholder='e.g. ABC Sdn Bhd' value=''></div>
   <div class='row'><label for='quoteSite'>Site / Project (optional)</label><input id='quoteSite' type='text' style='width:220px;text-align:left' placeholder='e.g. Menara ABC, KL' value=''></div>
   <div class='row'><label for='quoteNotes'>Notes (optional)</label><input id='quoteNotes' type='text' style='width:220px;text-align:left' placeholder='e.g. Revision 2 - added night posts' value=''></div>
@@ -271,22 +272,28 @@ tbody tr:hover td{background:#f8fbfe}
   <div class='row'><label for='basic'>Basic Salary (RM)</label><span><input id='basic' type='number' step='50' min='0' value='1700'> <select id='salaryBasis'><option value='M' selected>Monthly</option><option value='D'>Daily</option></select></span></div>
   <div class='row'><span class='lbl'>Basic Salary - Monthly Equivalent (RM)</span><span class='out' id='basicMoEq'></span></div>
   <div class='row'><label for='workDaysMo'>Working Days per Month</label><input id='workDaysMo' type='number' step='1' min='1' value='26'></div>
-  <div class='row'><label for='rdDays'>Rest Days Worked per Month (within normal shift)</label><input id='rdDays' type='number' step='1' min='0' value='4'></div>
-  <div class='row'><label for='phDays'>Public Holidays Worked per Month (within shift)</label><input id='phDays' type='number' step='1' min='0' value='0'></div>
+  <div class='row' id='rowRdDays'><label for='rdDays'>Rest Days Worked per Month (within normal shift)</label><input id='rdDays' type='number' step='1' min='0' value='4'></div>
+  <div class='row' id='rowPhDays'><label for='phDays'>Public Holidays Worked per Month (within shift)</label><input id='phDays' type='number' step='1' min='0' value='0'></div>
+  <div id='otSectionNormal'>
   <div class='msub'>Normal Overtime</div>
   <div class='row'><label for='otHrs'>Overtime Hours per Month (per guard)</label><input id='otHrs' type='number' step='1' min='0' value='104'></div>
   <div class='row mF'><label for='otRate'>Overtime Rate (RM per hour)</label><input id='otRate' type='number' step='0.01' min='0' value='6.13'></div>
   <div class='row mM'><label for='otMult'>Overtime Rate Multiplier (x normal hourly rate)</label><input id='otMult' type='number' step='0.05' min='0' value='0.75'></div>
+  </div>
+  <div id='otSectionRestDay'>
   <div class='msub'>Rest Day Overtime</div>
   <div class='row'><label for='rdMult'>Rest Day Rate Multiplier (x normal daily rate)</label><input id='rdMult' type='number' step='0.5' min='0' value='1'></div>
   <div class='row'><label for='rdOtHrs'>Rest Day OT Hours per Month (beyond shift)</label><input id='rdOtHrs' type='number' step='1' min='0' value='16'></div>
   <div class='row mF'><label for='rdOtRate'>Rest Day OT Rate (RM per hour)</label><input id='rdOtRate' type='number' step='0.01' min='0' value='8.17'></div>
   <div class='row mM'><label for='rdOtMult'>Rest Day OT Rate Multiplier (x normal hourly rate)</label><input id='rdOtMult' type='number' step='0.5' min='0' value='1'></div>
+  </div>
+  <div id='otSectionPublicHoliday'>
   <div class='msub'>Public Holiday Overtime</div>
   <div class='row'><label for='phMult'>Public Holiday Rate Multiplier (x normal daily rate)</label><input id='phMult' type='number' step='0.5' min='0' value='1'></div>
   <div class='row'><label for='phOtHrs'>Public Holiday OT Hours per Month (beyond shift)</label><input id='phOtHrs' type='number' step='1' min='0' value='0'></div>
   <div class='row mF'><label for='phOtRate'>Public Holiday OT Rate (RM per hour)</label><input id='phOtRate' type='number' step='0.01' min='0' value='8.17'></div>
   <div class='row mM'><label for='phOtMult'>Public Holiday OT Rate Multiplier (x normal hourly rate)</label><input id='phOtMult' type='number' step='0.5' min='0' value='1'></div>
+  </div>
   <div class='msub'>Statutory Employer Contribution</div>
   <div class='row'><label for='epf'>EPF Employer Contribution Rate (%)</label><input id='epf' type='number' step='0.1' min='0' value='13'></div>
   <div class='row'><label for='socso'>SOCSO Employer Contribution Rate (%)</label><input id='socso' type='number' step='0.05' min='0' value='1.75'></div>
@@ -689,11 +696,11 @@ function gradeAggregate(o, dayBasis, kind){
   var am=(o.salaryBasis==='D')? ga*o.workDaysMo : ga;
   var nh=o.workDaysMo*o.normalHrs;
   var hr=nh>0? bm/nh : 0;
-  var ot=(o.otMode==='M') ? o.otHrs*hr*o.otMult : o.otHrs*o.otRate;
-  var rd=o.rdDays*o.normalHrs*hr*o.rdMult;
-  var rdo=(o.otMode==='M') ? o.rdOtHrs*hr*o.rdOtMult : o.rdOtHrs*o.rdOtRate;
-  var ph=o.phDays*o.shiftHrs*hr*o.phMult;
-  var pho=(o.otMode==='M') ? o.phOtHrs*hr*o.phOtMult : o.phOtHrs*o.phOtRate;
+  var ot=(o.otMode==='B') ? 0 : (o.otMode==='M') ? o.otHrs*hr*o.otMult : o.otHrs*o.otRate;
+  var rd=(o.otMode==='B') ? 0 : o.rdDays*o.normalHrs*hr*o.rdMult;
+  var rdo=(o.otMode==='B') ? 0 : (o.otMode==='M') ? o.rdOtHrs*hr*o.rdOtMult : o.rdOtHrs*o.rdOtRate;
+  var ph=(o.otMode==='B') ? 0 : o.phDays*o.shiftHrs*hr*o.phMult;
+  var pho=(o.otMode==='B') ? 0 : (o.otMode==='M') ? o.phOtHrs*hr*o.phOtMult : o.phOtHrs*o.phOtRate;
   var gTot=0;
   for(var k=0;k<2;k++){
    var cnt=(k===0)? na : (n-na);
@@ -940,11 +947,11 @@ function engine(o, touched){
  } else {
   normalHrsMo = o.workDaysMo*o.normalHrs;
   hourly = normalHrsMo>0 ? basicMonthly/normalHrsMo : NaN;
-  otPay = (o.otMode==='M') ? o.otHrs*hourly*o.otMult : o.otHrs*o.otRate;
-  rdPay = o.rdDays*o.normalHrs*hourly*o.rdMult;
-  rdOtPay = (o.otMode==='M') ? o.rdOtHrs*hourly*o.rdOtMult : o.rdOtHrs*o.rdOtRate;
-  phPay = o.phDays*o.shiftHrs*hourly*o.phMult;
-  phOtPay = (o.otMode==='M') ? o.phOtHrs*hourly*o.phOtMult : o.phOtHrs*o.phOtRate;
+  otPay = (o.otMode==='B') ? 0 : (o.otMode==='M') ? o.otHrs*hourly*o.otMult : o.otHrs*o.otRate;
+  rdPay = (o.otMode==='B') ? 0 : o.rdDays*o.normalHrs*hourly*o.rdMult;
+  rdOtPay = (o.otMode==='B') ? 0 : (o.otMode==='M') ? o.rdOtHrs*hourly*o.rdOtMult : o.rdOtHrs*o.rdOtRate;
+  phPay = (o.otMode==='B') ? 0 : o.phDays*o.shiftHrs*hourly*o.phMult;
+  phOtPay = (o.otMode==='B') ? 0 : (o.otMode==='M') ? o.phOtHrs*hourly*o.phOtMult : o.phOtHrs*o.phOtRate;
   gross = basicMonthly+otPay+rdPay+rdOtPay+phPay+phOtPay;
   var capped = Math.min(gross,o.ceiling);
   epfAmt = basicMonthly*o.epf/100;
@@ -1036,10 +1043,14 @@ function engine(o, touched){
   marginC:(quoteC>0 ? (quoteC-cpmC)/quoteC : NaN), marginTotal:marginTotal};
 }
 var otMode = 'F';
+/* 'F' = Fixed OT Rate, 'M' = Multiplier OT Rate, 'B' = Only Basic (no overtime, rest day
+   or public holiday pay at all - cost is basic salary only). */
+var otHiddenSectionIds = ['otSectionNormal','otSectionRestDay','otSectionPublicHoliday','rowRdDays','rowPhDays'];
 function setOtMode(which){
- otMode = (which===2) ? 'M' : 'F';
+ otMode = (which===2) ? 'M' : (which===3) ? 'B' : 'F';
  document.getElementById('tabF').className = (otMode==='F') ? 'tab on' : 'tab';
  document.getElementById('tabM').className = (otMode==='M') ? 'tab on' : 'tab';
+ document.getElementById('tabB').className = (otMode==='B') ? 'tab on' : 'tab';
  updateOtModeVisibility();
  calc();
 }
@@ -1047,10 +1058,16 @@ function updateOtModeVisibility(){
  var f=document.getElementsByClassName('mF'), m=document.getElementsByClassName('mM'), i;
  for(i=0;i<f.length;i++) f[i].style.display = (otMode==='F') ? '' : 'none';
  for(i=0;i<m.length;i++) m[i].style.display = (otMode==='M') ? '' : 'none';
+ for(i=0;i<otHiddenSectionIds.length;i++){
+  var el=document.getElementById(otHiddenSectionIds[i]);
+  if(el) el.style.display = (otMode==='B') ? 'none' : '';
+ }
  var n=document.getElementById('otModeNote');
  if(n) n.textContent = (otMode==='F')
   ? 'Overtime mode: FIXED RATE. Every overtime hour is paid at the RM per hour entered above, independent of the basic hourly rate.'
-  : 'Overtime mode: MULTIPLIER. Every overtime hour is paid at the multiplier times the basic hourly rate, so it moves with basic salary.';
+  : (otMode==='M')
+  ? 'Overtime mode: MULTIPLIER. Every overtime hour is paid at the multiplier times the basic hourly rate, so it moves with basic salary.'
+  : 'Overtime mode: ONLY BASIC. Overtime, rest day pay and public holiday pay are excluded entirely - cost per guard is based on basic salary (plus statutory contributions) only.';
 }
 function readInputs(){
  var o={};
@@ -1878,7 +1895,7 @@ function applyState(o){
  if(o.adjRate !== undefined){ document.getElementById('adjRate').value = o.adjRate; }
  togglePattern();
  updateGradeVisibility();
- setOtMode(o.otMode==='M' ? 2 : 1);
+ setOtMode(o.otMode==='M' ? 2 : (o.otMode==='B' ? 3 : 1));
  renderRoster();
 }
 function updateClientDisplay(){
