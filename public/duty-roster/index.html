@@ -286,6 +286,8 @@
   <div class="sitebar">
     <label class="small" style="margin:0;">Client site</label>
     <select id="siteSelect"></select>
+    <span class="small" id="siteBranchBadge" style="color:var(--muted, #64748b);"></span>
+    <select id="siteBranchSelect" hidden></select>
     <button class="btn sm" id="newSiteBtn" type="button">+ New site</button>
     <button class="btn sm" id="renameSiteBtn" type="button">Rename</button>
     <button class="btn sm danger" id="deleteSiteBtn" type="button">Delete site</button>
@@ -660,13 +662,17 @@
 
   /* ---------------- app state ---------------- */
   const state = {
-    sites: [],              // [{id, name}], display order
+    sites: [],              // [{id, name, branch}], display order — already filtered to what this user can reach
     currentSiteId: null,
-    configsCache: {},       // siteId -> config doc {id,name,guards,site,restRule,isSample,updatedAt}
+    configsCache: {},       // siteId -> config doc {id,name,branch,guards,site,restRule,isSample,updatedAt}
     monthsCache: {},        // "siteId::monthKey" -> month-state doc
     currentMonth: monthKey(todayYM().y, todayYM().m),
     dbMode: "connecting", // "connecting" | "on" | "off"
-    rosterViewMode: "calendar" // "calendar" | "grid"
+    rosterViewMode: "calendar", // "calendar" | "grid"
+    myDepartment: null,    // this signed-in user's branch/department (or "HQ"), from their CRM profile
+    myRole: null,          // this signed-in user's CRM role
+    isPrivileged: false,   // admin, or department "HQ" — reaches every branch's sites, like elsewhere in the CRM
+    branchOptions: []      // branch names from the CRM's own branch list, for the "assign to branch" picker
   };
   function currentConfig(){
     if(!state.currentSiteId){
@@ -871,6 +877,44 @@
       const val = input.value.trim();
       closeModal();
       if(val) opts.onConfirm(val);
+    };
+    $("#modalOk").addEventListener("click", submit);
+    input.addEventListener("keydown", e => { if(e.key === "Enter") submit(); if(e.key === "Escape") closeModal(); });
+    $("#modalCancel").addEventListener("click", closeModal);
+    $("#modalVeil").addEventListener("click", e => { if(e.target.id === "modalVeil") closeModal(); });
+  }
+  function openNewSiteModal(){
+    const root = $("#modalRoot");
+    const showBranchPicker = state.isPrivileged;
+    root.innerHTML = `
+      <div class="modalveil" id="modalVeil">
+        <div class="modalcard">
+          <h3>Name this site</h3>
+          <input type="text" id="modalInput" value="New site">
+          ${showBranchPicker ? `
+            <label class="small" style="display:block;margin-top:8px;">Branch</label>
+            <select id="modalBranchSelect">
+              <option value="">Unassigned (visible to everyone)</option>
+              ${state.branchOptions.filter(b => b !== "HQ").map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join("")}
+            </select>
+          ` : ""}
+          <div class="modalbtns">
+            <button class="btn sm" id="modalCancel" type="button">Cancel</button>
+            <button class="btn sm primary" id="modalOk" type="button">Create</button>
+          </div>
+        </div>
+      </div>`;
+    const input = $("#modalInput");
+    input.focus();
+    input.select();
+    const submit = () => {
+      const val = input.value.trim();
+      const branch = showBranchPicker ? ($("#modalBranchSelect").value || null) : null;
+      closeModal();
+      if(val){
+        createSite(val, branch);
+        showToast(`Created site "${val}".`);
+      }
     };
     $("#modalOk").addEventListener("click", submit);
     input.addEventListener("keydown", e => { if(e.key === "Enter") submit(); if(e.key === "Escape") closeModal(); });
@@ -1561,15 +1605,10 @@
     switchSite($("#siteSelect").value);
   });
   $("#newSiteBtn").addEventListener("click", () => {
-    openPromptModal({
-      title: "Name this site",
-      initialValue: "New site",
-      okLabel: "Create",
-      onConfirm: name => {
-        createSite(name);
-        showToast(`Created site "${name}".`);
-      }
-    });
+    openNewSiteModal();
+  });
+  $("#siteBranchSelect").addEventListener("change", () => {
+    setSiteBranch(state.currentSiteId, $("#siteBranchSelect").value || null);
   });
   $("#renameSiteBtn").addEventListener("click", () => {
     const site = state.sites.find(s => s.id === state.currentSiteId);
@@ -1815,8 +1854,10 @@
       danger: true,
       onConfirm: () => {
         const id = state.currentSiteId;
-        const name = (state.configsCache[id] && state.configsCache[id].name) || "Site 1";
-        state.configsCache[id] = { id, name, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, updatedAt: nowIso() };
+        const prev = state.configsCache[id] || {};
+        const name = prev.name || "Site 1";
+        // Preserve the site's branch assignment — this is a data reset, not a re-creation.
+        state.configsCache[id] = { id, name, branch: prev.branch || null, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, updatedAt: nowIso() };
         Object.keys(state.monthsCache).forEach(k => { if(k.indexOf(id+"::") === 0) delete state.monthsCache[k]; });
         persistConfig();
         persistMonth();
@@ -1836,15 +1877,29 @@
     render();
   }
 
-  function createSite(name){
+  function createSite(name, branch){
     const id = newId("site");
-    const cfg = { id, name, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, createdAt: nowIso(), updatedAt: nowIso() };
-    state.sites.push({id, name});
+    // A privileged user (admin, or HQ department) can pick any branch, or leave it
+    // unassigned; anyone else can only ever create a site for their own branch — mirrored
+    // and enforced server-side in firestore.rules' canReachSite().
+    const assignedBranch = state.isPrivileged ? (branch || null) : (state.myDepartment || null);
+    const cfg = { id, name, branch: assignedBranch, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, createdAt: nowIso(), updatedAt: nowIso() };
+    state.sites.push({id, name, branch: assignedBranch});
     state.configsCache[id] = cfg;
     if(dbHandle) dbHandle.doc("sites/"+id).set(cfg).catch(()=>{});
     switchSite(id);
-    addLog(`Created new site "${name}".`);
+    addLog(`Created new site "${name}"${assignedBranch ? ` for branch "${assignedBranch}"` : ""}.`);
     persistMonth();
+  }
+
+  function setSiteBranch(id, branch){
+    const s = state.sites.find(s => s.id === id);
+    if(!s) return;
+    s.branch = branch;
+    if(state.configsCache[id]) state.configsCache[id].branch = branch;
+    addLog(branch ? `Assigned this site to branch "${branch}".` : `Unassigned this site's branch.`);
+    persistSiteConfig(id);
+    renderSiteBranchControl();
   }
 
   function renameSite(id, name){
@@ -1875,6 +1930,30 @@
     if(state.currentSiteId) sel.value = state.currentSiteId;
     const delBtn = $("#deleteSiteBtn");
     if(delBtn) delBtn.disabled = state.sites.length <= 1;
+    renderSiteBranchControl();
+  }
+
+  // Non-privileged users just see which branch owns the current site (read-only — they can
+  // only ever create/reach sites in their own branch anyway, so there's nothing to change).
+  // Privileged users (admin, or HQ department) get an actual picker, since they're the ones
+  // who assign a site to a branch in the first place.
+  function renderSiteBranchControl(){
+    const badge = $("#siteBranchBadge");
+    const branchSel = $("#siteBranchSelect");
+    if(!badge || !branchSel) return;
+    const site = state.sites.find(s => s.id === state.currentSiteId);
+    const branch = site ? (site.branch || null) : null;
+    if(state.isPrivileged){
+      badge.hidden = true;
+      branchSel.hidden = false;
+      branchSel.innerHTML = `<option value="">Unassigned (visible to everyone)</option>` +
+        state.branchOptions.filter(b => b !== "HQ").map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join("");
+      branchSel.value = branch || "";
+    } else {
+      branchSel.hidden = true;
+      badge.hidden = false;
+      badge.textContent = branch ? `Branch: ${branch}` : "Branch: Unassigned";
+    }
   }
 
   /* ---------------- month loading helpers ---------------- */
@@ -1890,7 +1969,7 @@
 
   /* ---------------- persistence (db capability, graceful no-op fallback) ---------------- */
   let dbHandle = null;
-  let sitesUnsub = null;
+  let sitesUnsubs = [];
   const monthUnsubs = {};
   let suppressPersist = false;
 
@@ -1933,12 +2012,14 @@
     }, () => {});
   }
 
-  // Brand-new (empty) Firestore project: seed one sample site so the app
-  // isn't blank on first load.
+  // Brand-new (empty) Firestore project, or nothing reachable yet for this user's branch:
+  // seed one sample site so the app isn't blank on first load. Explicitly unassigned
+  // (branch: null, not just omitted) so it's both visible to everyone and a valid match for
+  // the `where("branch","==",null)` query non-privileged users run below.
   async function migrateOrSeed(){
     const id = newId("site");
     const cfg = makeSampleConfig();
-    cfg.id = id; cfg.name = "Site 1"; cfg.createdAt = nowIso();
+    cfg.id = id; cfg.name = "Site 1"; cfg.branch = null; cfg.createdAt = nowIso();
     await dbHandle.doc("sites/"+id).set(cfg).catch(()=>{});
   }
 
@@ -1988,26 +2069,68 @@
 
       dbHandle = firebase.firestore();
 
-      const sitesSnap = await dbHandle.collection("sites").get().catch(() => ({empty:true, docs:[]}));
-      if(sitesSnap.empty) await migrateOrSeed();
+      // Who is this, and which branch do they belong to? Drives the branch-scoping below —
+      // a Branch Manager or "dutyStaff" account only ever reaches their own branch's sites,
+      // same as tenders/Active Projects elsewhere in this app. Read straight from Firestore
+      // (rather than needing anything passed in from the CRM's iframe host) since this page's
+      // Firebase Auth session is already rehydrated to the same signed-in user.
+      const authUser = firebase.auth().currentUser;
+      if(authUser){
+        const profileSnap = await dbHandle.doc("users/"+authUser.uid).get().catch(() => null);
+        if(profileSnap && profileSnap.exists){
+          const p = profileSnap.data() || {};
+          state.myDepartment = p.department || null;
+          state.myRole = p.role || null;
+        }
+      }
+      state.isPrivileged = state.myRole === "admin" || state.myDepartment === "HQ";
+
+      const branchesSnap = await dbHandle.collection("branches").get().catch(() => ({docs:[]}));
+      state.branchOptions = branchesSnap.docs.map(d => (d.data()||{}).name).filter(Boolean);
+
+      // Firestore only allows listing a collection when the security rule's per-document
+      // condition is guaranteed by the query's own filters — it can't partially filter an
+      // unconstrained query and drop the docs a caller isn't allowed to see, it just rejects
+      // the whole query. A privileged user's rule doesn't depend on `branch` at all, so an
+      // unfiltered query is fine; everyone else must query for exactly what canReachSite()
+      // in firestore.rules allows: their own branch, plus anything not yet tagged with one.
+      // (No orderBy here on purpose — combining it with a where() on a different field would
+      // need a composite index; the merged list is sorted client-side below instead.)
+      function reachableSiteQueries(){
+        if(state.isPrivileged) return [dbHandle.collection("sites")];
+        return [
+          dbHandle.collection("sites").where("branch", "==", state.myDepartment || null),
+          dbHandle.collection("sites").where("branch", "==", null)
+        ];
+      }
+
+      const queries = reachableSiteQueries();
+      const initialSnaps = await Promise.all(queries.map(q => q.get().catch(() => ({docs:[]}))));
+      if(initialSnaps.every(s => s.docs.length === 0)) await migrateOrSeed();
 
       let retriedSeed = false;
-      sitesUnsub = dbHandle.collection("sites").orderBy("createdAt").onSnapshot(snap => {
-        suppressPersist = true;
-        const docSites = snap.docs.map(d => ({ id:d.id, name:((d.data()||{}).name) || "Untitled site" }));
-        snap.docs.forEach(d => { if(d.data()) state.configsCache[d.id] = deepClone(d.data()); });
-        suppressPersist = false;
+      const buckets = queries.map(() => []);
 
-        if(!docSites.length){
-          // Nothing made it to the store yet (a first write that silently
-          // failed, a slow backend, ...). Retry seeding once; meanwhile the
-          // app stays usable locally via currentConfig()'s self-heal, and we
-          // don't strand the sync indicator on "Connecting…" forever.
+      function recombineSitesAndRender(){
+        const seen = {};
+        const merged = [];
+        buckets.forEach(list => list.forEach(s => {
+          if(!seen[s.id]){ seen[s.id] = true; merged.push(s); }
+        }));
+        merged.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+
+        if(!merged.length){
+          // Nothing this user can reach made it to the store yet (a first write that
+          // silently failed, a slow backend, or simply no site tagged for their branch
+          // yet). Retry seeding once — the seeded site is unassigned, so it's visible to
+          // everyone and this user isn't left stuck on a blank screen; meanwhile the app
+          // stays usable locally via currentConfig()'s self-heal, and we don't strand the
+          // sync indicator on "Connecting…" forever.
           if(!retriedSeed){ retriedSeed = true; migrateOrSeed().catch(()=>{}); }
           setSyncUi("off");
           return;
         }
-        state.sites = docSites;
+        state.sites = merged.map(({id, name, branch}) => ({id, name, branch}));
         setSyncUi("on");
 
         if(!state.currentSiteId || !state.sites.find(s => s.id === state.currentSiteId)){
@@ -2018,7 +2141,18 @@
           subscribeMonth(initial, state.currentMonth);
         }
         render();
-      }, () => { setSyncUi("off"); bootLocalFallback(); });
+      }
+
+      sitesUnsubs = queries.map((q, i) => q.onSnapshot(snap => {
+        suppressPersist = true;
+        buckets[i] = snap.docs.map(d => {
+          const data = d.data() || {};
+          state.configsCache[d.id] = deepClone(data);
+          return { id:d.id, name: data.name || "Untitled site", branch: data.branch || null, createdAt: data.createdAt || "" };
+        });
+        suppressPersist = false;
+        recombineSitesAndRender();
+      }, () => { setSyncUi("off"); bootLocalFallback(); }));
 
     } catch(err){
       setSyncUi("off");

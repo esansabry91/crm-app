@@ -116,15 +116,37 @@ service cloud.firestore {
     // ---- Duty Roster (public/duty-roster/index.html, embedded via an <iframe> on
     // /duty-roster) ----
     // A separate, self-contained tool with its own data model — client "sites", each with a
-    // guard roster, shift/site config, and a per-month schedule. Every signed-in, active team
-    // member can read and write it regardless of role (including the "dutyStaff" role, which
-    // can reach nothing else in this app) — there's no per-branch or per-owner scoping here the
-    // way there is for tenders, since duty rosters aren't attributed to an individual owner.
+    // guard roster, shift/site config, and a per-month schedule. Each site is optionally
+    // tagged with a `branch` (one of the names in /branches, matching a user's own
+    // `department`) so a Branch Manager or "dutyStaff" account only reaches their own
+    // branch's sites — mirroring the same branch-scoping tenders/Active Projects already use.
+    // Admins, and anyone whose own department is "HQ" (oversight, same as elsewhere in this
+    // app), can read/write every site regardless of its branch. A site with no `branch` set
+    // at all (the field is optional — older/just-created sites may not have one yet) is left
+    // open to every active user, rather than silently disappearing for everybody until an
+    // admin tags it.
     match /sites/{siteId} {
-      allow read, write: if isActiveUser();
+      function siteBranch(data) {
+        return data.get('branch', null);
+      }
+      function canReachSite(data) {
+        return isAdmin()
+          || myDepartment() == 'HQ'
+          || siteBranch(data) == null
+          || siteBranch(data) == myDepartment();
+      }
+
+      allow read: if isActiveUser() && canReachSite(resource.data);
+      allow create: if isActiveUser() && canReachSite(request.resource.data);
+      // Both old and new data must be in reach — the first clause keeps a non-privileged
+      // user from touching a site outside their branch at all, the second keeps them from
+      // reassigning a reachable site's branch to one they don't belong to.
+      allow update: if isActiveUser() && canReachSite(resource.data) && canReachSite(request.resource.data);
+      allow delete: if isActiveUser() && canReachSite(resource.data);
 
       match /months/{monthKey} {
-        allow read, write: if isActiveUser();
+        allow read, write: if isActiveUser()
+          && canReachSite(get(/databases/$(database)/documents/sites/$(siteId)).data);
       }
     }
   }
