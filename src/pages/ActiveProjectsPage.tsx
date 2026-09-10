@@ -3,7 +3,14 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useWonTenders } from '../hooks/useActiveProjects';
 import { useBranches } from '../hooks/useBranches';
-import { backfillActiveBranch, closeOutProject, setActiveBranch } from '../services/tenders';
+import {
+  acceptReassignment,
+  backfillActiveBranch,
+  cancelReassignment,
+  closeOutProject,
+  requestReassignBranch,
+  setActiveBranch,
+} from '../services/tenders';
 import { formatDate, formatRM } from '../utils/format';
 import {
   activeProjectBridgePeriods,
@@ -74,7 +81,30 @@ function ContractStatusBadge({ contractEnd }: { contractEnd: string }) {
 export default function ActiveProjectsPage() {
   const { profile } = useAuth();
   const { wonTenders, loading, seesAllBranches } = useWonTenders(profile);
-  const projects = useMemo(() => wonTenders.filter((t) => !t.closedOut), [wonTenders]);
+  const isBranchManager = profile?.role === 'branchManager';
+
+  // useWonTenders() merges in a second query for tenders pending reassignment TO this branch
+  // (see its own doc comment) — activeBranch on those still points at the OLD branch, so they're
+  // deliberately excluded here rather than mixed into "my branch's active projects"; they only
+  // ever appear in the separate pendingIncoming list below, until accepted.
+  const projects = useMemo(
+    () => wonTenders.filter((t) => !t.closedOut && (seesAllBranches || t.activeBranch === profile?.department)),
+    [wonTenders, seesAllBranches, profile?.department]
+  );
+  // Won tenders with a reassignment pending TO this Branch Manager's own branch, awaiting their
+  // accept/choose decision (see Tender.pendingReassignment and the "pendingIncoming" banner
+  // rendered below). Admin/HQ already see these as ordinary rows (their query has no
+  // activeBranch filter to exclude them) with a "Pending" badge instead — this list is
+  // specifically for the person who has to act on it.
+  const pendingIncoming = useMemo(
+    () =>
+      isBranchManager
+        ? wonTenders.filter(
+            (t) => !t.closedOut && t.pendingReassignment && t.pendingReassignment.toBranch === profile?.department
+          )
+        : [],
+    [wonTenders, isBranchManager, profile?.department]
+  );
   const { branches } = useBranches();
   const [branchFilter, setBranchFilter] = useState('all');
   const [detailsTender, setDetailsTender] = useState<Tender | null>(null);
@@ -105,11 +135,17 @@ export default function ActiveProjectsPage() {
   // The value bridge needs every Won tender in scope — active AND already closed-out — so a
   // project that left this month still shows its exit; `visible` above is active-only. Filtered
   // by the same branch criterion as `visible` so the bridge matches whatever the branch dropdown
-  // is currently showing.
+  // is currently showing. Starts from `wonTenders` scoped to this user's own branch (mirroring
+  // `projects` above), not the raw merged list — a tender only pending reassignment TO this
+  // branch isn't this branch's revenue yet and shouldn't show up in its bridge.
+  const myBranchWonTenders = useMemo(
+    () => (seesAllBranches ? wonTenders : wonTenders.filter((t) => t.activeBranch === profile?.department)),
+    [wonTenders, seesAllBranches, profile?.department]
+  );
   const bridgeSource = useMemo(() => {
-    if (!seesAllBranches || branchFilter === 'all') return wonTenders;
-    return wonTenders.filter((t) => (t.activeBranch || t.department) === branchFilter);
-  }, [wonTenders, seesAllBranches, branchFilter]);
+    if (!seesAllBranches || branchFilter === 'all') return myBranchWonTenders;
+    return myBranchWonTenders.filter((t) => (t.activeBranch || t.department) === branchFilter);
+  }, [myBranchWonTenders, seesAllBranches, branchFilter]);
 
   const bridgePeriods = useMemo(
     () => activeProjectBridgePeriods(bridgeSource, bridgeTimeView),
@@ -166,14 +202,48 @@ export default function ActiveProjectsPage() {
   const handleBranchChange = (t: Tender, newBranch: string) => {
     const current = t.activeBranch;
     if (newBranch === current) return;
-    const confirmed = current
-      ? window.confirm(
-          `Reassign "${t.clientName}" from ${current} to ${newBranch}?\n\n` +
-            `It will move out of ${current}'s Active Projects list and into ${newBranch}'s.`
-        )
-      : window.confirm(`Assign "${t.clientName}" to ${newBranch}'s Active Projects?`);
+    if (!current) {
+      // First-ever assignment — nothing exists yet under a different branch for a receiving
+      // manager to protect or choose about, so this stays instant (see setActiveBranch()'s doc
+      // comment).
+      const confirmed = window.confirm(`Assign "${t.clientName}" to ${newBranch}'s Active Projects?`);
+      if (!confirmed) return;
+      setActiveBranch(t.id, newBranch);
+      return;
+    }
+    const confirmed = window.confirm(
+      `Request reassigning "${t.clientName}" from ${current} to ${newBranch}?\n\n` +
+        `${current} keeps full access and its Duty Roster stays live until ${newBranch}'s Branch ` +
+        `Manager accepts the move and chooses what happens to the existing duty roster.`
+    );
     if (!confirmed) return;
-    setActiveBranch(t.id, newBranch);
+    requestReassignBranch(t.id, newBranch, current);
+  };
+
+  const handleCancelReassignment = (t: Tender) => {
+    if (!t.pendingReassignment) return;
+    const confirmed = window.confirm(
+      `Cancel the pending reassignment of "${t.clientName}" to ${t.pendingReassignment.toBranch}?`
+    );
+    if (!confirmed) return;
+    cancelReassignment(t.id);
+  };
+
+  const handleAcceptReassignment = (t: Tender, choice: 'bring-over' | 'new') => {
+    if (!t.pendingReassignment) return;
+    const toBranch = t.pendingReassignment.toBranch;
+    const confirmed =
+      choice === 'bring-over'
+        ? window.confirm(
+            `Bring over "${t.clientName}"'s existing duty roster? Its guards, schedule and ` +
+              `history all move to ${toBranch} as-is.`
+          )
+        : window.confirm(
+            `Start a brand-new duty roster for "${t.clientName}" under ${toBranch}? The existing ` +
+              `roster is archived (kept for Admin/HQ/Payroll records) but no longer used for this project.`
+          );
+    if (!confirmed) return;
+    acceptReassignment(t.id, toBranch, choice);
   };
 
   const handleCloseOut = (t: Tender) => {
@@ -215,6 +285,44 @@ export default function ActiveProjectsPage() {
         <p className="px-6 py-8 text-sm text-slate-400">Loading active projects…</p>
       ) : (
         <div className="px-6 py-6 space-y-6 max-w-6xl">
+          {pendingIncoming.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-amber-900">
+                {pendingIncoming.length === 1
+                  ? 'A project is being reassigned to your branch'
+                  : `${pendingIncoming.length} projects are being reassigned to your branch`}
+              </h3>
+              {pendingIncoming.map((t) => (
+                <div
+                  key={t.id}
+                  className="flex items-center justify-between gap-4 bg-white rounded-lg border border-amber-100 px-4 py-3 flex-wrap"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800">{t.clientName}</p>
+                    <p className="text-xs text-slate-500">
+                      From {t.pendingReassignment?.fromBranch || 'Unassigned'} — choose what happens to its duty roster
+                      before it goes live under {profile.department}.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => handleAcceptReassignment(t, 'bring-over')}
+                      className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                    >
+                      Bring over existing roster
+                    </button>
+                    <button
+                      onClick={() => handleAcceptReassignment(t, 'new')}
+                      className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg"
+                    >
+                      Start a new roster
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard
               label="Active Project Value"
@@ -338,11 +446,38 @@ export default function ActiveProjectsPage() {
                               )}
                             </p>
                           )}
+                          {/* Non-privileged branch view has no Branch column at all (see
+                              `seesAllBranches` below), so this is the only place the FROM branch
+                              sees that a reassignment is in flight — they keep full access until
+                              it's accepted (see requestReassignBranch()'s doc comment). */}
+                          {!seesAllBranches && t.pendingReassignment && (
+                            <p className="text-[11px] font-medium text-amber-600 mt-0.5">
+                              → pending reassignment to {t.pendingReassignment.toBranch}
+                            </p>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-slate-500">{t.brandName}</td>
                         {seesAllBranches && (
                           <td className="px-4 py-3">
-                            {isAdmin ? (
+                            {t.pendingReassignment ? (
+                              <div className="space-y-0.5">
+                                <span className="text-slate-500">{t.activeBranch || 'Unassigned'}</span>
+                                <p className="text-[11px] font-medium text-amber-600">
+                                  → pending to {t.pendingReassignment.toBranch}
+                                  {isAdmin && (
+                                    <>
+                                      {' · '}
+                                      <button
+                                        onClick={() => handleCancelReassignment(t)}
+                                        className="underline hover:text-amber-800"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </>
+                                  )}
+                                </p>
+                              </div>
+                            ) : isAdmin ? (
                               <select
                                 value={t.activeBranch || ''}
                                 onChange={(e) => handleBranchChange(t, e.target.value)}

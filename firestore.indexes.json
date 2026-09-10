@@ -23,6 +23,14 @@
         { "fieldPath": "stage", "order": "ASCENDING" },
         { "fieldPath": "activeBranch", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "tenders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "stage", "order": "ASCENDING" },
+        { "fieldPath": "pendingReassignment.toBranch", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

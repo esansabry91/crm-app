@@ -86,6 +86,12 @@ service cloud.firestore {
           || resource.data.ownerUid == request.auth.uid
           || (resource.data.stage == 'Won' && myDepartment() == 'HQ')
           || (resource.data.stage == 'Won' && resource.data.activeBranch == myDepartment())
+          // A reassignment pending TO this user's branch (see Tender.pendingReassignment) — the
+          // receiving Branch Manager needs to see it in Active Projects and decide on it even
+          // though activeBranch hasn't moved to them yet.
+          || (resource.data.stage == 'Won'
+              && resource.data.get('pendingReassignment', null) != null
+              && resource.data.pendingReassignment.toBranch == myDepartment())
         );
 
       allow create: if isActiveUser()
@@ -117,6 +123,21 @@ service cloud.firestore {
             && (resource.data.activeBranch == myDepartment() || myDepartment() == 'HQ')
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['location', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'closedOut', 'closedOutAt', 'updatedAt'])
+          )
+          // Accepting a pending reassignment (see Tender.pendingReassignment and
+          // acceptReassignment() in services/tenders.ts) — only the Branch Manager (not
+          // dutyStaff/payroll, even if their department happens to match) it's actually pending
+          // TO, only flips activeBranch to the value that was actually offered, and only by
+          // clearing pendingReassignment in the same write (never repurposing it).
+          || (
+            isBranchManager()
+            && resource.data.stage == 'Won'
+            && resource.data.get('pendingReassignment', null) != null
+            && resource.data.pendingReassignment.toBranch == myDepartment()
+            && request.resource.data.activeBranch == resource.data.pendingReassignment.toBranch
+            && request.resource.data.get('pendingReassignment', null) == null
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['activeBranch', 'pendingReassignment', 'updatedAt'])
           )
         );
 
@@ -158,13 +179,18 @@ service cloud.firestore {
     // A site may also carry an optional `tenderId`, linking it to the one Active Project it
     // belongs to — set once, automatically, the first time someone opens that project's Duty
     // Roster link (see index.html's ?tenderId= deep-link handling and createSite()). This is
-    // purely a data-model link, not a permission boundary: branch-scoping above is what actually
-    // controls reach, exactly as it did before this field existed, so nothing here needs a
-    // get() on /tenders to validate it. `archived`/`archivedAt` follow the same story — set by
-    // setLinkedSitesArchived() in the CRM's src/services/tenders.ts when that tender is closed
-    // out (or cleared when it's reopened) — and are ordinary fields under the same read/write
-    // rules as everything else on the doc; index.html decides client-side whether an archived
-    // site still belongs in a given user's picker.
+    // purely a data-model link, not a permission boundary for reaching a site NORMALLY —
+    // branch-scoping above still does that job, exactly as it did before this field existed. The
+    // one exception is acceptReassignment() in services/tenders.ts: while a tender's
+    // pendingReassignment names this user's branch as the target, they need to touch the OLD
+    // site tied to it (still branch-scoped to the FROM branch, so canReachSite() alone would
+    // reject them) to either move it over or archive-and-unlink it — see
+    // isAcceptingPendingReassignment() below, the one place this file does a get() on /tenders.
+    // `archived`/`archivedAt` follow the same story otherwise — set by setLinkedSitesArchived()
+    // in the CRM's src/services/tenders.ts when that tender is closed out (or cleared when it's
+    // reopened) — and are ordinary fields under the same read/write rules as everything else on
+    // the doc; index.html decides client-side whether an archived site still belongs in a given
+    // user's picker.
     match /sites/{siteId} {
       function siteBranch(data) {
         return data.get('branch', null);
@@ -181,14 +207,38 @@ service cloud.firestore {
       function canReadSite(data) {
         return canReachSite(data) || isPayroll();
       }
+      // True only for a Branch Manager accepting a reassignment actually pending to their own
+      // branch (see Tender.pendingReassignment / acceptReassignment()) for THIS site's tender —
+      // narrow on purpose: it only ever lets them touch the site's branch/tenderId/archived
+      // fields (enforced below, not here), never anything else about it.
+      function isAcceptingPendingReassignment(oldData) {
+        return isBranchManager()
+          && oldData.get('tenderId', null) != null
+          && get(/databases/$(database)/documents/tenders/$(oldData.tenderId)).data.get('pendingReassignment', null) != null
+          && get(/databases/$(database)/documents/tenders/$(oldData.tenderId)).data.pendingReassignment.toBranch == myDepartment();
+      }
 
-      allow read: if isActiveUser() && canReadSite(resource.data);
+      // The second clause matters: acceptReassignment() in services/tenders.ts queries sites by
+      // tenderId BEFORE it can update one, and a query silently drops documents the caller can't
+      // read rather than erroring — so without this, the receiving Branch Manager's query would
+      // just come back empty and their write would never even attempt to run.
+      allow read: if isActiveUser() && (canReadSite(resource.data) || isAcceptingPendingReassignment(resource.data));
       allow create: if isActiveUser() && !isPayroll() && canReachSite(request.resource.data);
       // Both old and new data must be in reach — the first clause keeps a non-privileged
       // user from touching a site outside their branch at all, the second keeps them from
       // reassigning a reachable site's branch to one they don't belong to. !isPayroll() blocks
-      // the Payroll role from writing at all, even to a site it can read.
-      allow update: if isActiveUser() && !isPayroll() && canReachSite(resource.data) && canReachSite(request.resource.data);
+      // the Payroll role from writing at all, even to a site it can read. The second OR branch
+      // is the one narrow exception: a Branch Manager accepting a pending reassignment (see
+      // isAcceptingPendingReassignment() above) touching the OLD, not-yet-theirs site — limited
+      // to exactly the fields acceptReassignment() actually writes.
+      allow update: if isActiveUser() && !isPayroll() && (
+        (canReachSite(resource.data) && canReachSite(request.resource.data))
+        || (
+          isAcceptingPendingReassignment(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['branch', 'tenderId', 'archived', 'archivedAt', 'updatedAt'])
+        )
+      );
       allow delete: if isActiveUser() && !isPayroll() && canReachSite(resource.data);
 
       match /months/{monthKey} {

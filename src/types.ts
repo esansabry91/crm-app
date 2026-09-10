@@ -101,6 +101,18 @@ export interface Tender {
    */
   activeBranch?: string;
   /**
+   * A reassignment an admin has requested but the RECEIVING branch hasn't accepted yet (see
+   * requestReassignBranch() in services/tenders.ts). While this is set, `activeBranch` is
+   * deliberately left untouched — the project and its Duty Roster stay fully live under the
+   * CURRENT branch, so there's never a coverage gap while the move is pending. The receiving
+   * branch's Branch Manager sees it in their own Active Projects list (a widened read rule lets
+   * them see a tender pending TO their branch even though activeBranch isn't theirs yet) and
+   * calls acceptReassignment() to resolve it — choosing whether the existing Duty Roster site
+   * comes with it or a fresh one gets created — which is what actually flips `activeBranch` and
+   * clears this field. An admin can also retract an unaccepted request with cancelReassignment().
+   */
+  pendingReassignment?: { toBranch: string; fromBranch: string | null; requestedAt: number } | null;
+  /**
    * Operational detail fields for an Active Project — only meaningful once stage is Won.
    * Editable by the tender's admin/owner AND by anyone else who can see it in Active Projects
    * (branch-mates in the same `activeBranch`, plus HQ) — see the widened update rule in

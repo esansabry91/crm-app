@@ -318,7 +318,6 @@
     <label class="small" style="margin:0;">Client site</label>
     <select id="siteSelect"></select>
     <span class="small" id="siteBranchBadge" style="color:var(--muted, #64748b);"></span>
-    <select id="siteBranchSelect" hidden></select>
     <button class="btn sm" id="newSiteBtn" type="button">+ New site</button>
     <button class="btn sm" id="renameSiteBtn" type="button">Rename</button>
     <button class="btn sm danger" id="deleteSiteBtn" type="button">Delete site</button>
@@ -1364,11 +1363,6 @@
       if(READONLY_EXEMPT_IDS.has(el.id) || el.classList.contains("vt")) return;
       el.disabled = true;
     });
-    // The site-reassignment control lives in .sitebar (a sibling of .view, not covered by the
-    // selector above) and is also hidden by applyPayrollUiLockdown() — this is belt-and-braces
-    // in case that ever runs out of order, so payroll can never reassign a site's branch.
-    const branchSel = $("#siteBranchSelect");
-    if(branchSel) branchSel.disabled = true;
   }
 
   function renderSampleBanner(){
@@ -2564,28 +2558,6 @@
   $("#newSiteBtn").addEventListener("click", () => {
     openNewSiteModal();
   });
-  $("#siteBranchSelect").addEventListener("change", () => {
-    const sel = $("#siteBranchSelect");
-    const site = state.sites.find(s => s.id === state.currentSiteId);
-    const previousBranch = site ? (site.branch || null) : null;
-    const newBranch = sel.value || null;
-    if(newBranch === previousBranch) return;
-    const siteName = site ? site.name : "This site";
-    const fromLabel = previousBranch || "Unassigned";
-    const toLabel = newBranch || "Unassigned";
-    openConfirmModal({
-      title: "Reassign branch",
-      message: `Move "${siteName}" from ${fromLabel} to ${toLabel}? Everyone in ${fromLabel} will lose access to this site's roster, and everyone in ${toLabel} will gain it.`,
-      okLabel: "Reassign",
-      onConfirm: () => {
-        setSiteBranch(state.currentSiteId, newBranch);
-        showToast(`Moved "${siteName}" to ${toLabel}.`);
-      },
-      // Cancel or dismiss leaves the dropdown showing the branch it actually reassigned to
-      // (the select already flipped to the newly picked option on its own) — put it back.
-      onCancel: () => { sel.value = previousBranch || ""; }
-    });
-  });
   $("#renameSiteBtn").addEventListener("click", () => {
     const site = state.sites.find(s => s.id === state.currentSiteId);
     openPromptModal({
@@ -3013,16 +2985,6 @@
     );
   }
 
-  function setSiteBranch(id, branch){
-    const s = state.sites.find(s => s.id === id);
-    if(!s) return;
-    s.branch = branch;
-    if(state.configsCache[id]) state.configsCache[id].branch = branch;
-    addLog(branch ? `Assigned this site to branch "${branch}".` : `Unassigned this site's branch.`);
-    persistSiteConfig(id);
-    renderSiteBranchControl();
-  }
-
   function renameSite(id, name){
     const s = state.sites.find(s => s.id === id);
     if(!s) return;
@@ -3143,30 +3105,17 @@
     if(delBtn) delBtn.hidden = true;
   }
 
-  // Non-privileged users just see which branch owns the current site (read-only — they can
-  // only ever create/reach sites in their own branch anyway, so there's nothing to change).
-  // Privileged users (admin, or HQ department) get an actual picker, since they're the ones
-  // who assign a site to a branch in the first place. Payroll is explicitly excluded here even
-  // when it happens to be privileged by the isPrivileged check (e.g. a payroll account whose
-  // department is set to "HQ") — Payroll must never see the reassignment picker, only the
-  // read-only badge, since it can only view by branch/site, never reassign a site's branch.
+  // Read-only for everyone now, Admin/HQ included — a site's branch is set once, automatically,
+  // by the tender-linking bootstrap (createSite()'s branch param) and only ever moves again
+  // through Active Projects' reassign-and-accept flow (see requestReassignBranch()/
+  // acceptReassignment() in the CRM's src/services/tenders.ts, which writes straight to this
+  // site's `branch` field on acceptance). There's nothing left for anyone to hand-pick here.
   function renderSiteBranchControl(){
     const badge = $("#siteBranchBadge");
-    const branchSel = $("#siteBranchSelect");
-    if(!badge || !branchSel) return;
+    if(!badge) return;
     const site = state.sites.find(s => s.id === state.currentSiteId);
     const branch = site ? (site.branch || null) : null;
-    if(state.isPrivileged && !state.isPayroll){
-      badge.hidden = true;
-      branchSel.hidden = false;
-      branchSel.innerHTML = `<option value="">Unassigned (visible to everyone)</option>` +
-        state.branchOptions.filter(b => b !== "HQ").map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join("");
-      branchSel.value = branch || "";
-    } else {
-      branchSel.hidden = true;
-      badge.hidden = false;
-      badge.textContent = branch ? `Branch: ${branch}` : "Branch: Unassigned";
-    }
+    badge.textContent = branch ? `Branch: ${branch}` : "Branch: Unassigned";
   }
 
   /* ---------------- month loading helpers ---------------- */
@@ -3311,11 +3260,11 @@
       state.isPrivileged = state.myRole === "admin" || state.myDepartment === "HQ";
       // "Payroll" is a strictly view/export-only role: it reaches every branch's sites like a
       // privileged user (so it must be included in the unfiltered query below), but it must
-      // never be treated as privileged elsewhere — it doesn't get the branch-reassignment
-      // picker, "+ New site"/Rename/Delete, or any edit control. document.body carries a
-      // "readonly-mode" class (see the CSS block near the top of this file) that disables every
-      // input/select/button inside the four tab views except navigation and the two Export to
-      // Excel buttons, which are explicitly exempted there.
+      // never be treated as privileged elsewhere — it doesn't get "+ New site"/Rename/Delete
+      // (nobody does any more — see applyPayrollUiLockdown()) or any edit control. document.body
+      // carries a "readonly-mode" class (see the CSS block near the top of this file) that
+      // disables every input/select/button inside the four tab views except navigation and the
+      // two Export to Excel buttons, which are explicitly exempted there.
       state.isPayroll = state.myRole === "payroll";
       state.canEdit = !state.isPayroll;
       document.body.classList.toggle("readonly-mode", state.isPayroll);

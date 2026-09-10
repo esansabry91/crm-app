@@ -228,13 +228,73 @@ export async function setSubmittedDate(tenderId: string, submittedDate: string) 
 }
 
 /**
- * Reassigns which branch is running an already-Won tender's active project — an admin-only
- * operational move, separate from the sales-attribution `department` field (see the doc comment
- * on Tender.activeBranch). No history entry: this doesn't change value or sales stage, just
- * which branch's Active Projects list it shows up in.
+ * Sets activeBranch directly, with no pending/accept step — for DepartmentRepairTool.tsx's
+ * data-cleanup use only (fixing a tender that's missing or has a stale activeBranch), and for
+ * the very first assignment of an unassigned Won tender (see handleBranchChange in
+ * ActiveProjectsPage.tsx: nothing yet exists for a receiving branch to protect in either case,
+ * so there's nothing to gain by routing it through requestReassignBranch()/acceptReassignment()
+ * below). Never call this to MOVE an already-active project from one branch to another —
+ * that's exactly the case those two exist to handle safely.
  */
 export async function setActiveBranch(tenderId: string, activeBranch: string) {
-  await updateDoc(doc(db, 'tenders', tenderId), { activeBranch });
+  await updateDoc(doc(db, 'tenders', tenderId), { activeBranch, updatedAt: Date.now() });
+}
+
+/**
+ * Requests reassigning which branch is running an already-Won tender's active project —
+ * admin-only, separate from the sales-attribution `department` field (see the doc comment on
+ * Tender.activeBranch). Unlike setActiveBranch() above, `activeBranch` is deliberately left
+ * untouched here: the project and its Duty Roster stay fully live under the CURRENT branch
+ * until the RECEIVING branch's Branch Manager actively accepts the move via
+ * acceptReassignment() — see the doc comment on Tender.pendingReassignment for why. No history
+ * entry, same as setActiveBranch(): this doesn't change value or sales stage.
+ */
+export async function requestReassignBranch(tenderId: string, toBranch: string, fromBranch: string | null) {
+  await updateDoc(doc(db, 'tenders', tenderId), {
+    pendingReassignment: { toBranch, fromBranch: fromBranch || null, requestedAt: Date.now() },
+    updatedAt: Date.now(),
+  });
+}
+
+/** Retracts a reassignment request the receiving branch hasn't accepted yet — admin-only, e.g. to undo a mistaken pick. */
+export async function cancelReassignment(tenderId: string) {
+  await updateDoc(doc(db, 'tenders', tenderId), { pendingReassignment: null, updatedAt: Date.now() });
+}
+
+/**
+ * Called by the RECEIVING branch's Branch Manager to resolve a pending reassignment (see
+ * requestReassignBranch()). `choice` decides what happens to the Duty Roster site already tied
+ * to this tender via its `tenderId`:
+ *  - 'bring-over': the existing site just moves to the new branch (its `branch` field changes) —
+ *    same guards, schedule and history, nothing lost or recreated.
+ *  - 'new': the existing site is archived and unlinked from this tender (`tenderId` cleared,
+ *    `archived` set) — kept forever for Admin/HQ/Payroll history/audit, exactly like a
+ *    closed-out project's site (see setLinkedSitesArchived() below), but no longer "the" site
+ *    for this tender. The very next Duty Roster visit for this tender then creates a brand-new,
+ *    empty site under the new branch on its own, via the existing ?tenderId= deep-link bootstrap
+ *    (see handleTenderDeepLinkIfNeeded() in public/duty-roster/index.html) — no separate
+ *    site-creation logic needed here.
+ * The site write happens BEFORE the tender write on purpose: firestore.rules lets the receiving
+ * Branch Manager touch this site only while the tender's pendingReassignment still names them as
+ * the target, so clearing pendingReassignment first would lock them out mid-operation.
+ */
+export async function acceptReassignment(tenderId: string, toBranch: string, choice: 'bring-over' | 'new') {
+  const snap = await getDocs(query(collection(db, 'sites'), where('tenderId', '==', tenderId)));
+  await Promise.all(
+    snap.docs.map((d) =>
+      updateDoc(
+        d.ref,
+        choice === 'bring-over'
+          ? { branch: toBranch, updatedAt: Date.now() }
+          : { tenderId: null, archived: true, archivedAt: Date.now(), updatedAt: Date.now() }
+      )
+    )
+  );
+  await updateDoc(doc(db, 'tenders', tenderId), {
+    activeBranch: toBranch,
+    pendingReassignment: null,
+    updatedAt: Date.now(),
+  });
 }
 
 /**
