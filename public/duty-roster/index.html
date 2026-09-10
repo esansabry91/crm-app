@@ -1169,7 +1169,7 @@
   }
   function openNewSiteModal(){
     const root = $("#modalRoot");
-    const showBranchPicker = state.isPrivileged;
+    const showBranchPicker = state.isPrivileged && !state.isPayroll;
     root.innerHTML = `
       <div class="modalveil" id="modalVeil">
         <div class="modalcard">
@@ -1280,6 +1280,11 @@
       if(READONLY_EXEMPT_IDS.has(el.id) || el.classList.contains("vt")) return;
       el.disabled = true;
     });
+    // The site-reassignment control lives in .sitebar (a sibling of .view, not covered by the
+    // selector above) and is also hidden by applyPayrollUiLockdown() — this is belt-and-braces
+    // in case that ever runs out of order, so payroll can never reassign a site's branch.
+    const branchSel = $("#siteBranchSelect");
+    if(branchSel) branchSel.disabled = true;
   }
 
   function renderSampleBanner(){
@@ -2717,7 +2722,7 @@
     // A privileged user (admin, or HQ department) can pick any branch, or leave it
     // unassigned; anyone else can only ever create a site for their own branch — mirrored
     // and enforced server-side in firestore.rules' canReachSite().
-    const assignedBranch = state.isPrivileged ? (branch || null) : (state.myDepartment || null);
+    const assignedBranch = (state.isPrivileged && !state.isPayroll) ? (branch || null) : (state.myDepartment || null);
     const cfg = { id, name, branch: assignedBranch, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, createdAt: nowIso(), updatedAt: nowIso() };
     state.sites.push({id, name, branch: assignedBranch});
     state.configsCache[id] = cfg;
@@ -2821,14 +2826,17 @@
   // Non-privileged users just see which branch owns the current site (read-only — they can
   // only ever create/reach sites in their own branch anyway, so there's nothing to change).
   // Privileged users (admin, or HQ department) get an actual picker, since they're the ones
-  // who assign a site to a branch in the first place.
+  // who assign a site to a branch in the first place. Payroll is explicitly excluded here even
+  // when it happens to be privileged by the isPrivileged check (e.g. a payroll account whose
+  // department is set to "HQ") — Payroll must never see the reassignment picker, only the
+  // read-only badge, since it can only view by branch/site, never reassign a site's branch.
   function renderSiteBranchControl(){
     const badge = $("#siteBranchBadge");
     const branchSel = $("#siteBranchSelect");
     if(!badge || !branchSel) return;
     const site = state.sites.find(s => s.id === state.currentSiteId);
     const branch = site ? (site.branch || null) : null;
-    if(state.isPrivileged){
+    if(state.isPrivileged && !state.isPayroll){
       badge.hidden = true;
       branchSel.hidden = false;
       branchSel.innerHTML = `<option value="">Unassigned (visible to everyone)</option>` +
