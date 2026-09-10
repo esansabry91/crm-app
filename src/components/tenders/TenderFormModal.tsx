@@ -289,10 +289,25 @@ export default function TenderFormModal({
               value={ownerUid}
               onChange={(e) => {
                 const uid = e.target.value;
+                if (uid === ownerUid) return;
+                const owner = staffOptions.find((s) => s.uid === uid);
+                const newOwnerName = owner ? owner.name : uid;
+                // Only ask for confirmation when reassigning an EXISTING tender — picking the
+                // initial owner while registering a brand-new one is just filling out the form,
+                // nothing to confirm yet (mirrors the same "confirm on change, not on create"
+                // pattern UserManager.tsx uses for role/department changes).
+                if (editing) {
+                  const currentOwnerName =
+                    staffOptions.find((s) => s.uid === ownerUid)?.name || editing.ownerName;
+                  const confirmed = window.confirm(
+                    `Reassign "${editing.clientName}" from ${currentOwnerName} to ${newOwnerName}? ` +
+                      `This also moves it to ${newOwnerName}'s department, and they'll be able to see and nurture it through the pipeline from here on.`
+                  );
+                  if (!confirmed) return;
+                }
                 setOwnerUid(uid);
                 // Department always follows the owner — reassigning the owner reassigns the
                 // department too, so the two can never drift apart.
-                const owner = staffOptions.find((s) => s.uid === uid);
                 if (owner) setDepartment(owner.department);
               }}
               className="input"

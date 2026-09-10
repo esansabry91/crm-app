@@ -95,6 +95,14 @@ export default function AnalysisPage() {
 
   if (!profile) return null;
 
+  // A non-admin's own tenders only ever carry their own department (Department always follows
+  // the tender's Owner — see TenderFormModal.tsx — and a Branch Manager can never own a tender
+  // outside their own branch), so the full company-wide department list would just be a menu of
+  // choices that all return the same data except one. Scope the header dropdown itself to just
+  // their branch; departmentOptions above stays company-wide since it also feeds the admin-only
+  // race chart's colorDomain further down.
+  const deptFilterOptions = profile.role === 'admin' ? departmentOptions : [profile.department];
+
   return (
     <div className="h-screen overflow-y-auto">
       <header className="px-6 py-5 border-b border-slate-200 bg-white flex items-center justify-between gap-4 flex-wrap sticky top-0 z-10">
@@ -115,7 +123,7 @@ export default function AnalysisPage() {
           </select>
           <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="input w-40">
             <option value="all">All departments</option>
-            {departmentOptions.map((d) => (
+            {deptFilterOptions.map((d) => (
               <option key={d} value={d}>
                 {d}
               </option>
