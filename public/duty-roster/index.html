@@ -201,6 +201,10 @@
   table.gt td.tot{ font-weight:700; background:var(--surface-2); }
   table.gt td.off{ color:var(--muted); }
   table.gt td.off.leave{ color:var(--warn); background:var(--warn-soft); font-weight:700; }
+  /* A leave cell that's actually covered (temp guard assigned, or another guard pulled off
+     their rest day) gets an accent ring so it reads apart from an uncovered leave at a glance —
+     hover it for who's covering, same "detail on hover" pattern .restday already uses below. */
+  table.gt td.off.leave.covered{ box-shadow:inset 0 0 0 2px var(--accent); }
   table.gt td.restday{ box-shadow:inset 0 0 0 2px var(--warn); }
   table.gt td.shift-a, .lg .sw.shift-a{ background:var(--shift-a); color:var(--shift-a-ink); }
   table.gt td.shift-b, .lg .sw.shift-b{ background:var(--shift-b); color:var(--shift-b-ink); }
@@ -1019,6 +1023,22 @@
   function leaveGuardIdsFor(monthState, dateStr){
     return leaveEntriesFor(monthState, dateStr).map(e => e.id);
   }
+  // For a leave entry that has a replacement on file (see "Mark a guard on leave" in
+  // Adjustments), resolves who is actually covering the vacated slot right now — read live off
+  // monthState.overrides/tempGuards rather than trusting whatever was chosen at the moment the
+  // leave was marked, since a Temporary Guard replacement is normally filled in as a separate
+  // step afterward (via "Assign a temporary guard"), and either replacement can still be changed
+  // by hand later via the per-slot dropdown elsewhere in Roster. Works for both replacement
+  // modes with the same lookup: for "current guard on rest day" the override already holds the
+  // covering guard's own id; for "temporary guard" it holds RESERVED_FOR_TEMP until someone's
+  // actually assigned, at which point it holds that temp guard's id — guardName() resolves
+  // either kind of id to a display name. Returns null when there's nothing to show yet.
+  function coveringGuardNameFor(monthState, entry){
+    if(!entry.replacementKey) return null;
+    const overrideVal = monthState.overrides[entry.replacementKey];
+    if(!overrideVal || overrideVal === RESERVED_FOR_TEMP) return null;
+    return guardName(overrideVal);
+  }
 
   /* ---------------- scheduling engine ---------------- */
   // Pure function: derive a full month's assignments from config + overrides + leaves.
@@ -1377,7 +1397,8 @@
       leaveEntriesToday.forEach(lv => {
         const line = document.createElement("div");
         line.className = "leaveline";
-        line.textContent = `${guardName(lv.id)} — ${lv.reason || "Leave"}`;
+        const covering = coveringGuardNameFor(currentMonthState(), lv);
+        line.textContent = `${guardName(lv.id)} — ${lv.reason || "Leave"}` + (covering ? ` — covered by ${covering}` : "");
         cell.appendChild(line);
       });
 
@@ -1523,10 +1544,12 @@
       });
       return map;
     });
-    // per-day lookup: guardId -> leave reason, for guards not on shift that day
+    // per-day lookup: guardId -> leave entry, for guards not on shift that day. Keeps the whole
+    // entry (not just the reason string) so the cell can also show who's covering the slot —
+    // see coveringGuardNameFor().
     const dayLeaveMaps = result.days.map(day => {
       const map = new Map();
-      leaveEntriesFor(currentMonthState(), day.dateStr).forEach(e => map.set(e.id, e.reason || "Leave"));
+      leaveEntriesFor(currentMonthState(), day.dateStr).forEach(e => map.set(e.id, e));
       return map;
     });
     function leaveAbbrev(reason){
@@ -1552,9 +1575,13 @@
         const cells = dayMaps.map((map, dayIdx) => {
           const a = map.get(g.id);
           if(!a){
-            const leaveReason = dayLeaveMaps[dayIdx].get(g.id);
-            if(leaveReason){
-              return `<td class="off leave" title="${escapeHtml(leaveReason)}">${leaveAbbrev(leaveReason)}</td>`;
+            const leaveEntry = dayLeaveMaps[dayIdx].get(g.id);
+            if(leaveEntry){
+              const leaveReason = leaveEntry.reason || "Leave";
+              const covering = coveringGuardNameFor(currentMonthState(), leaveEntry);
+              const title = covering ? `${leaveReason} — covered by ${covering}` : leaveReason;
+              const cls = "off leave" + (covering ? " covered" : "");
+              return `<td class="${cls}" title="${escapeHtml(title)}">${leaveAbbrev(leaveReason)}</td>`;
             }
             return `<td class="off">OFF</td>`;
           }
@@ -1609,7 +1636,7 @@
     });
     const dayLeaveMaps = result.days.map(day => {
       const map = new Map();
-      leaveEntriesFor(currentMonthState(), day.dateStr).forEach(e => map.set(e.id, e.reason || "Leave"));
+      leaveEntriesFor(currentMonthState(), day.dateStr).forEach(e => map.set(e.id, e));
       return map;
     });
     function leaveAbbrev(reason){
@@ -1631,8 +1658,10 @@
       dayMaps.forEach((map, dayIdx) => {
         const a = map.get(g.id);
         if(!a){
-          const leaveReason = dayLeaveMaps[dayIdx].get(g.id);
-          row.push(leaveReason ? leaveAbbrev(leaveReason) : "OFF");
+          const leaveEntry = dayLeaveMaps[dayIdx].get(g.id);
+          if(!leaveEntry){ row.push("OFF"); return; }
+          const covering = coveringGuardNameFor(currentMonthState(), leaveEntry);
+          row.push(leaveAbbrev(leaveEntry.reason || "Leave") + (covering ? ` (covered by ${covering})` : ""));
         } else {
           row.push(`${SHIFT_LETTERS[a.stIdx % SHIFT_LETTERS.length]} P${a.slot+1}`);
         }
