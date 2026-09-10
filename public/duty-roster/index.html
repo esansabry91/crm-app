@@ -245,6 +245,7 @@
   .pill.active{ background:var(--good-soft); color:var(--good); }
   .pill.inactive{ background:var(--critical-soft); color:var(--critical); }
   .pill.warn{ background:var(--warn-soft); color:var(--warn); }
+  .pill.info{ background:var(--accent-soft); color:var(--accent); }
 
   .loglist{ display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto; }
   .logitem{ font-size:12.5px; padding:8px 10px; background:var(--surface-2); border-radius:8px; border-left:3px solid var(--accent); }
@@ -479,7 +480,7 @@
       <div>
         <div class="panel">
           <h2>Mark a guard on leave</h2>
-          <p class="sub">The roster will auto-assign another eligible guard to cover — even one who'd otherwise be resting — and will note it on the roster</p>
+          <p class="sub">If the guard has a shift on this date, choose how it's covered: a temporary guard, or another guard who's currently on a rest day</p>
           <div class="fieldrow">
             <div style="flex:1;"><label class="small">Guard</label><select id="leaveGuard"></select></div>
             <div style="flex:1;"><label class="small">Date</label><input type="date" id="leaveDate"></div>
@@ -487,6 +488,21 @@
           <div class="fieldrow">
             <div style="flex:1;"><label class="small">Reason</label><select id="leaveReason"></select></div>
           </div>
+          <div class="fieldrow" id="leaveReplacementRow" hidden>
+            <div style="flex:1;">
+              <label class="small">Replacement</label>
+              <select id="leaveReplacementMode">
+                <option value="">Choose replacement…</option>
+                <option value="temp">Temporary guard</option>
+                <option value="restday">Current guard on rest day</option>
+              </select>
+            </div>
+            <div style="flex:1;" id="leaveCoverGuardWrap" hidden>
+              <label class="small">Replacement guard (on rest day)</label>
+              <select id="leaveCoverGuard"></select>
+            </div>
+          </div>
+          <p class="empty" id="leaveReplacementNote" style="margin:0 0 10px;" hidden></p>
           <button class="btn primary sm" id="addLeaveBtn">Add leave</button>
           <table class="simple" style="margin-top:12px;">
             <thead><tr><th>Date</th><th>Guard(s) on leave</th><th></th></tr></thead>
@@ -986,6 +1002,15 @@
     return currentConfig().guards.filter(g => g.active !== false && (!g.inactiveFrom || dateStr < g.inactiveFrom));
   }
   const LEAVE_REASONS = ["Leave", "Absent", "Medical leave (MC)", "Unpaid Leave"];
+  // A sentinel override value meaning "keep this slot a genuine conflict — don't auto-fill it —
+  // until a temporary guard is assigned." Written by the "Mark a guard on leave" flow when the
+  // Temporary Guard replacement mode is chosen (see generateMonth below and the addLeaveBtn
+  // handler). Deliberately NOT reusing the existing `null` override value some other UI writes
+  // for "Unfilled (manual)": generateMonth's `if(overrideGuard)` check treats null as falsy and
+  // falls straight through to auto-pick, so a null override doesn't actually keep a slot open —
+  // this sentinel is a real (truthy) string precisely so it can be distinguished and handled on
+  // its own, one step before that existing check.
+  const RESERVED_FOR_TEMP = "__reserved_temp__";
   // Leave entries used to be stored as bare guard-id strings; normalize both
   // shapes so older saved months keep working.
   function leaveEntriesFor(monthState, dateStr){
@@ -1034,7 +1059,13 @@
           const overrideGuard = monthState.overrides[overrideKey];
 
           let chosen = null;
-          if(overrideGuard){
+          if(overrideGuard === RESERVED_FOR_TEMP){
+            // Held open for a temporary guard (see "Mark a guard on leave" → Temporary guard) —
+            // report it as an unfilled slot same as any other conflict, rather than falling
+            // through to auto-pick, so it shows up in "Assign a temporary guard" until someone
+            // actually fills it.
+            conflicts.push({date:dateStr, shiftId:st.id, shiftLabel:st.label, slot});
+          } else if(overrideGuard){
             chosen = overrideGuard;
             // flag if this override breaks a rule
             const reasons = [];
@@ -2190,6 +2221,91 @@
     if(reasonSel && !reasonSel.options.length){
       reasonSel.innerHTML = LEAVE_REASONS.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
     }
+    updateLeaveReplacementUI();
+  }
+  // Finds the (shiftId, slot) a guard is assigned to on a given date, generating that date's
+  // month fresh from whatever's cached (loading it into the cache first if this is the first
+  // time it's been touched) so this works for a date outside the month currently on screen —
+  // the same cross-month approach the "Mark a guard on leave" flow already used before this
+  // feature existed. Returns null if the guard has no assignment that day (already resting,
+  // inactive, already on leave, etc.) — meaning no replacement is needed at all.
+  function findGuardSlotOnDate(guardId, dateStr){
+    if(!guardId || !dateStr) return null;
+    ensureMonthLoadedForDate(dateStr);
+    const key = dateStr.slice(0,7);
+    const ms = state.monthsCache[monthCacheKey(state.currentSiteId, key)] || emptyMonthState(key);
+    const {y,m} = parseYM(key);
+    const result = generateMonth(y, m, currentConfig(), ms);
+    const day = result.days.find(d => d.dateStr === dateStr);
+    if(!day) return null;
+    const shiftDefs = computeShiftDefsForDay(currentConfig().site, day.dm);
+    for(let si=0; si<day.assignments.length; si++){
+      const slots = day.assignments[si];
+      for(let slot=0; slot<slots.length; slot++){
+        if(slots[slot] === guardId){
+          return { shiftId: shiftDefs[si].id, shiftLabel: shiftDefs[si].label, slot, day, ms };
+        }
+      }
+    }
+    return null;
+  }
+  // Guards who are active, not already working any shift that day, not on leave that day, and
+  // not the guard being marked on leave themselves — i.e. everyone eligible to be pulled off a
+  // rest day to cover the vacated shift.
+  function restingGuardsOn(dateStr, excludeGuardId, day, ms){
+    const working = new Set();
+    day.assignments.forEach(slots => slots.forEach(gid => { if(gid) working.add(gid); }));
+    const leaveIds = leaveGuardIdsFor(ms, dateStr);
+    return activeGuardsOn(dateStr).filter(g =>
+      g.id !== excludeGuardId && !working.has(g.id) && !leaveIds.includes(g.id)
+    );
+  }
+  // Keeps the "Replacement" controls in the "Mark a guard on leave" panel in sync with whichever
+  // guard/date/mode is currently selected — shown only when that guard actually has a shift to
+  // cover on that date; otherwise there's nothing to replace. Called on every render() (via
+  // renderLeaveGuardSelect) and on guard/date/mode change (see the listeners near addLeaveBtn).
+  function updateLeaveReplacementUI(){
+    const guardId = $("#leaveGuard").value;
+    const dateStr = $("#leaveDate").value;
+    const row = $("#leaveReplacementRow");
+    const note = $("#leaveReplacementNote");
+    const coverWrap = $("#leaveCoverGuardWrap");
+    const coverSel = $("#leaveCoverGuard");
+    if(!guardId || !dateStr){
+      row.hidden = true;
+      coverWrap.hidden = true;
+      note.hidden = true;
+      return;
+    }
+    const slotInfo = findGuardSlotOnDate(guardId, dateStr);
+    if(!slotInfo){
+      row.hidden = true;
+      coverWrap.hidden = true;
+      note.hidden = false;
+      note.textContent = `${guardName(guardId)} isn't scheduled to work on ${dateStr} — no replacement needed.`;
+      return;
+    }
+    row.hidden = false;
+    const mode = $("#leaveReplacementMode").value;
+    if(mode === "restday"){
+      const resting = restingGuardsOn(dateStr, guardId, slotInfo.day, slotInfo.ms);
+      coverWrap.hidden = false;
+      const prev = coverSel.value;
+      coverSel.innerHTML = resting.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join("");
+      if(prev && resting.some(g => g.id === prev)) coverSel.value = prev;
+      note.hidden = false;
+      note.textContent = resting.length
+        ? `Covering ${slotInfo.shiftLabel}, Slot ${slotInfo.slot+1} on ${dateStr}.`
+        : `No guards are currently resting on ${dateStr} — choose Temporary guard instead.`;
+    } else if(mode === "temp"){
+      coverWrap.hidden = true;
+      note.hidden = false;
+      note.textContent = `${slotInfo.shiftLabel}, Slot ${slotInfo.slot+1} on ${dateStr} will stay open — assign a temporary guard for it below.`;
+    } else {
+      coverWrap.hidden = true;
+      note.hidden = false;
+      note.textContent = `${guardName(guardId)} is scheduled for ${slotInfo.shiftLabel}, Slot ${slotInfo.slot+1} on ${dateStr} — choose how it's covered.`;
+    }
   }
   // The shift label for an override key's shiftId, looked up fresh from this site's current
   // shift structure — used for rows in the "temporary guards this month" table, since only the
@@ -2267,6 +2383,18 @@
     if(prev) sel.value = prev;
   }
 
+  // Small label for an entry's replacement choice, shown next to its reason pill in the leave
+  // table — "temp guard" for the Temporary Guard mode (the slot itself still shows as unfilled
+  // until someone's actually assigned via "Assign a temporary guard"), or who's covering it for
+  // the Current Guard On Rest Day mode. Blank for an entry with no shift to cover that date, or
+  // one added before this feature existed.
+  function leaveReplacementPill(e){
+    if(e.replacementMode === "temp") return ` <span class="pill info">temp guard</span>`;
+    if(e.replacementMode === "restday" && e.replacementGuardId) {
+      return ` <span class="pill info">covered by ${escapeHtml(guardName(e.replacementGuardId))}</span>`;
+    }
+    return "";
+  }
   function renderLeaveTable(){
     const ms = currentMonthState();
     const dates = Object.keys(ms.leaves).filter(d => ms.leaves[d] && ms.leaves[d].length).sort();
@@ -2274,13 +2402,22 @@
     $("#leaveTableBody").innerHTML = dates.map(dateStr => `
       <tr>
         <td class="mono">${dateStr}</td>
-        <td>${leaveEntriesFor(ms, dateStr).map(e=>`${escapeHtml(guardName(e.id))} <span class="pill warn">${escapeHtml(e.reason||"Leave")}</span>`).join(", ")}</td>
+        <td>${leaveEntriesFor(ms, dateStr).map(e=>`${escapeHtml(guardName(e.id))} <span class="pill warn">${escapeHtml(e.reason||"Leave")}</span>${leaveReplacementPill(e)}`).join(", ")}</td>
         <td><button class="btn sm danger" data-clear-leave="${dateStr}">Clear</button></td>
       </tr>
     `).join("");
     $$("[data-clear-leave]").forEach(btn => {
       btn.addEventListener("click", () => {
         const d = btn.getAttribute("data-clear-leave");
+        // Revert any override this leave's replacement choice set, but only if it's still
+        // exactly what was set — if a temp guard has since actually been assigned (turning
+        // RESERVED_FOR_TEMP into a real tempId) or the slot's been reassigned by hand since,
+        // leave it alone rather than undo someone else's later change.
+        leaveEntriesFor(ms, d).forEach(e => {
+          if(!e.replacementKey) return;
+          const expected = e.replacementMode === "temp" ? RESERVED_FOR_TEMP : e.replacementGuardId;
+          if(ms.overrides[e.replacementKey] === expected) delete ms.overrides[e.replacementKey];
+        });
         delete ms.leaves[d];
         addLog(`Cleared leave entries for ${d}.`);
         persistMonth();
@@ -2597,23 +2734,73 @@
     if(reason === "Unpaid Leave") return "unpaid leave";
     return "leave";
   }
+  // Keep the Replacement controls in sync as the guard, date or mode selection changes — see
+  // updateLeaveReplacementUI() above.
+  $("#leaveGuard").addEventListener("change", updateLeaveReplacementUI);
+  $("#leaveDate").addEventListener("change", updateLeaveReplacementUI);
+  $("#leaveReplacementMode").addEventListener("change", updateLeaveReplacementUI);
+
   $("#addLeaveBtn").addEventListener("click", () => {
     const guardId = $("#leaveGuard").value;
     const dateStr = $("#leaveDate").value;
     const reason = ($("#leaveReason") && $("#leaveReason").value) || "Leave";
     if(!guardId || !dateStr) return;
-    ensureMonthLoadedForDate(dateStr);
     const key = dateStr.slice(0,7);
     const ms = state.monthsCache[monthCacheKey(state.currentSiteId, key)] || currentMonthState();
+
+    // Recomputed fresh here (rather than trusting whatever updateLeaveReplacementUI last left
+    // on screen) so a stale selection — e.g. the guard or date changed without the UI catching
+    // up in time — can never write a replacement for the wrong shift.
+    const slotInfo = findGuardSlotOnDate(guardId, dateStr);
+    let replacementMode = null, replacementGuardId = null, replacementKey = null, logSuffix = "";
+    if(slotInfo){
+      const mode = $("#leaveReplacementMode").value;
+      if(!mode){
+        showToast("Choose a replacement — temporary guard or current guard on rest day.", true);
+        return;
+      }
+      replacementKey = dateStr + "|" + slotInfo.shiftId + "|" + slotInfo.slot;
+      if(mode === "temp"){
+        replacementMode = "temp";
+        logSuffix = ` — ${slotInfo.shiftLabel}, Slot ${slotInfo.slot+1} held open for a temporary guard`;
+      } else {
+        const coverId = $("#leaveCoverGuard").value;
+        if(!coverId){
+          showToast("No guard on rest day is available to cover this shift — choose Temporary guard instead.", true);
+          return;
+        }
+        replacementMode = "restday";
+        replacementGuardId = coverId;
+        logSuffix = ` — ${slotInfo.shiftLabel}, Slot ${slotInfo.slot+1} covered by ${guardName(coverId)} (on rest day)`;
+      }
+    }
+
     const entries = leaveEntriesFor(ms, dateStr);
     const existing = entries.find(e => e.id === guardId);
-    if(existing) existing.reason = reason;
-    else entries.push({id: guardId, reason});
+    const entry = existing || { id: guardId };
+    entry.reason = reason;
+    if(replacementKey){
+      entry.replacementMode = replacementMode;
+      entry.replacementKey = replacementKey;
+      if(replacementGuardId) entry.replacementGuardId = replacementGuardId;
+      else delete entry.replacementGuardId;
+    } else {
+      delete entry.replacementMode;
+      delete entry.replacementKey;
+      delete entry.replacementGuardId;
+    }
+    if(!existing) entries.push(entry);
     ms.leaves[dateStr] = entries;
-    addLog(`Marked ${guardName(guardId)} ${leavePhrase(reason)} for ${dateStr}.`);
+
+    if(replacementKey){
+      ms.overrides[replacementKey] = replacementMode === "temp" ? RESERVED_FOR_TEMP : replacementGuardId;
+    }
+
+    addLog(`Marked ${guardName(guardId)} ${leavePhrase(reason)} for ${dateStr}.${logSuffix}`);
     if(key === state.currentMonth) persistMonth();
     else persistMonthByKey(state.currentSiteId, key);
     showToast(`Marked ${guardName(guardId)} ${leavePhrase(reason)} for ${dateStr}.`);
+    $("#leaveReplacementMode").value = "";
     render();
   });
 
