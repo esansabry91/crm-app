@@ -3130,23 +3130,17 @@
       if(filterLabel) filterLabel.hidden = true;
       filterSel.hidden = true;
     }
-    // "New site" is Admin/HQ only, full stop — everyone else's sites are meant to be
-    // auto-created-and-linked from their branch's Won tenders from now on (see the ?tenderId=
-    // deep link handling and createSite()'s tenderId param), so there's no button for them to
-    // create a stray, unlinked one. Payroll gets the same lockdown (view/export only).
-    const isPrivilegedManager = state.isPrivileged && !state.isPayroll;
-    if(newBtn) newBtn.hidden = !isPrivilegedManager;
-    // Rename/Delete are narrower: they disappear only for a site that's actually tied to a
-    // tender (its name and lifecycle are meant to follow that tender — see
-    // setLinkedSitesArchived() in the CRM's tenders.ts — not be hand-edited out from under it),
-    // not for every site a non-privileged user can reach. A site predating this feature (or one
-    // an Admin created standalone, with no tenderId) stays exactly as manually editable as it
-    // always was — nothing about how those sites work has changed.
-    const currentSite = state.sites.find(s => s.id === state.currentSiteId);
-    const isCurrentSiteTenderLinked = !!(currentSite && currentSite.tenderId);
-    const canRenameOrDelete = isPrivilegedManager || !isCurrentSiteTenderLinked;
-    if(renameBtn) renameBtn.hidden = !canRenameOrDelete;
-    if(delBtn) delBtn.hidden = !canRenameOrDelete;
+    // New/Rename/Delete are hidden for EVERYONE now, including Admin/HQ. Sites are created and
+    // named entirely by the Won-tender pipeline (see the ?tenderId= deep link handling and
+    // createSite()'s tenderId param) and follow that tender's lifecycle automatically (see
+    // setLinkedSitesArchived() in the CRM's tenders.ts, called on close-out/reopen) — there's no
+    // remaining case where hand-creating, renaming, or deleting a site through this console is
+    // the right move, for any role. Admin/HQ/Payroll still see every branch's sites (via
+    // reachableSiteQueries() over in initDb(), which returns the whole collection unfiltered for
+    // them) — this only removes the ability to mutate the site list, not visibility into it.
+    if(newBtn) newBtn.hidden = true;
+    if(renameBtn) renameBtn.hidden = true;
+    if(delBtn) delBtn.hidden = true;
   }
 
   // Non-privileged users just see which branch owns the current site (read-only — they can
