@@ -4,6 +4,18 @@ import { useBranches } from '../../hooks/useBranches';
 import { createStaffAccount, updateUserProfile, deactivateUser, deleteUserProfile } from '../../services/users';
 import type { Role } from '../../types';
 
+// Friendly labels for the confirmation prompts below — matches what each <option> shows,
+// independent of the raw value stored in Firestore.
+const ROLE_LABELS: Record<string, string> = {
+  branchManager: 'Branch Manager',
+  admin: 'HQ Admin',
+  dutyStaff: 'Staff',
+  payroll: 'Payroll',
+};
+function roleLabel(role: string): string {
+  return ROLE_LABELS[role] || role;
+}
+
 export default function UserManager() {
   const { users } = useUsers();
   const { branches } = useBranches();
@@ -89,6 +101,29 @@ export default function UserManager() {
     } finally {
       setRemovingUid(null);
     }
+  };
+
+  // Role and department both drive access control immediately (which tabs someone can reach,
+  // which branch's data they can see/edit) — a stray click on the wrong dropdown option would
+  // otherwise change that instantly with no way to notice before it's already live, so both
+  // are confirmed first. If the admin cancels, nothing is called and the <select> — controlled
+  // by the user's actual stored value — snaps back to what it was on the next render.
+  const handleRoleChange = async (uid: string, name: string, currentRole: string, newRole: Role) => {
+    if (newRole === currentRole) return;
+    const confirmed = window.confirm(
+      `Change ${name}'s role from "${roleLabel(currentRole)}" to "${roleLabel(newRole)}"? This changes what they can access as soon as you confirm.`
+    );
+    if (!confirmed) return;
+    await updateUserProfile(uid, { role: newRole });
+  };
+
+  const handleDepartmentChange = async (uid: string, name: string, currentDepartment: string, newDepartment: string) => {
+    if (newDepartment === currentDepartment) return;
+    const confirmed = window.confirm(
+      `Change ${name}'s department from "${currentDepartment}" to "${newDepartment}"? This changes which branch's data they can see as soon as you confirm.`
+    );
+    if (!confirmed) return;
+    await updateUserProfile(uid, { department: newDepartment });
   };
 
   return (
@@ -178,7 +213,7 @@ export default function UserManager() {
                   <td className="py-2 pr-4">
                     <select
                       value={u.role}
-                      onChange={(e) => updateUserProfile(u.uid, { role: e.target.value as Role })}
+                      onChange={(e) => handleRoleChange(u.uid, u.name, u.role, e.target.value as Role)}
                       className="text-xs rounded border border-slate-200 px-1.5 py-1"
                     >
                       <option value="branchManager">Branch Manager</option>
@@ -190,7 +225,7 @@ export default function UserManager() {
                   <td className="py-2 pr-4">
                     <select
                       value={u.department}
-                      onChange={(e) => updateUserProfile(u.uid, { department: e.target.value })}
+                      onChange={(e) => handleDepartmentChange(u.uid, u.name, u.department, e.target.value)}
                       className="text-xs rounded border border-slate-200 px-1.5 py-1"
                     >
                       {departmentOptions.map((d) => (
