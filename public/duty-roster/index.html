@@ -302,6 +302,7 @@
     <button class="tab active" data-tab="roster" role="tab">Roster</button>
     <button class="tab" data-tab="setup" role="tab">Guards &amp; Shifts</button>
     <button class="tab" data-tab="adjust" role="tab">Adjustments</button>
+    <button class="tab" data-tab="report" role="tab">Summary Report</button>
   </div>
 
   <!-- ROSTER VIEW -->
@@ -396,6 +397,9 @@
             <div><label class="small">Hours per shift</label><input type="number" id="siteShiftHrs" min="0.5" step="0.5"></div>
             <div><label class="small">Roster start hour (0&ndash;23)</label><input type="number" id="siteRosterStart" min="0" max="23" step="1"></div>
           </div>
+          <div class="fieldrow">
+            <div><label class="small">Normal hours/day (before overtime)</label><input type="number" id="siteNormalHours" min="0" step="0.5"></div>
+          </div>
           <button class="btn primary sm" id="saveSiteBtn">Save site requirement</button>
           <p class="empty" id="siteSummary" style="margin-top:10px;"></p>
         </div>
@@ -414,6 +418,19 @@
           </div>
           <p class="empty" id="restSummary" style="margin:0 0 10px;"></p>
           <button class="btn primary sm" id="saveRestBtn">Save rules</button>
+        </div>
+        <div class="panel">
+          <h2>Public holidays</h2>
+          <p class="sub">Dates worked on these count as "worked public holiday" in the Summary Report, paid as holiday overtime in full</p>
+          <div class="fieldrow">
+            <div style="flex:1;"><input type="date" id="newHolidayDate"></div>
+            <button class="btn primary sm" id="addHolidayBtn">Add holiday</button>
+          </div>
+          <table class="simple" style="margin-top:10px;">
+            <thead><tr><th>Date</th><th></th></tr></thead>
+            <tbody id="holidayTableBody"></tbody>
+          </table>
+          <p class="empty" id="holidayEmpty" hidden>No public holidays added for this site yet.</p>
         </div>
       </div>
     </div>
@@ -442,16 +459,23 @@
         </div>
 
         <div class="panel">
-          <h2>Replace a guard</h2>
-          <p class="sub">Take a guard out of the rotation from a chosen date, optionally adding a replacement to the pool</p>
+          <h2>Assign a temporary guard</h2>
+          <p class="sub">Cover an empty slot left by a guard on leave/absent/MC when nobody else in the roster is available &mdash; logs the temp guard's name and rate so you can pay them</p>
           <div class="fieldrow">
-            <div style="flex:1;"><label class="small">Guard leaving</label><select id="replaceGuard"></select></div>
-            <div style="flex:1;"><label class="small">Effective from</label><input type="date" id="replaceDate"></div>
+            <div style="flex:1;"><label class="small">Unfilled slot to cover</label><select id="tempSlotSelect"></select></div>
           </div>
           <div class="fieldrow">
-            <input type="text" id="replaceNewName" placeholder="New guard's name (optional)">
-            <button class="btn primary" id="replaceBtn">Replace</button>
+            <div style="flex:1;"><label class="small">Temporary guard's name</label><input type="text" id="tempGuardName" placeholder="e.g. Zul (relief)"></div>
+            <div style="flex:1;"><label class="small">Rate for this shift (RM)</label><input type="number" id="tempGuardRate" min="0" step="0.01" placeholder="0.00"></div>
           </div>
+          <button class="btn primary sm" id="assignTempBtn">Assign temporary guard</button>
+          <p class="empty" id="tempSlotEmpty" hidden>No unfilled slots this month &mdash; nothing needs a temporary guard right now.</p>
+          <table class="simple" style="margin-top:12px;">
+            <thead><tr><th>Date</th><th>Shift / Slot</th><th>Name</th><th>Rate (RM)</th><th></th></tr></thead>
+            <tbody id="tempGuardTableBody"></tbody>
+          </table>
+          <p class="empty" id="tempGuardEmpty" hidden>No temporary guards used this month yet.</p>
+          <p class="sub" id="tempGuardTotal" style="margin-top:8px;"></p>
         </div>
       </div>
 
@@ -478,6 +502,33 @@
           <div class="loglist" id="logList"></div>
           <p class="empty" id="logEmpty" hidden>No changes logged yet.</p>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUMMARY REPORT VIEW -->
+  <div class="view" id="view-report">
+    <div class="panel">
+      <h2>Summary report</h2>
+      <p class="sub" id="summaryReportSub">Per-guard totals for the month shown on the Roster tab</p>
+      <div class="tablewrap" style="overflow-x:auto;">
+        <table class="simple">
+          <thead><tr>
+            <th>Guard</th>
+            <th>Man-hours</th>
+            <th>Normal worked days</th>
+            <th>Worked rest days</th>
+            <th>Worked public holidays</th>
+            <th>Normal OT (hrs)</th>
+            <th>Rest-day OT (hrs)</th>
+            <th>Public holiday OT (hrs)</th>
+            <th>MC</th>
+            <th>Absent</th>
+            <th>Leave</th>
+            <th>Unpaid leave</th>
+          </tr></thead>
+          <tbody id="summaryReportBody"></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -641,7 +692,11 @@
       shiftsWdDay:[12], shiftsWdNight:[12], shiftsWeDay:[12], shiftsWeNight:[12],
       nightStart:19,
       hoursDay:24, daysWeek:7,
-      shiftHrs:12, rosterStart:7
+      shiftHrs:12, rosterStart:7,
+      // Hours per day before a shift counts as overtime on an otherwise normal working day
+      // (Malaysia's Employment Act default) — e.g. a 12h shift = 8h normal + 4h normal OT.
+      // Work on a rest day or public holiday counts as OT in full, not split against this.
+      normalHoursPerDay:8
     };
   }
   function sampleGuardNames(){
@@ -652,13 +707,20 @@
       guards: sampleGuardNames().map(n => ({ id:newId("g"), name:n, active:true, inactiveFrom:null })),
       site: defaultSite(),
       restRule: { restDaysPerWeek:1, minRestHours:12 },
+      publicHolidays: [], // absolute dates ("YYYY-MM-DD"), site-wide — see configHolidays()
       isSample: true,
       updatedAt: nowIso()
     };
   }
   function emptyMonthState(key){
-    return { month:key, overrides:{}, leaves:{}, log:[], updatedAt: nowIso() };
+    // tempGuards: id -> {name, rate, createdAt} for one-off relief guards covering a specific
+    // unfilled slot this month — see "Assign a temporary guard" in Adjustments. Referenced from
+    // monthState.overrides exactly like a real guard id (see guardById()'s temp-guard fallback).
+    return { month:key, overrides:{}, leaves:{}, log:[], tempGuards:{}, updatedAt: nowIso() };
   }
+  // Defensive accessors: months/configs saved before these two fields existed won't have them.
+  function monthTempGuards(ms){ if(!ms.tempGuards) ms.tempGuards = {}; return ms.tempGuards; }
+  function configHolidays(cfg){ if(!cfg.publicHolidays) cfg.publicHolidays = []; return cfg.publicHolidays; }
 
   /* ---------------- app state ---------------- */
   const state = {
@@ -696,12 +758,26 @@
     if(!state.monthsCache[key]) state.monthsCache[key] = emptyMonthState(state.currentMonth);
     return state.monthsCache[key];
   }
-  function guardById(id){ return currentConfig().guards.find(g => g.id === id); }
-  function guardName(id){ const g = guardById(id); return g ? g.name : "(removed guard)"; }
+  // Resolves a slot's assigned id against the permanent roster first, then falls back to this
+  // month's temporary guards (assigned via "Assign a temporary guard" in Adjustments) — this is
+  // what lets every existing render surface (calendar, grid, Excel export) show a temp guard's
+  // name automatically, with no separate code path, since they all just call guardName(id).
+  function guardById(id){
+    const g = currentConfig().guards.find(g => g.id === id);
+    if(g) return g;
+    const ms = currentMonthState();
+    const t = ms.tempGuards && ms.tempGuards[id];
+    return t ? { id, name:t.name, active:true, inactiveFrom:null, isTemp:true, rate:t.rate } : null;
+  }
+  function guardName(id){
+    const g = guardById(id);
+    if(!g) return "(removed guard)";
+    return g.isTemp ? `${g.name} (Temp)` : g.name;
+  }
   function activeGuardsOn(dateStr){
     return currentConfig().guards.filter(g => g.active !== false && (!g.inactiveFrom || dateStr < g.inactiveFrom));
   }
-  const LEAVE_REASONS = ["Leave", "Absent", "Medical leave (MC)"];
+  const LEAVE_REASONS = ["Leave", "Absent", "Medical leave (MC)", "Unpaid Leave"];
   // Leave entries used to be stored as bare guard-id strings; normalize both
   // shapes so older saved months keep working.
   function leaveEntriesFor(monthState, dateStr){
@@ -968,11 +1044,13 @@
     renderRosterGrid(y, m, lastResult);
     renderFairness(lastResult);
     renderConflicts(lastResult);
+    renderSummaryReport(lastResult);
     renderGuardsTable();
     renderSiteRequirement();
+    renderHolidayTable();
     renderRestInputs();
     renderLeaveGuardSelect();
-    renderReplaceGuardSelect();
+    renderTempGuardPanel(lastResult);
     renderLeaveTable();
     renderSwapControls();
     renderLog();
@@ -1092,6 +1170,16 @@
             sel.appendChild(opt);
           });
 
+          // A temporary guard (see "Assign a temporary guard") isn't part of the permanent
+          // roster, so guardsAll never has an <option> for it — without this, the <select>
+          // can't display it at all (setting .value to a nonexistent option just shows blank).
+          if(guardId && !guardsAll.some(g => g.id === guardId)){
+            const tempOpt = document.createElement("option");
+            tempOpt.value = guardId;
+            tempOpt.textContent = guardName(guardId);
+            sel.appendChild(tempOpt);
+          }
+
           sel.value = isOverridden ? (guardId || "") : (guardId ? guardId : "__auto__");
           if(isOverridden && !guardId) sel.value = "";
           if(guardId) sel.title = flagged ? `${guardName(guardId)} — ${flagged.reason}` : guardName(guardId);
@@ -1182,6 +1270,7 @@
     function leaveAbbrev(reason){
       if(reason === "Absent") return "ABS";
       if(reason && reason.toLowerCase().indexOf("medical") !== -1) return "MC";
+      if(reason === "Unpaid Leave") return "UPL";
       return "LV";
     }
 
@@ -1264,6 +1353,7 @@
     function leaveAbbrev(reason){
       if(reason === "Absent") return "ABS";
       if(reason && reason.toLowerCase().indexOf("medical") !== -1) return "MC";
+      if(reason === "Unpaid Leave") return "UPL";
       return "LV";
     }
 
@@ -1292,6 +1382,32 @@
     return rows;
   }
 
+  function summaryReportExportRows(y, m, config, monthState, result){
+    const summary = computeGuardSummary(y, m, config, monthState, result);
+    const guards = config.guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
+    const header = ["Guard","Man-hours","Normal worked days","Worked rest days","Worked public holidays",
+      "Normal OT (hrs)","Rest-day OT (hrs)","Public holiday OT (hrs)","MC","Absent","Leave","Unpaid leave"];
+    const rows = guards.map(g => {
+      const s = summary[g.id] || {};
+      return [g.name, s.manHours||0, s.normalDays||0, s.restDaysWorked||0, s.holidayDaysWorked||0,
+        s.normalOTHours||0, s.restOTHours||0, s.holidayOTHours||0, s.mc||0, s.absent||0, s.leave||0, s.unpaidLeave||0];
+    });
+    return [header, ...rows];
+  }
+
+  function tempGuardExportRows(monthState){
+    const tg = monthTempGuards(monthState);
+    const header = ["Date","Shift","Slot","Name","Rate (RM)"];
+    const rows = Object.keys(tg).map(tempId => {
+      const key = Object.keys(monthState.overrides).find(k => monthState.overrides[k] === tempId);
+      if(!key) return null;
+      const [date, shiftId, slot] = key.split("|");
+      return [date, shiftLabelForKey(date, shiftId), Number(slot)+1, tg[tempId].name, Number(tg[tempId].rate)||0];
+    }).filter(Boolean).sort((a,b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+    const total = rows.reduce((sum,r) => sum + r[4], 0);
+    return rows.length ? [header, ...rows, ["", "", "", "Total", total]] : [header];
+  }
+
   function exportCurrentMonthToExcel(){
     if(typeof XLSX === "undefined"){
       showToast("Couldn't load the Excel export tool — check your internet connection and try again.", true);
@@ -1306,6 +1422,8 @@
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(guardsExportRows()), "Guards");
     const sheetName = monthLabel(y, m).slice(0, 31);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rosterGridExportRows(y, m, result)), sheetName);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryReportExportRows(y, m, config, monthState, result)), "Summary Report");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(tempGuardExportRows(monthState)), "Temp Guards");
 
     const siteName = ((state.sites.find(s => s.id === state.currentSiteId) || {}).name || "Site").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_");
     XLSX.writeFile(wb, `${siteName || "Site"}_${state.currentMonth}_roster.xlsx`);
@@ -1337,6 +1455,115 @@
     }).join("");
   }
 
+  // Per-guard payroll totals for one roster month — a pure function over the SAME days/
+  // assignments generateMonth() already produced (passed in as `result`, never recomputed),
+  // plus this site's public-holiday dates and its normal-hours-per-day OT threshold.
+  //
+  // A worked day is bucketed into exactly one of normal / rest-day / public-holiday (in that
+  // order of precedence — a holiday falling on what would've been someone's rest day still
+  // counts as a holiday, since holiday pay is usually the richer premium anyway):
+  //   - public holiday: every hour of the shift counts as public-holiday overtime.
+  //   - otherwise, the guard's first NORMAL_WORK_DAYS non-holiday days worked this month are
+  //     "normal" (site.normalHoursPerDay counted as regular hours, anything beyond that in the
+  //     same shift as normal overtime); any further non-holiday day worked is a rest day, and
+  //     the WHOLE shift on it counts as rest-day overtime — mirrors how "Monthly work-day
+  //     summary" already classifies rest-day work, just carried through to hours too.
+  // Leave/Absent/MC/Unpaid-Leave counts come from the month's leave log directly, independent
+  // of whether that day happened to need covering.
+  function computeGuardSummary(y, m, config, monthState, result){
+    const holidays = new Set(configHolidays(config));
+    const normalThreshold = Number(config.site.normalHoursPerDay) || 8;
+    const summary = {};
+    config.guards.forEach(g => {
+      summary[g.id] = {
+        manHours:0, normalDays:0, restDaysWorked:0, holidayDaysWorked:0,
+        normalOTHours:0, restOTHours:0, holidayOTHours:0,
+        mc:0, absent:0, leave:0, unpaidLeave:0,
+        _nonHolidayWorked:0 // running counter only, not part of the report
+      };
+    });
+
+    result.days.forEach(day => {
+      const dateStr = day.dateStr;
+      const isHoliday = holidays.has(dateStr);
+      const shiftDefs = computeShiftDefsForDay(config.site, day.dm);
+
+      leaveEntriesFor(monthState, dateStr).forEach(e => {
+        const s = summary[e.id];
+        if(!s) return; // guard since removed from the roster
+        if(e.reason === "Medical leave (MC)") s.mc++;
+        else if(e.reason === "Absent") s.absent++;
+        else if(e.reason === "Unpaid Leave") s.unpaidLeave++;
+        else s.leave++; // "Leave", or any legacy/unrecognized reason
+      });
+
+      day.assignments.forEach((slotsForShift, stIdx) => {
+        const st = shiftDefs[stIdx];
+        if(!st) return;
+        slotsForShift.forEach(guardId => {
+          if(!guardId) return;
+          const s = summary[guardId];
+          if(!s) return; // a temporary guard's id, or one no longer in the roster
+          s.manHours += st.hours;
+          if(isHoliday){
+            s.holidayDaysWorked++;
+            s.holidayOTHours += st.hours;
+          } else {
+            s._nonHolidayWorked++;
+            if(s._nonHolidayWorked <= NORMAL_WORK_DAYS){
+              s.normalDays++;
+              s.normalOTHours += Math.max(0, st.hours - normalThreshold);
+            } else {
+              s.restDaysWorked++;
+              s.restOTHours += st.hours;
+            }
+          }
+        });
+      });
+    });
+
+    return summary;
+  }
+
+  function renderSummaryReport(result){
+    const {y,m} = parseYM(state.currentMonth);
+    const config = currentConfig();
+    const monthState = currentMonthState();
+    const summary = computeGuardSummary(y, m, config, monthState, result);
+    const guards = config.guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
+    const body = $("#summaryReportBody");
+    if(!body) return;
+    body.innerHTML = guards.length ? guards.map(g => {
+      const s = summary[g.id] || {};
+      const n = v => v || 0;
+      const h = v => n(v).toFixed(1);
+      return `<tr>
+        <td>${escapeHtml(g.name)}</td>
+        <td class="mono">${h(s.manHours)}</td>
+        <td class="mono">${n(s.normalDays)}</td>
+        <td class="mono">${n(s.restDaysWorked)}</td>
+        <td class="mono">${n(s.holidayDaysWorked)}</td>
+        <td class="mono">${h(s.normalOTHours)}</td>
+        <td class="mono">${h(s.restOTHours)}</td>
+        <td class="mono">${h(s.holidayOTHours)}</td>
+        <td class="mono">${n(s.mc)}</td>
+        <td class="mono">${n(s.absent)}</td>
+        <td class="mono">${n(s.leave)}</td>
+        <td class="mono">${n(s.unpaidLeave)}</td>
+      </tr>`;
+    }).join("") : `<tr><td colspan="12" class="empty">Add guards to see the summary report.</td></tr>`;
+
+    const holidayCount = configHolidays(config).filter(d => d.slice(0,7) === state.currentMonth).length;
+    const sub = $("#summaryReportSub");
+    if(sub){
+      sub.textContent = `${monthLabel(y,m)} — normal-day overtime starts after ${normalHoursLabel(config)}h/shift. `
+        + (holidayCount
+            ? `${holidayCount} public holiday${holidayCount===1?"":"s"} marked this month.`
+            : `No public holidays marked this month — add them in Guards & Shifts if this month has any.`);
+    }
+  }
+  function normalHoursLabel(config){ return Number(config.site.normalHoursPerDay) || 8; }
+
   function renderConflicts(result){
     const wrap = $("#conflictList");
     const items = [];
@@ -1345,6 +1572,28 @@
       items.push(`<div class="conflictitem">${escapeHtml(guardName(f.guardId))} on <strong>${escapeHtml(f.shiftLabel)}</strong> slot ${f.slot+1}, ${f.date}: ${escapeHtml(f.reason)}.</div>`);
     });
     wrap.innerHTML = items.length ? items.join("") : `<p class="empty">No conflicts &mdash; the roster is fully staffed and rule-compliant.</p>`;
+  }
+
+  function renderHolidayTable(){
+    const cfg = currentConfig();
+    const dates = configHolidays(cfg).slice().sort();
+    const body = $("#holidayTableBody");
+    if(!body) return;
+    $("#holidayEmpty").hidden = dates.length > 0;
+    body.innerHTML = dates.map(d => `
+      <tr><td class="mono">${escapeHtml(d)}</td><td><button class="btn sm danger" data-remove-holiday="${escapeHtml(d)}">Remove</button></td></tr>
+    `).join("");
+    $$("[data-remove-holiday]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const d = btn.getAttribute("data-remove-holiday");
+        const cfg2 = currentConfig();
+        cfg2.publicHolidays = configHolidays(cfg2).filter(x => x !== d);
+        addLog(`Removed public holiday ${d}.`);
+        persistConfig();
+        showToast(`Removed ${d} from public holidays.`);
+        render();
+      });
+    });
   }
 
   function renderGuardsTable(){
@@ -1472,6 +1721,7 @@
     $("#siteDaysWeek").value = site.daysWeek;
     $("#siteShiftHrs").value = site.shiftHrs;
     $("#siteRosterStart").value = site.rosterStart;
+    $("#siteNormalHours").value = normalHoursLabel(currentConfig());
 
     const cov = coverageDaysPerWeek(site);
     const sug = suggestedGuardCount(currentConfig());
@@ -1507,8 +1757,75 @@
       reasonSel.innerHTML = LEAVE_REASONS.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
     }
   }
-  function renderReplaceGuardSelect(){
-    fillGuardSelect($("#replaceGuard"));
+  // The shift label for an override key's shiftId, looked up fresh from this site's current
+  // shift structure — used for rows in the "temporary guards this month" table, since only the
+  // key itself (date|shiftId|slot) gets persisted, not a human label.
+  function shiftLabelForKey(date, shiftId){
+    const config = currentConfig();
+    const defs = computeShiftDefsForDay(config.site, dowMon(date));
+    const st = defs.find(s => s.id === shiftId);
+    return st ? st.label : shiftId;
+  }
+
+  function renderTempGuardPanel(result){
+    const ms = currentMonthState();
+    const tg = monthTempGuards(ms);
+
+    // --- unfilled-slot picker, sourced straight from this render's conflicts ---
+    const slotSel = $("#tempSlotSelect");
+    const prevSlot = slotSel.value;
+    const conflicts = result.conflicts;
+    $("#tempSlotEmpty").hidden = conflicts.length > 0;
+    slotSel.innerHTML = conflicts.map(c => {
+      const key = c.date+"|"+c.shiftId+"|"+c.slot;
+      return `<option value="${escapeHtml(key)}">${escapeHtml(c.date)} — ${escapeHtml(c.shiftLabel)}, Slot ${c.slot+1}</option>`;
+    }).join("");
+    if(prevSlot) slotSel.value = prevSlot;
+    $("#assignTempBtn").disabled = conflicts.length === 0;
+
+    // --- temporary guards already assigned this month, for payroll reference ---
+    const rows = Object.keys(tg).map(tempId => {
+      const key = Object.keys(ms.overrides).find(k => ms.overrides[k] === tempId);
+      if(!key) return null; // orphaned (shouldn't normally happen) — just don't render it
+      const [date, shiftId, slot] = key.split("|");
+      return { tempId, key, date, shiftId, slot:Number(slot), name:tg[tempId].name, rate:Number(tg[tempId].rate)||0 };
+    }).filter(Boolean).sort((a,b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+
+    const body = $("#tempGuardTableBody");
+    $("#tempGuardEmpty").hidden = rows.length > 0;
+    body.innerHTML = rows.map(r => `
+      <tr>
+        <td class="mono">${escapeHtml(r.date)}</td>
+        <td>${escapeHtml(shiftLabelForKey(r.date, r.shiftId))}, Slot ${r.slot+1}</td>
+        <td>${escapeHtml(r.name)}</td>
+        <td class="mono">${r.rate.toFixed(2)}</td>
+        <td><button class="btn sm danger" data-remove-temp="${escapeHtml(r.tempId)}" data-remove-temp-key="${escapeHtml(r.key)}">Remove</button></td>
+      </tr>
+    `).join("");
+    const total = rows.reduce((sum,r) => sum + r.rate, 0);
+    $("#tempGuardTotal").textContent = rows.length ? `Total to pay this month: RM ${total.toFixed(2)}` : "";
+
+    $$("[data-remove-temp]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const tempId = btn.getAttribute("data-remove-temp");
+        const key = btn.getAttribute("data-remove-temp-key");
+        const name = (tg[tempId] || {}).name || "temporary guard";
+        openConfirmModal({
+          title: "Remove temporary guard",
+          message: `Remove ${name} from this slot? It goes back to unfilled unless another guard covers it.`,
+          okLabel: "Remove",
+          danger: true,
+          onConfirm: () => {
+            if(ms.overrides[key] === tempId) delete ms.overrides[key];
+            delete tg[tempId];
+            addLog(`Removed temporary guard ${name}.`);
+            persistMonth();
+            showToast(`Removed ${name}.`);
+            render();
+          }
+        });
+      });
+    });
   }
   function fillGuardSelect(sel){
     const prev = sel.value;
@@ -1705,6 +2022,21 @@
   });
   $("#newGuardName").addEventListener("keydown", e => { if(e.key === "Enter") $("#addGuardBtn").click(); });
 
+  $("#addHolidayBtn").addEventListener("click", () => {
+    const input = $("#newHolidayDate");
+    const d = input.value;
+    if(!d){ showToast("Pick a date first.", true); return; }
+    const cfg = currentConfig();
+    const list = configHolidays(cfg);
+    if(list.includes(d)){ showToast("That date is already marked as a public holiday.", true); return; }
+    list.push(d);
+    input.value = "";
+    addLog(`Added public holiday ${d}.`);
+    persistConfig();
+    showToast(`Added ${d} as a public holiday.`);
+    render();
+  });
+
   $("#sitePattern").addEventListener("change", renderSitePostsFields);
 
   // "+ Add post" / remove-post buttons inside the FULLH category editors are
@@ -1753,6 +2085,7 @@
     site.daysWeek = Number($("#siteDaysWeek").value) || 0;
     site.shiftHrs = Number($("#siteShiftHrs").value) || 0;
     site.rosterStart = Number($("#siteRosterStart").value) || 0;
+    site.normalHoursPerDay = Number($("#siteNormalHours").value) || 8;
     currentConfig().isSample = false;
     addLog(`Updated client site requirement (pattern: ${site.pattern}, ${site.hoursDay}h/day coverage, ${site.daysWeek} days/week).`);
     persistConfig();
@@ -1772,6 +2105,7 @@
   function leavePhrase(reason){
     if(reason === "Absent") return "absent";
     if(reason && reason.toLowerCase().indexOf("medical") !== -1) return "on medical leave";
+    if(reason === "Unpaid Leave") return "on unpaid leave";
     return "on leave";
   }
   // Noun form for possessive phrasing ("covering X's ___"), as opposed to
@@ -1779,6 +2113,7 @@
   function leaveNoun(reason){
     if(reason === "Absent") return "absence";
     if(reason && reason.toLowerCase().indexOf("medical") !== -1) return "medical leave";
+    if(reason === "Unpaid Leave") return "unpaid leave";
     return "leave";
   }
   $("#addLeaveBtn").addEventListener("click", () => {
@@ -1801,22 +2136,25 @@
     render();
   });
 
-  $("#replaceBtn").addEventListener("click", () => {
-    const guardId = $("#replaceGuard").value;
-    const dateStr = $("#replaceDate").value;
-    const newName = $("#replaceNewName").value.trim();
-    if(!guardId || !dateStr) return;
-    const g = guardById(guardId);
-    g.inactiveFrom = dateStr;
-    let msg = `Replacing ${g.name}, effective ${dateStr}.`;
-    if(newName){
-      currentConfig().guards.push({ id:newId("g"), name:newName, active:true, inactiveFrom:null });
-      msg += ` Added ${newName} to the pool.`;
-    }
-    addLog(msg);
-    $("#replaceNewName").value = "";
-    persistConfig();
-    showToast(msg);
+  $("#assignTempBtn").addEventListener("click", () => {
+    const key = $("#tempSlotSelect").value;
+    const name = $("#tempGuardName").value.trim();
+    const rate = Number($("#tempGuardRate").value);
+    if(!key){ showToast("Pick an unfilled slot first.", true); return; }
+    if(!name){ showToast("Enter the temporary guard's name.", true); return; }
+    if(!(rate >= 0)){ showToast("Enter a valid rate.", true); return; }
+    const ms = currentMonthState();
+    const tg = monthTempGuards(ms);
+    const tempId = newId("temp");
+    tg[tempId] = { name, rate, createdAt: nowIso() };
+    ms.overrides[key] = tempId;
+    const [date, shiftId, slot] = key.split("|");
+    const label = shiftLabelForKey(date, shiftId);
+    addLog(`Assigned temporary guard ${name} (RM ${rate.toFixed(2)}) to ${label}, Slot ${Number(slot)+1} on ${date}.`);
+    $("#tempGuardName").value = "";
+    $("#tempGuardRate").value = "";
+    persistMonth();
+    showToast(`Assigned ${name} to cover ${date}.`);
     render();
   });
 
