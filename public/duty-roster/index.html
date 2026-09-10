@@ -1619,6 +1619,55 @@
     return rows.length ? [header, ...rows, ["", "", "", "Total", total]] : [header];
   }
 
+  // Same per-guard totals as the Summary Report, remapped to the column order + 3-row header
+  // (description / data type / column name) of the payroll system's own "TimeAttendance" import
+  // template — see format_for_apps.xlsx. Covers all of that template's columns A–P: A–L are
+  // real data from this roster; M–P (Lateness/Early Out) are left blank in every row since this
+  // tool doesn't track clock-in/out timing at all — they're only here so the template's column
+  // count/positions stay intact for the importer. Temp/relief guards are left out since they
+  // have no Employee Code to put in column A.
+  function timeAttendanceExportRows(y, m, config, monthState, result){
+    const summary = computeGuardSummary(y, m, config, monthState, result);
+    const guards = config.guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
+    const n = v => v || 0;
+
+    const descRow = ["", "",
+      "The official work day of the month exclude Rest Day &  Holiday",
+      "The total number of day an employee has worked in Working Day",
+      "The total number of day an employee has absent",
+      "The total number of day an employee has taken leaves (exclude unpaid leaves)",
+      "The total number of day an employee has taken unpaid leaves",
+      "The total number of day an employee has worked in Rest Day",
+      "The total number of day an employee has worked in Holiday",
+      "The total number of overtime hour an employee has worked in Working Day",
+      "The total number of overtime hour an employee has worked in Rest Day",
+      "The total number of overtime hour an employee has worked in Holiday",
+      "The total number of Lateness count",
+      "The total number of Lateness hour",
+      "The total number of Early Out count",
+      "The total number of Early Out hour"
+    ];
+    const typeRow = ["NvarChar(20)", "",
+      "Decimal(9, 1)", "Decimal(9, 1)", "Decimal(9, 1)", "Decimal(9, 1)", "Decimal(9, 1)",
+      "Decimal(9, 1)", "Decimal(9, 1)", "Decimal(9, 5)", "Decimal(9, 5)", "Decimal(9, 5)",
+      "Integer", "Decimal(9, 2)", "Integer", "Decimal(9, 2)"
+    ];
+    const headerRow = ["Employee Code", "Name", "Working Days", "Worked Days", "Absent Days",
+      "Leave Days", "Unpaid Leave Days", "Worked Rest Days", "Worked Holidays",
+      "OT For Worked Days", "OT For Rest Days", "OT For Holidays",
+      "Lateness Count", "Lateness Time", "Early Out Count", "Early Out Time"];
+
+    const rows = guards.map(g => {
+      const s = summary[g.id] || {};
+      return [g.employeeId || "", g.name, NORMAL_WORK_DAYS, n(s.normalDays), n(s.absent),
+        n(s.leave), n(s.unpaidLeave), n(s.restDaysWorked), n(s.holidayDaysWorked),
+        n(s.normalOTHours), n(s.restOTHours), n(s.holidayOTHours),
+        "", "", "", ""]; // Lateness/Early Out — not tracked by this tool, left blank
+    });
+
+    return [descRow, typeRow, headerRow, ...rows];
+  }
+
   function exportCurrentMonthToExcel(){
     if(typeof XLSX === "undefined"){
       showToast("Couldn't load the Excel export tool — check your internet connection and try again.", true);
@@ -1635,6 +1684,14 @@
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rosterGridExportRows(y, m, result)), sheetName);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryReportExportRows(y, m, config, monthState, result)), "Summary Report");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(tempGuardExportRows(monthState)), "Temp Guards");
+    const taSheet = XLSX.utils.aoa_to_sheet(timeAttendanceExportRows(y, m, config, monthState, result));
+    // Column widths matching format_for_apps.xlsx (Excel "characters" units).
+    taSheet["!cols"] = [
+      {wch:13.5}, {wch:39.33}, {wch:12.16}, {wch:12}, {wch:10.16}, {wch:15.5}, {wch:15},
+      {wch:14.5}, {wch:14}, {wch:16.33}, {wch:14.16}, undefined,
+      {wch:12.5}, {wch:9.16}, undefined, undefined
+    ];
+    XLSX.utils.book_append_sheet(wb, taSheet, "TimeAttendance");
 
     const siteName = ((state.sites.find(s => s.id === state.currentSiteId) || {}).name || "Site").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_");
     XLSX.writeFile(wb, `${siteName || "Site"}_${state.currentMonth}_roster.xlsx`);
