@@ -539,7 +539,7 @@
              roster is a cross-site action, unlike everything else on this tab. -->
         <div class="panel" id="supportGuardPanel" hidden>
           <h2>Assign a support guard</h2>
-          <p class="sub">Cover an empty slot with a real guard borrowed from another site in the same branch &mdash; unlike a temporary guard, this links back to his own record and counts toward his own hours, without ever touching his home site's own man-hour totals (see the Summary Report's "Combined" column there)</p>
+          <p class="sub">Cover an empty slot with a real guard borrowed from another site in the same branch &mdash; unlike a temporary guard, this links back to his own record and counts toward his own hours, without ever touching his home site's own man-hour totals (see the Summary Report's "Combined" column there). The guard list only shows who's actually free at their own site that day.</p>
           <div class="fieldrow">
             <div style="flex:1;"><label class="small">Unfilled slot to cover</label><select id="supportSlotSelect"></select></div>
           </div>
@@ -2617,16 +2617,99 @@
     return state.sites.filter(s => s.id !== here.id && !s.archived && s.branch === here.branch);
   }
 
-  // Populates #supportGuardSelect from whichever site is chosen in #supportOriginSite.
-  function fillSupportGuardSelect(){
+  // Which (originSiteId, date) #supportGuardSelect currently reflects (or is mid-fetch for) —
+  // lets fillSupportGuardSelect() below no-op on the many render() calls that don't actually
+  // change the slot or origin site, instead of re-running the availability check every time.
+  let supportGuardSelectKey = null;
+
+  // Cross-site, read-only: runs the ORIGIN site's own scheduling logic for one specific date to
+  // find out who's genuinely free there — not already assigned a shift (auto-picked or
+  // overridden) and not already on leave for some other reason — so "Assign a support guard"
+  // can never offer a guard who'd end up double-booked at his own site that day. Always fetches
+  // fresh (no caching) since this gates an actual write, unlike the read-only Combined column.
+  //
+  // Reuses generateMonth() itself rather than re-deriving the schedule by hand, by briefly
+  // pointing state.currentSiteId/currentMonth/monthsCache at the origin site — generateMonth()'s
+  // own helpers (guardById/activeGuardsOn) read those globals internally. Safe because
+  // everything between the swap and the restore below is synchronous (no `await` in between),
+  // so nothing else can observe the swap — JS won't interrupt a synchronous block to run a
+  // timer, click handler, or Firestore callback in the middle of it.
+  async function computeFreeGuardsAt(siteId, dateStr){
+    const cfg = state.configsCache[siteId];
+    if(!cfg) return [];
+    const monthKeyStr = dateStr.slice(0,7);
+    let msData = null;
+    if(dbHandle){
+      try{
+        const snap = await dbHandle.doc("sites/"+siteId).collection("months").doc(monthKeyStr).get();
+        msData = snap.exists ? snap.data() : null;
+      }catch(e){ msData = null; }
+    }
+    const monthStateForCompute = msData ? deepClone(msData) : emptyMonthState(monthKeyStr);
+
+    const savedSiteId = state.currentSiteId;
+    const savedMonth = state.currentMonth;
+    const cacheKey = monthCacheKey(siteId, monthKeyStr);
+    const savedCacheEntry = state.monthsCache[cacheKey];
+    state.currentSiteId = siteId;
+    state.currentMonth = monthKeyStr;
+    state.monthsCache[cacheKey] = monthStateForCompute;
+
+    let freeGuards = [];
+    try{
+      const {y, m} = parseYM(monthKeyStr);
+      const result = generateMonth(y, m, cfg, monthStateForCompute);
+      const day = result.days.find(d => d.dateStr === dateStr);
+      const workingIds = new Set();
+      if(day) day.assignments.forEach(slots => slots.forEach(id => { if(id) workingIds.add(id); }));
+      const leaveIds = leaveGuardIdsFor(monthStateForCompute, dateStr);
+      freeGuards = cfg.guards.filter(g => g.active !== false && !workingIds.has(g.id) && !leaveIds.includes(g.id));
+    } finally {
+      state.currentSiteId = savedSiteId;
+      state.currentMonth = savedMonth;
+      if(savedCacheEntry === undefined) delete state.monthsCache[cacheKey];
+      else state.monthsCache[cacheKey] = savedCacheEntry;
+    }
+    return freeGuards;
+  }
+
+  // Populates #supportGuardSelect with only guards from #supportOriginSite who are actually
+  // free at THEIR OWN site on the selected slot's date — see computeFreeGuardsAt() above for
+  // why that needs an async cross-site check rather than a plain filter of the roster list.
+  async function fillSupportGuardSelect(){
     const sel = $("#supportGuardSelect");
     if(!sel) return;
     const originId = $("#supportOriginSite").value;
+    const slotKey = $("#supportSlotSelect").value;
+    if(!originId || !slotKey){
+      supportGuardSelectKey = null;
+      sel.innerHTML = "";
+      sel.disabled = true;
+      $("#assignSupportBtn").disabled = true;
+      return;
+    }
+    const dateStr = slotKey.split("|")[0];
+    const key = originId + "|" + dateStr;
+    if(key === supportGuardSelectKey) return; // already showing (or already fetching) this exact combination
+    supportGuardSelectKey = key;
+
     const prev = sel.value;
-    const cfg = state.configsCache[originId];
-    const guards = (cfg && cfg.guards) ? cfg.guards.filter(g => g.active !== false) : [];
-    sel.innerHTML = guards.map(g => `<option value="${g.id}">${escapeHtml(g.name)}${g.employeeId ? " ("+escapeHtml(g.employeeId)+")" : ""}</option>`).join("");
-    if(prev && guards.some(g => g.id === prev)) sel.value = prev;
+    sel.disabled = true;
+    sel.innerHTML = `<option value="">Checking availability…</option>`;
+    $("#assignSupportBtn").disabled = true;
+
+    const freeGuards = await computeFreeGuardsAt(originId, dateStr);
+    if(supportGuardSelectKey !== key) return; // slot/origin changed again while this was in flight
+
+    sel.disabled = false;
+    if(!freeGuards.length){
+      sel.innerHTML = `<option value="">No guards free that day</option>`;
+      $("#assignSupportBtn").disabled = true;
+      return;
+    }
+    sel.innerHTML = freeGuards.map(g => `<option value="${g.id}">${escapeHtml(g.name)}${g.employeeId ? " ("+escapeHtml(g.employeeId)+")" : ""}</option>`).join("");
+    if(prev && freeGuards.some(g => g.id === prev)) sel.value = prev;
+    $("#assignSupportBtn").disabled = false;
   }
 
   function renderSupportGuardPanel(result){
@@ -2657,9 +2740,12 @@
     $("#supportNoOtherSites").hidden = sites.length > 0;
     originSel.innerHTML = sites.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join("");
     if(prevOrigin && sites.some(s => s.id === prevOrigin)) originSel.value = prevOrigin;
-    fillSupportGuardSelect();
 
+    // Baseline gate (no slot to fill / no other sites at all) — set BEFORE kicking off the
+    // async availability check below, so that check's own disabled=true while loading isn't
+    // immediately clobbered by this line running synchronously right after it starts.
     $("#assignSupportBtn").disabled = conflicts.length === 0 || sites.length === 0;
+    fillSupportGuardSelect();
 
     // --- support guards already assigned this month, for reference ---
     const rows = Object.keys(sg).map(supportId => {
@@ -3180,6 +3266,9 @@
   });
 
   $("#supportOriginSite").addEventListener("change", fillSupportGuardSelect);
+  // A different slot usually means a different date, which needs its own availability check —
+  // see fillSupportGuardSelect()/computeFreeGuardsAt() above.
+  $("#supportSlotSelect").addEventListener("change", fillSupportGuardSelect);
 
   $("#assignSupportBtn").addEventListener("click", () => {
     if(!canAssignSupportGuard()) return;
