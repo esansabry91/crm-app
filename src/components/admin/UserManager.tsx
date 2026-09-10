@@ -11,12 +11,43 @@ export default function UserManager() {
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<Role>('staff');
+  const [role, setRole] = useState<Role>('branchManager');
   const [department, setDepartment] = useState('HQ');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [removingUid, setRemovingUid] = useState<string | null>(null);
+  const [migrating, setMigrating] = useState(false);
+  const [migrateMsg, setMigrateMsg] = useState<string | null>(null);
+
+  // One-time cleanup for accounts created before the role was renamed from "staff" to
+  // "branchManager" — their Firestore `role` field still literally says "staff". Functionally
+  // harmless (every permission check in this app only ever tests for `role === 'admin'`, so a
+  // legacy value here is still treated as the non-admin role everywhere), but the role dropdowns
+  // below can't show it as selected since neither <option> has that value anymore. Cast through
+  // `string` because the `Role` type no longer includes "staff" — the check is only for
+  // whatever's actually still sitting in old documents.
+  const legacyStaffUsers = users.filter((u) => (u.role as string) === 'staff');
+
+  const handleMigrateLegacyRoles = async () => {
+    setMigrating(true);
+    setMigrateMsg(null);
+    try {
+      for (const u of legacyStaffUsers) {
+        await updateUserProfile(u.uid, { role: 'branchManager' });
+      }
+      setMigrateMsg(
+        `Updated ${legacyStaffUsers.length} account${legacyStaffUsers.length === 1 ? '' : 's'} to the "branchManager" role.`
+      );
+    } catch (err) {
+      setMigrateMsg(
+        'Something went wrong partway through — check the Role column below and re-run if any account still looks off.'
+      );
+      console.error(err);
+    } finally {
+      setMigrating(false);
+    }
+  };
 
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
@@ -32,7 +63,7 @@ export default function UserManager() {
       setSuccess(`Account created — an email has been sent to ${email.trim()} with a link to set their password.`);
       setName('');
       setEmail('');
-      setRole('staff');
+      setRole('branchManager');
       setDepartment('HQ');
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code;
@@ -62,6 +93,29 @@ export default function UserManager() {
 
   return (
     <div className="space-y-6">
+      {legacyStaffUsers.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-sm font-medium text-amber-800">
+              {legacyStaffUsers.length} account{legacyStaffUsers.length === 1 ? '' : 's'} still stored with the old
+              "staff" role value.
+            </p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              One-time cleanup — updates their role field to "branchManager" to match the new label. Nothing breaks
+              if you skip this; it just keeps the dropdowns below showing the right selection.
+            </p>
+            {migrateMsg && <p className="text-xs text-emerald-700 mt-1">{migrateMsg}</p>}
+          </div>
+          <button
+            onClick={handleMigrateLegacyRoles}
+            disabled={migrating}
+            className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg disabled:opacity-60 shrink-0"
+          >
+            {migrating ? 'Migrating…' : `Migrate ${legacyStaffUsers.length} account${legacyStaffUsers.length === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <h3 className="text-sm font-semibold text-slate-800">Add Team Member</h3>
         <p className="text-xs text-slate-400 mt-0.5 mb-4">
@@ -78,7 +132,7 @@ export default function UserManager() {
             className="input"
           />
           <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="input">
-            <option value="staff">Staff — sees only their own tenders</option>
+            <option value="branchManager">Branch Manager — sees only their own tenders</option>
             <option value="admin">HQ Admin — sees everything</option>
           </select>
           <select value={department} onChange={(e) => setDepartment(e.target.value)} className="input">
@@ -125,7 +179,7 @@ export default function UserManager() {
                       onChange={(e) => updateUserProfile(u.uid, { role: e.target.value as Role })}
                       className="text-xs rounded border border-slate-200 px-1.5 py-1"
                     >
-                      <option value="staff">Staff</option>
+                      <option value="branchManager">Branch Manager</option>
                       <option value="admin">HQ Admin</option>
                     </select>
                   </td>

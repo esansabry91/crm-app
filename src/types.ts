@@ -1,6 +1,6 @@
 // Core domain types shared across the app.
 
-export type Role = 'admin' | 'staff';
+export type Role = 'admin' | 'branchManager';
 
 /** The 7 fixed pipeline stages, in kanban column order. */
 export const STAGES = [

@@ -50,7 +50,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <div className="px-4 py-4 border-t border-slate-100">
           <p className="text-sm font-medium text-slate-800 truncate">{profile?.name}</p>
           <p className="text-xs text-slate-400 truncate">
-            {profile?.role === 'admin' ? 'HQ Admin' : 'Staff'} · {profile?.department}
+            {profile?.role === 'admin' ? 'HQ Admin' : 'Branch Manager'} · {profile?.department}
           </p>
           <button
             onClick={() => logout()}
