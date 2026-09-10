@@ -522,6 +522,7 @@
     <div class="panel">
       <h2>Summary report</h2>
       <p class="sub" id="summaryReportSub">Per-guard totals for the month shown on the Roster tab</p>
+      <button class="btn primary sm" id="exportTimeAttendanceBtn" type="button" style="margin-bottom:10px;">Export to Excel (TimeAttendance format)</button>
       <div class="tablewrap" style="overflow-x:auto;">
         <table class="simple">
           <thead><tr>
@@ -1684,6 +1685,26 @@
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rosterGridExportRows(y, m, result)), sheetName);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryReportExportRows(y, m, config, monthState, result)), "Summary Report");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(tempGuardExportRows(monthState)), "Temp Guards");
+
+    const siteName = ((state.sites.find(s => s.id === state.currentSiteId) || {}).name || "Site").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_");
+    XLSX.writeFile(wb, `${siteName || "Site"}_${state.currentMonth}_roster.xlsx`);
+    addLog(`Exported ${monthLabel(y,m)} roster to Excel.`);
+  }
+
+  // Standalone export — its own .xlsx with just the one "TimeAttendance" sheet, kept separate
+  // from the main roster export above (button lives on the Summary Report tab) since this file
+  // goes straight into the payroll system's importer rather than being a roster record.
+  function exportTimeAttendanceToExcel(){
+    if(typeof XLSX === "undefined"){
+      showToast("Couldn't load the Excel export tool — check your internet connection and try again.", true);
+      return;
+    }
+    const { y, m } = parseYM(state.currentMonth);
+    const config = currentConfig();
+    const monthState = currentMonthState();
+    const result = generateMonth(y, m, config, monthState);
+
+    const wb = XLSX.utils.book_new();
     const taSheet = XLSX.utils.aoa_to_sheet(timeAttendanceExportRows(y, m, config, monthState, result));
     // Column widths matching format_for_apps.xlsx (Excel "characters" units).
     taSheet["!cols"] = [
@@ -1694,8 +1715,8 @@
     XLSX.utils.book_append_sheet(wb, taSheet, "TimeAttendance");
 
     const siteName = ((state.sites.find(s => s.id === state.currentSiteId) || {}).name || "Site").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_");
-    XLSX.writeFile(wb, `${siteName || "Site"}_${state.currentMonth}_roster.xlsx`);
-    addLog(`Exported ${monthLabel(y,m)} roster to Excel.`);
+    XLSX.writeFile(wb, `${siteName || "Site"}_${state.currentMonth}_TimeAttendance.xlsx`);
+    addLog(`Exported ${monthLabel(y,m)} TimeAttendance file.`);
   }
 
   const NORMAL_WORK_DAYS = 26;
@@ -2369,6 +2390,7 @@
     render();
   });
   $("#exportExcelBtn").addEventListener("click", exportCurrentMonthToExcel);
+  $("#exportTimeAttendanceBtn").addEventListener("click", exportTimeAttendanceToExcel);
 
   $("#addGuardBtn").addEventListener("click", () => {
     const input = $("#newGuardName");
