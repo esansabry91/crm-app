@@ -948,8 +948,18 @@
   }
 
   /* ---------------- app state ---------------- */
+  // Active Projects deep-links here as ?tenderId=...&clientName=...&branch=... (see
+  // DutyRosterPage.tsx and the "Duty Roster" action in ActiveProjectsPage.tsx) so the console
+  // can auto-create-or-select the ONE site tied to that tender instead of a branch user ever
+  // touching New/Rename/Delete — see handleTenderDeepLinkIfNeeded(), createSite()'s tenderId
+  // param, and applyPayrollUiLockdown()'s canManageSites. Read once at load; deepLinkHandled
+  // latches true the first time it's acted on so later site-list updates don't re-trigger it.
+  const deepLinkParams = new URLSearchParams(location.search);
+  const deepLinkTenderId = deepLinkParams.get("tenderId");
+  let deepLinkHandled = false;
+
   const state = {
-    sites: [],              // [{id, name, branch}], display order — already filtered to what this user can reach
+    sites: [],              // [{id, name, branch, tenderId, archived}], display order — already filtered to what this user can reach
     currentSiteId: null,
     configsCache: {},       // siteId -> config doc {id,name,branch,guards,site,restRule,isSample,updatedAt}
     monthsCache: {},        // "siteId::monthKey" -> month-state doc
@@ -969,10 +979,30 @@
       // Self-heal: the app must stay usable even if the db handshake in
       // initDb() is slow, stuck, or fails outright — never leave every
       // action silently writing into a config nobody keeps a reference to.
+      //
+      // This runs on the very first render() at the bottom of the file, which fires
+      // synchronously BEFORE initDb() gets to do any of its async work — so in practice this
+      // self-heal path, not bootLocalFallback()'s own (structurally identical) check, is what
+      // actually wins the race whenever Firebase never becomes available at all. It needs the
+      // same tenderId-deep-link awareness as bootLocalFallback() for that reason: without it, a
+      // pending deep link would be silently swallowed by a generic "Site 1" nobody ever revisits
+      // (and firebase.auth() rehydrating successfully, e.g. the ordinary live-Firestore case,
+      // supersedes this self-heal a moment later via recombineSitesAndRender() — this branch
+      // only actually matters when Firebase never comes up).
       const id = newId("site");
       const cfg = makeSampleConfig();
-      cfg.id = id; cfg.name = "Site 1"; cfg.createdAt = nowIso();
-      state.sites = [{ id, name:"Site 1" }];
+      cfg.id = id; cfg.createdAt = nowIso();
+      if(deepLinkTenderId && !deepLinkHandled){
+        cfg.name = deepLinkParams.get("clientName") || "New site";
+        cfg.branch = deepLinkParams.get("branch") || null;
+        cfg.tenderId = deepLinkTenderId;
+        cfg.archived = false;
+        state.sites = [{ id, name:cfg.name, branch:cfg.branch, tenderId:deepLinkTenderId, archived:false }];
+        deepLinkHandled = true;
+      } else {
+        cfg.name = "Site 1";
+        state.sites = [{ id, name:"Site 1" }];
+      }
       state.configsCache[id] = cfg;
       state.currentSiteId = id;
     }
@@ -2939,19 +2969,45 @@
     if(!(opts && opts.skipRender)) render();
   }
 
-  function createSite(name, branch){
+  // tenderId links this site to the one Active Project it belongs to (see the ?tenderId= deep
+  // link handling above and ActiveProjectsPage.tsx's "Duty Roster" action) — optional, since
+  // Admin/HQ can still create a standalone site with no tender behind it for anything outside
+  // the normal pipeline. archived/archivedAt start unset here and are only ever set by
+  // setLinkedSitesArchived() over in the CRM's tenders.ts, when that tender is closed out or
+  // reopened.
+  function createSite(name, branch, tenderId){
     const id = newId("site");
     // A privileged user (admin, or HQ department) can pick any branch, or leave it
     // unassigned; anyone else can only ever create a site for their own branch — mirrored
     // and enforced server-side in firestore.rules' canReachSite().
     const assignedBranch = (state.isPrivileged && !state.isPayroll) ? (branch || null) : (state.myDepartment || null);
-    const cfg = { id, name, branch: assignedBranch, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, createdAt: nowIso(), updatedAt: nowIso() };
-    state.sites.push({id, name, branch: assignedBranch});
+    const cfg = { id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false, archivedAt: null, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, createdAt: nowIso(), updatedAt: nowIso() };
+    state.sites.push({id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false});
     state.configsCache[id] = cfg;
     if(dbHandle) dbHandle.doc("sites/"+id).set(cfg).catch(()=>{});
     switchSite(id);
     addLog(`Created new site "${name}"${assignedBranch ? ` for branch "${assignedBranch}"` : ""}.`);
     persistMonth();
+  }
+
+  // Acts on the ?tenderId= deep link once state.sites reflects reality: selects the matching
+  // site if one already exists (e.g. this tender's project was opened before, or its site was
+  // created via the other bootstrap path in recombineSitesAndRender's empty-branch case),
+  // otherwise creates it. No-ops once handled, and no-ops entirely when there's no deep link —
+  // safe to call on every site-list update.
+  function handleTenderDeepLinkIfNeeded(){
+    if(!deepLinkTenderId || deepLinkHandled) return;
+    const existing = state.sites.find(s => s.tenderId === deepLinkTenderId);
+    deepLinkHandled = true;
+    if(existing){
+      if(state.currentSiteId !== existing.id) switchSite(existing.id);
+      return;
+    }
+    createSite(
+      deepLinkParams.get("clientName") || "New site",
+      deepLinkParams.get("branch") || null,
+      deepLinkTenderId
+    );
   }
 
   function setSiteBranch(id, branch){
@@ -2995,6 +3051,12 @@
         ? state.sites.filter(s => !s.branch)
         : state.sites.filter(s => s.branch === state.payrollBranchFilterValue);
     }
+    // A closed-out project's site archives itself (see setLinkedSitesArchived() in the CRM's
+    // tenders.ts) — Admin/HQ/Payroll still need to reach it for historical records and payroll
+    // export, so it stays in their list (tagged below); everyone else only ever needs their
+    // active projects' sites day to day, so it drops out of their picker entirely once archived.
+    const canSeeArchived = (state.isPrivileged && !state.isPayroll) || state.isPayroll;
+    if(!canSeeArchived) visibleSites = visibleSites.filter(s => !s.archived);
     if(!visibleSites.length){
       // The selected branch genuinely has no client sites — show that plainly rather than
       // silently falling back to every site (which is what used to make the Client Site
@@ -3003,7 +3065,7 @@
       // with it).
       sel.innerHTML = `<option value="">No client sites in this branch</option>`;
     } else {
-      sel.innerHTML = visibleSites.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
+      sel.innerHTML = visibleSites.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.archived ? " (Archived)" : ""}</option>`).join("");
       const currentStillVisible = state.currentSiteId && visibleSites.some(s => s.id === state.currentSiteId);
       if(currentStillVisible){
         sel.value = state.currentSiteId;
@@ -3020,6 +3082,11 @@
     }
     const delBtn = $("#deleteSiteBtn");
     if(delBtn) delBtn.disabled = state.sites.length <= 1;
+    // Re-applied here (already called once at the top of this function, for the payroll
+    // branch-filter dropdown) because Rename/Delete's visibility depends on which site is
+    // CURRENTLY selected, and the switchSite() call above — for the "the site we were on just
+    // dropped out of the filtered list" case — can change that partway through this function.
+    applyPayrollUiLockdown();
     renderSiteBranchControl();
   }
 
@@ -3056,13 +3123,27 @@
         state.branchOptions.filter(b => b !== "HQ").map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join("") +
         `<option value="__unassigned__">Unassigned</option>`;
       filterSel.value = state.payrollBranchFilterValue || "";
-      if(newBtn) newBtn.hidden = true;
-      if(renameBtn) renameBtn.hidden = true;
-      if(delBtn) delBtn.hidden = true;
     } else {
       if(filterLabel) filterLabel.hidden = true;
       filterSel.hidden = true;
     }
+    // "New site" is Admin/HQ only, full stop — everyone else's sites are meant to be
+    // auto-created-and-linked from their branch's Won tenders from now on (see the ?tenderId=
+    // deep link handling and createSite()'s tenderId param), so there's no button for them to
+    // create a stray, unlinked one. Payroll gets the same lockdown (view/export only).
+    const isPrivilegedManager = state.isPrivileged && !state.isPayroll;
+    if(newBtn) newBtn.hidden = !isPrivilegedManager;
+    // Rename/Delete are narrower: they disappear only for a site that's actually tied to a
+    // tender (its name and lifecycle are meant to follow that tender — see
+    // setLinkedSitesArchived() in the CRM's tenders.ts — not be hand-edited out from under it),
+    // not for every site a non-privileged user can reach. A site predating this feature (or one
+    // an Admin created standalone, with no tenderId) stays exactly as manually editable as it
+    // always was — nothing about how those sites work has changed.
+    const currentSite = state.sites.find(s => s.id === state.currentSiteId);
+    const isCurrentSiteTenderLinked = !!(currentSite && currentSite.tenderId);
+    const canRenameOrDelete = isPrivilegedManager || !isCurrentSiteTenderLinked;
+    if(renameBtn) renameBtn.hidden = !canRenameOrDelete;
+    if(delBtn) delBtn.hidden = !canRenameOrDelete;
   }
 
   // Non-privileged users just see which branch owns the current site (read-only — they can
@@ -3159,12 +3240,24 @@
   }
 
   function bootLocalFallback(){
-    // No db capability available: keep working entirely client-side, single local site.
+    // No db capability available: keep working entirely client-side, single local site — unless
+    // a tenderId deep link is pending, in which case that becomes the one local site instead of
+    // a generic "Site 1" (mirrors the live-Firestore path in recombineSitesAndRender()).
     if(!state.sites.length){
       const id = newId("site");
       const cfg = makeSampleConfig();
-      cfg.id = id; cfg.name = "Site 1"; cfg.createdAt = nowIso();
-      state.sites = [{id, name:"Site 1"}];
+      cfg.id = id; cfg.createdAt = nowIso();
+      if(deepLinkTenderId){
+        cfg.name = deepLinkParams.get("clientName") || "New site";
+        cfg.branch = deepLinkParams.get("branch") || null;
+        cfg.tenderId = deepLinkTenderId;
+        cfg.archived = false;
+        state.sites = [{id, name:cfg.name, branch:cfg.branch, tenderId:deepLinkTenderId, archived:false}];
+        deepLinkHandled = true;
+      } else {
+        cfg.name = "Site 1";
+        state.sites = [{id, name:"Site 1"}];
+      }
       state.configsCache[id] = cfg;
       state.currentSiteId = id;
     }
@@ -3254,7 +3347,11 @@
 
       const queries = reachableSiteQueries();
       const initialSnaps = await Promise.all(queries.map(q => q.get().catch(() => ({docs:[]}))));
-      if(initialSnaps.every(s => s.docs.length === 0)) await migrateOrSeed();
+      // Skip the generic "Site 1" seed when a tenderId deep link is pending — recombine­
+      // SitesAndRender's onSnapshot handler below creates the real, tender-linked site directly
+      // once it sees this branch has nothing yet, so seeding a throwaway default first would
+      // just leave it sitting around unused alongside the real one.
+      if(initialSnaps.every(s => s.docs.length === 0) && !deepLinkTenderId) await migrateOrSeed();
 
       let retriedSeed = false;
       const buckets = queries.map(() => []);
@@ -3268,6 +3365,19 @@
         merged.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
 
         if(!merged.length){
+          // A pending tenderId deep link (see top of file) means we're about to create the one
+          // site that tender actually needs anyway — skip the generic seed and create the real
+          // one directly, instead of leaving an unused "Site 1" sitting alongside it.
+          if(deepLinkTenderId && !deepLinkHandled){
+            deepLinkHandled = true;
+            createSite(
+              deepLinkParams.get("clientName") || "New site",
+              deepLinkParams.get("branch") || null,
+              deepLinkTenderId
+            );
+            setSyncUi("on");
+            return;
+          }
           // Nothing this user can reach made it to the store yet (a first write that
           // silently failed, a slow backend, or simply no site tagged for their branch
           // yet). Retry seeding once — the seeded site is unassigned, so it's visible to
@@ -3278,8 +3388,12 @@
           setSyncUi("off");
           return;
         }
-        state.sites = merged.map(({id, name, branch}) => ({id, name, branch}));
+        state.sites = merged.map(({id, name, branch, tenderId, archived}) => ({id, name, branch, tenderId: tenderId||null, archived: !!archived}));
         setSyncUi("on");
+
+        // Same deep link, for the case where this branch already has sites and one of them is
+        // (or isn't yet) the one tied to this tenderId — see handleTenderDeepLinkIfNeeded().
+        handleTenderDeepLinkIfNeeded();
 
         if(!state.currentSiteId || !state.sites.find(s => s.id === state.currentSiteId)){
           let preferred = null;
@@ -3296,7 +3410,7 @@
         buckets[i] = snap.docs.map(d => {
           const data = d.data() || {};
           state.configsCache[d.id] = deepClone(data);
-          return { id:d.id, name: data.name || "Untitled site", branch: data.branch || null, createdAt: data.createdAt || "" };
+          return { id:d.id, name: data.name || "Untitled site", branch: data.branch || null, createdAt: data.createdAt || "", tenderId: data.tenderId || null, archived: !!data.archived };
         });
         suppressPersist = false;
         recombineSitesAndRender();

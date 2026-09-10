@@ -154,6 +154,17 @@ service cloud.firestore {
     // at all (the field is optional — older/just-created sites may not have one yet) is left
     // open to every active user, rather than silently disappearing for everybody until an
     // admin tags it.
+    //
+    // A site may also carry an optional `tenderId`, linking it to the one Active Project it
+    // belongs to — set once, automatically, the first time someone opens that project's Duty
+    // Roster link (see index.html's ?tenderId= deep-link handling and createSite()). This is
+    // purely a data-model link, not a permission boundary: branch-scoping above is what actually
+    // controls reach, exactly as it did before this field existed, so nothing here needs a
+    // get() on /tenders to validate it. `archived`/`archivedAt` follow the same story — set by
+    // setLinkedSitesArchived() in the CRM's src/services/tenders.ts when that tender is closed
+    // out (or cleared when it's reopened) — and are ordinary fields under the same read/write
+    // rules as everything else on the doc; index.html decides client-side whether an archived
+    // site still belongs in a given user's picker.
     match /sites/{siteId} {
       function siteBranch(data) {
         return data.get('branch', null);

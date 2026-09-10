@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useWonTenders } from '../hooks/useActiveProjects';
 import { useBranches } from '../hooks/useBranches';
@@ -381,6 +382,17 @@ export default function ActiveProjectsPage() {
                             >
                               {hasDetails ? 'Edit' : '+ Add'}
                             </button>
+                            <span className="text-slate-300">·</span>
+                            {/* Duty Roster auto-creates-or-selects the one site tied to this
+                                tender (see DutyRosterPage.tsx and index.html's bootstrap code) —
+                                this is the only way branch users reach a project's roster now;
+                                there's no more manual "New site" for them to use instead. */}
+                            <Link
+                              to={`/duty-roster?tenderId=${encodeURIComponent(t.id)}&clientName=${encodeURIComponent(t.clientName)}&branch=${encodeURIComponent(t.activeBranch || t.department)}`}
+                              className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                            >
+                              Duty Roster
+                            </Link>
                             <span className="text-slate-300">·</span>
                             <button
                               onClick={() => handleCloseOut(t)}

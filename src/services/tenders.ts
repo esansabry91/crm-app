@@ -3,8 +3,11 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
+  query,
   serverTimestamp,
   updateDoc,
+  where,
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -282,11 +285,40 @@ export async function updateActiveProjectDetails(
  */
 export async function closeOutProject(tenderId: string) {
   await updateDoc(doc(db, 'tenders', tenderId), { closedOut: true, closedOutAt: Date.now() });
+  await setLinkedSitesArchived(tenderId, true);
 }
 
 /** Reverses closeOutProject — moves a Past Project back into Active Projects. */
 export async function reopenProject(tenderId: string) {
   await updateDoc(doc(db, 'tenders', tenderId), { closedOut: false, closedOutAt: null });
+  await setLinkedSitesArchived(tenderId, false);
+}
+
+/**
+ * Archives (or un-archives) every Duty Roster site linked to this tender via its `tenderId`
+ * field (see public/duty-roster/index.html's data model and bootstrap code) — an archived site
+ * drops out of the branch's active site picker there but keeps every bit of its data (schedules,
+ * leave records, temporary-guard names and rates) intact for Admin/HQ/Payroll, and un-archives
+ * itself automatically the moment the project is reopened. Best-effort and silently swallows
+ * errors: a tender with no linked site at all (the normal case for anything predating this
+ * feature, or an admin-managed site with no tenderId) is not an error, and a permissions hiccup
+ * here must never block the close-out/reopen action itself, which is what the caller actually
+ * cares about.
+ */
+async function setLinkedSitesArchived(tenderId: string, archived: boolean) {
+  try {
+    const snap = await getDocs(query(collection(db, 'sites'), where('tenderId', '==', tenderId)));
+    await Promise.all(
+      snap.docs.map((d) =>
+        updateDoc(
+          d.ref,
+          archived ? { archived: true, archivedAt: Date.now() } : { archived: false, archivedAt: null }
+        )
+      )
+    );
+  } catch {
+    // Best-effort — see doc comment above.
+  }
 }
 
 /**
