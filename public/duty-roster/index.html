@@ -360,13 +360,14 @@
       <div>
         <div class="panel">
           <h2>Guard roster</h2>
-          <p class="sub">Add a guard by name &mdash; no ID or paperwork needed</p>
+          <p class="sub">Add a guard by name &mdash; employee ID is optional</p>
           <div class="fieldrow">
             <input type="text" id="newGuardName" placeholder="e.g. Ahmad Faiz">
+            <input type="text" id="newGuardEmpId" placeholder="Employee ID (optional)" style="max-width:160px;">
             <button class="btn primary" id="addGuardBtn">Add guard</button>
           </div>
           <table class="simple">
-            <thead><tr><th>Name</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Employee ID</th><th>Status</th><th></th></tr></thead>
             <tbody id="guardTableBody"></tbody>
           </table>
           <p class="empty" id="guardEmpty" hidden>No guards yet &mdash; add your first one above.</p>
@@ -515,6 +516,7 @@
         <table class="simple">
           <thead><tr>
             <th>Guard</th>
+            <th>Employee ID</th>
             <th>Man-hours</th>
             <th>Normal worked days</th>
             <th>Worked rest days</th>
@@ -1323,9 +1325,9 @@
      the DOM; it re-derives the same data renderRosterGrid() uses, so the
      exported numbers can't drift from what's displayed. */
   function guardsExportRows(){
-    const rows = [["Name","Active"]];
+    const rows = [["Name","Employee ID","Active"]];
     currentConfig().guards.forEach(g => {
-      rows.push([g.name, g.active === false ? "No" : "Yes"]);
+      rows.push([g.name, g.employeeId||"", g.active === false ? "No" : "Yes"]);
     });
     return rows;
   }
@@ -1385,11 +1387,11 @@
   function summaryReportExportRows(y, m, config, monthState, result){
     const summary = computeGuardSummary(y, m, config, monthState, result);
     const guards = config.guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
-    const header = ["Guard","Man-hours","Normal worked days","Worked rest days","Worked public holidays",
+    const header = ["Guard","Employee ID","Man-hours","Normal worked days","Worked rest days","Worked public holidays",
       "Normal OT (hrs)","Rest-day OT (hrs)","Public holiday OT (hrs)","MC","Absent","Leave","Unpaid leave"];
     const rows = guards.map(g => {
       const s = summary[g.id] || {};
-      return [g.name, s.manHours||0, s.normalDays||0, s.restDaysWorked||0, s.holidayDaysWorked||0,
+      return [g.name, g.employeeId||"", s.manHours||0, s.normalDays||0, s.restDaysWorked||0, s.holidayDaysWorked||0,
         s.normalOTHours||0, s.restOTHours||0, s.holidayOTHours||0, s.mc||0, s.absent||0, s.leave||0, s.unpaidLeave||0];
     });
     return [header, ...rows];
@@ -1539,6 +1541,7 @@
       const h = v => n(v).toFixed(1);
       return `<tr>
         <td>${escapeHtml(g.name)}</td>
+        <td class="mono">${escapeHtml(g.employeeId || "—")}</td>
         <td class="mono">${h(s.manHours)}</td>
         <td class="mono">${n(s.normalDays)}</td>
         <td class="mono">${n(s.restDaysWorked)}</td>
@@ -1551,7 +1554,7 @@
         <td class="mono">${n(s.leave)}</td>
         <td class="mono">${n(s.unpaidLeave)}</td>
       </tr>`;
-    }).join("") : `<tr><td colspan="12" class="empty">Add guards to see the summary report.</td></tr>`;
+    }).join("") : `<tr><td colspan="13" class="empty">Add guards to see the summary report.</td></tr>`;
 
     const holidayCount = configHolidays(config).filter(d => d.slice(0,7) === state.currentMonth).length;
     const sub = $("#summaryReportSub");
@@ -1605,6 +1608,7 @@
       const statusLabel = inactive ? "Inactive" : (g.inactiveFrom ? `Active until ${g.inactiveFrom}` : "Active");
       return `<tr>
         <td>${escapeHtml(g.name)}</td>
+        <td class="mono">${escapeHtml(g.employeeId || "—")}</td>
         <td><span class="pill ${inactive?'inactive':'active'}">${statusLabel}</span></td>
         <td style="white-space:nowrap;">
           <button class="btn sm" data-toggle-guard="${g.id}">${inactive?'Reactivate':'Deactivate'}</button>
@@ -2010,17 +2014,21 @@
 
   $("#addGuardBtn").addEventListener("click", () => {
     const input = $("#newGuardName");
+    const empInput = $("#newGuardEmpId");
     const name = input.value.trim();
+    const employeeId = empInput ? empInput.value.trim() : "";
     if(!name){ showToast("Type a guard name first.", true); input.focus(); return; }
-    currentConfig().guards.push({ id:newId("g"), name, active:true, inactiveFrom:null });
+    currentConfig().guards.push({ id:newId("g"), name, employeeId, active:true, inactiveFrom:null });
     currentConfig().isSample = false;
     input.value = "";
-    addLog(`Added guard ${name}.`);
+    if(empInput) empInput.value = "";
+    addLog(`Added guard ${name}${employeeId ? ` (ID ${employeeId})` : ""}.`);
     persistConfig(); persistMonth();
     showToast(`Added guard ${name}.`);
     render();
   });
   $("#newGuardName").addEventListener("keydown", e => { if(e.key === "Enter") $("#addGuardBtn").click(); });
+  $("#newGuardEmpId").addEventListener("keydown", e => { if(e.key === "Enter") $("#addGuardBtn").click(); });
 
   $("#addHolidayBtn").addEventListener("click", () => {
     const input = $("#newHolidayDate");
