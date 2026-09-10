@@ -2,26 +2,20 @@ import { useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenders } from '../hooks/useTenders';
 import { useTenderHistory } from '../hooks/useTenderHistory';
-import { useActiveProjects } from '../hooks/useActiveProjects';
 import { useBranches, useBrands } from '../hooks/useBranches';
 import {
   brandBreakdown,
-  buildActiveProjectRaceFrames,
   buildRaceFrames,
+  pipelineBridgeMonths,
   pipelineSummary,
+  pipelineValueBridge,
   pipelineValueTrend,
   stageBreakdown,
   staffPerformance,
-  type ActiveProjectRaceMetric,
   type RaceMetric,
   type RaceTimeView,
 } from '../utils/analytics';
 import { formatRM } from '../utils/format';
-
-const ACTIVE_RACE_METRICS = [
-  { value: 'value' as ActiveProjectRaceMetric, label: 'Value' },
-  { value: 'guards' as ActiveProjectRaceMetric, label: 'Guards deployed' },
-];
 import StatCard from '../components/analytics/StatCard';
 import PipelineTrendChart from '../components/analytics/PipelineTrendChart';
 import StageBarChart from '../components/analytics/StageBarChart';
@@ -30,6 +24,7 @@ import PipelineVsWonChart from '../components/analytics/PipelineVsWonChart';
 import BrandBreakdownSection from '../components/analytics/BrandBreakdownSection';
 import StaffPerformanceSection from '../components/analytics/StaffPerformanceSection';
 import RaceBarChart from '../components/analytics/RaceBarChart';
+import WaterfallChart from '../components/analytics/WaterfallChart';
 import { VIZ } from '../utils/vizColors';
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -45,7 +40,6 @@ export default function AnalysisPage() {
   const { profile } = useAuth();
   const { tenders, loading } = useTenders(profile);
   const { entries } = useTenderHistory(profile);
-  const { projects: activeProjects } = useActiveProjects(profile);
   const { brands } = useBrands();
   const { branches } = useBranches();
 
@@ -53,8 +47,7 @@ export default function AnalysisPage() {
   const [deptFilter, setDeptFilter] = useState('all');
   const [raceMetric, setRaceMetric] = useState<RaceMetric>('won');
   const [raceTimeView, setRaceTimeView] = useState<RaceTimeView>('alltime');
-  const [activeRaceTimeView, setActiveRaceTimeView] = useState<RaceTimeView>('alltime');
-  const [activeRaceMetric, setActiveRaceMetric] = useState<ActiveProjectRaceMetric>('value');
+  const [bridgeMonthKey, setBridgeMonthKey] = useState<string | null>(null);
 
   const filtered = useMemo(
     () =>
@@ -88,12 +81,13 @@ export default function AnalysisPage() {
     [filtered, raceDepartments, raceMetric, raceTimeView]
   );
 
-  // Active Projects race ranks branches only — HQ holds no active projects of its own, so it's
-  // excluded from the field here (unlike raceDepartments above, which includes it).
-  const branchNames = useMemo(() => branches.map((b) => b.name), [branches]);
-  const activeRaceFrames = useMemo(
-    () => buildActiveProjectRaceFrames(activeProjects, branchNames, activeRaceTimeView, activeRaceMetric),
-    [activeProjects, branchNames, activeRaceTimeView, activeRaceMetric]
+  const bridgeMonths = useMemo(() => pipelineBridgeMonths(entries), [entries]);
+  const bridgeFoundIndex = bridgeMonthKey ? bridgeMonths.findIndex((m) => m.key === bridgeMonthKey) : -1;
+  const bridgeIndex = bridgeFoundIndex >= 0 ? bridgeFoundIndex : bridgeMonths.length - 1;
+  const currentBridgeMonth = bridgeMonths[bridgeIndex];
+  const bridgeBars = useMemo(
+    () => (currentBridgeMonth ? pipelineValueBridge(entries, currentBridgeMonth.key) : []),
+    [entries, currentBridgeMonth]
   );
 
   if (!profile) return null;
@@ -161,6 +155,36 @@ export default function AnalysisPage() {
             <PipelineTrendChart data={trend} />
           </Card>
 
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <h3 className="text-sm font-semibold text-slate-800">Open Pipeline Value Bridge</h3>
+              {bridgeMonths.length > 0 && (
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setBridgeMonthKey(bridgeMonths[Math.max(bridgeIndex - 1, 0)].key)}
+                    disabled={bridgeIndex === 0}
+                    className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-30"
+                  >
+                    ◀ Prev
+                  </button>
+                  <span className="text-xs font-semibold text-slate-700 w-24 text-center">
+                    {currentBridgeMonth?.label}
+                  </span>
+                  <button
+                    onClick={() =>
+                      setBridgeMonthKey(bridgeMonths[Math.min(bridgeIndex + 1, bridgeMonths.length - 1)].key)
+                    }
+                    disabled={bridgeIndex >= bridgeMonths.length - 1}
+                    className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-30"
+                  >
+                    Next ▶
+                  </button>
+                </div>
+              )}
+            </div>
+            <WaterfallChart bars={bridgeBars} />
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card title="Number of Tenders by Stage">
               <StageBarChart data={stages} metric="count" />
@@ -193,23 +217,6 @@ export default function AnalysisPage() {
                   onMetricChange={setRaceMetric}
                   onTimeViewChange={setRaceTimeView}
                   colorDomain={departmentOptions}
-                />
-              </Card>
-
-              <Card
-                title={`Active Projects Race — Branch ${
-                  activeRaceMetric === 'guards' ? 'Guards Deployed' : 'Value'
-                } Over Time`}
-              >
-                <RaceBarChart
-                  frames={activeRaceFrames}
-                  metric={activeRaceMetric}
-                  timeView={activeRaceTimeView}
-                  onMetricChange={setActiveRaceMetric}
-                  onTimeViewChange={setActiveRaceTimeView}
-                  colorDomain={departmentOptions}
-                  metricOptions={ACTIVE_RACE_METRICS}
-                  valueFormatter={activeRaceMetric === 'guards' ? (v) => String(v) : formatRM}
                 />
               </Card>
 

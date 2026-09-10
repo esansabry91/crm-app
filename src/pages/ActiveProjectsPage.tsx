@@ -1,16 +1,30 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useActiveProjects } from '../hooks/useActiveProjects';
+import { useWonTenders } from '../hooks/useActiveProjects';
 import { useBranches } from '../hooks/useBranches';
 import { backfillActiveBranch, closeOutProject, setActiveBranch } from '../services/tenders';
 import { formatDate, formatRM } from '../utils/format';
+import {
+  activeProjectBridgeMonths,
+  activeProjectValueBridge,
+  buildActiveProjectRaceFrames,
+  type ActiveProjectRaceMetric,
+  type RaceTimeView,
+} from '../utils/analytics';
 import StatCard from '../components/analytics/StatCard';
 import ProjectDetailsModal from '../components/active-projects/ProjectDetailsModal';
 import { BrandBreakdown } from '../components/active-projects/ActiveProjectBreakdown';
+import WaterfallChart from '../components/analytics/WaterfallChart';
+import RaceBarChart from '../components/analytics/RaceBarChart';
 import { VIZ } from '../utils/vizColors';
 import type { Tender } from '../types';
 
 const ENDING_SOON_DAYS = 60;
+
+const ACTIVE_RACE_METRICS = [
+  { value: 'value' as ActiveProjectRaceMetric, label: 'Value' },
+  { value: 'guards' as ActiveProjectRaceMetric, label: 'Guards deployed' },
+];
 
 /** Whole days from today to an ISO contract-end date (negative once it's passed). */
 function daysUntil(iso: string | undefined): number | null {
@@ -56,10 +70,14 @@ function ContractStatusBadge({ contractEnd }: { contractEnd: string }) {
 
 export default function ActiveProjectsPage() {
   const { profile } = useAuth();
-  const { projects, loading, seesAllBranches } = useActiveProjects(profile);
+  const { wonTenders, loading, seesAllBranches } = useWonTenders(profile);
+  const projects = useMemo(() => wonTenders.filter((t) => !t.closedOut), [wonTenders]);
   const { branches } = useBranches();
   const [branchFilter, setBranchFilter] = useState('all');
   const [detailsTender, setDetailsTender] = useState<Tender | null>(null);
+  const [bridgeMonthKey, setBridgeMonthKey] = useState<string | null>(null);
+  const [raceTimeView, setRaceTimeView] = useState<RaceTimeView>('alltime');
+  const [raceMetric, setRaceMetric] = useState<ActiveProjectRaceMetric>('value');
 
   const isAdmin = profile?.role === 'admin';
   const branchNames = useMemo(() => branches.map((b) => b.name), [branches]);
@@ -79,6 +97,32 @@ export default function ActiveProjectsPage() {
     if (!seesAllBranches || branchFilter === 'all') return projects;
     return projects.filter((t) => (t.activeBranch || t.department) === branchFilter);
   }, [projects, seesAllBranches, branchFilter]);
+
+  // The value bridge needs every Won tender in scope — active AND already closed-out — so a
+  // project that left this month still shows its exit; `visible` above is active-only. Filtered
+  // by the same branch criterion as `visible` so the bridge matches whatever the branch dropdown
+  // is currently showing.
+  const bridgeSource = useMemo(() => {
+    if (!seesAllBranches || branchFilter === 'all') return wonTenders;
+    return wonTenders.filter((t) => (t.activeBranch || t.department) === branchFilter);
+  }, [wonTenders, seesAllBranches, branchFilter]);
+
+  const bridgeMonths = useMemo(() => activeProjectBridgeMonths(bridgeSource), [bridgeSource]);
+  const bridgeFoundIndex = bridgeMonthKey ? bridgeMonths.findIndex((m) => m.key === bridgeMonthKey) : -1;
+  const bridgeIndex = bridgeFoundIndex >= 0 ? bridgeFoundIndex : bridgeMonths.length - 1;
+  const currentBridgeMonth = bridgeMonths[bridgeIndex];
+  const bridgeBars = useMemo(
+    () => (currentBridgeMonth ? activeProjectValueBridge(bridgeSource, currentBridgeMonth.key) : []),
+    [bridgeSource, currentBridgeMonth]
+  );
+
+  // Active Projects Race ranks branches only — HQ holds no active projects of its own — and,
+  // like the by-brand table's own scoping, is intentionally NOT filtered by the branch dropdown
+  // above: the whole point of a race is comparing every branch against each other.
+  const activeRaceFrames = useMemo(
+    () => buildActiveProjectRaceFrames(projects, branchNames, raceTimeView, raceMetric),
+    [projects, branchNames, raceTimeView, raceMetric]
+  );
 
   const sorted = useMemo(
     () =>
@@ -183,7 +227,53 @@ export default function ActiveProjectsPage() {
             <StatCard label="Guards Deployed" value={String(totalGuards)} sub="across shown projects" />
           </div>
 
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <h3 className="text-sm font-semibold text-slate-800">Active Project Value Bridge</h3>
+              {bridgeMonths.length > 0 && (
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setBridgeMonthKey(bridgeMonths[Math.max(bridgeIndex - 1, 0)].key)}
+                    disabled={bridgeIndex === 0}
+                    className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-30"
+                  >
+                    ◀ Prev
+                  </button>
+                  <span className="text-xs font-semibold text-slate-700 w-24 text-center">
+                    {currentBridgeMonth?.label}
+                  </span>
+                  <button
+                    onClick={() =>
+                      setBridgeMonthKey(bridgeMonths[Math.min(bridgeIndex + 1, bridgeMonths.length - 1)].key)
+                    }
+                    disabled={bridgeIndex >= bridgeMonths.length - 1}
+                    className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-30"
+                  >
+                    Next ▶
+                  </button>
+                </div>
+              )}
+            </div>
+            <WaterfallChart bars={bridgeBars} />
+          </div>
+
           <BrandBreakdown items={visible} scopeLabel={brandScopeLabel} />
+
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <h3 className="text-sm font-semibold text-slate-800 mb-3">
+              Active Projects Race — Branch {raceMetric === 'guards' ? 'Guards Deployed' : 'Value'} Over Time
+            </h3>
+            <RaceBarChart
+              frames={activeRaceFrames}
+              metric={raceMetric}
+              timeView={raceTimeView}
+              onMetricChange={setRaceMetric}
+              onTimeViewChange={setRaceTimeView}
+              colorDomain={branchNames}
+              metricOptions={ACTIVE_RACE_METRICS}
+              valueFormatter={raceMetric === 'guards' ? (v) => String(v) : formatRM}
+            />
+          </div>
 
           {sorted.length === 0 ? (
             <p className="text-sm text-slate-400 py-8 text-center">No active projects yet.</p>

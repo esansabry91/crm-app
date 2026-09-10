@@ -152,6 +152,22 @@ function raceMonthLabel(key: string): string {
   return new Date(y, m - 1, 1).toLocaleDateString('en-MY', { month: 'short', year: 'numeric' });
 }
 
+/** Every month key ('YYYY-MM') from `firstKey` through `lastKey`, inclusive. */
+function monthKeysBetween(firstKey: string, lastKey: string): string[] {
+  const result: string[] = [];
+  let [y, m] = firstKey.split('-').map(Number);
+  const [ly, lm] = lastKey.split('-').map(Number);
+  while (y < ly || (y === ly && m <= lm)) {
+    result.push(`${y}-${String(m).padStart(2, '0')}`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return result;
+}
+
 /** One value, attributable to one branch, that happened on one date — the common input shape both race builders reduce to. */
 interface RaceDatum {
   department: string;
@@ -191,17 +207,7 @@ function buildRaceFramesFromData(
   const lastKey = dataMonthKeys[dataMonthKeys.length - 1] > nowKey ? dataMonthKeys[dataMonthKeys.length - 1] : nowKey;
 
   // Fill in every month between first and last (inclusive) so gaps don't break cumulative totals.
-  const allMonthKeys: string[] = [];
-  let [y, m] = firstKey.split('-').map(Number);
-  const [ly, lm] = lastKey.split('-').map(Number);
-  while (y < ly || (y === ly && m <= lm)) {
-    allMonthKeys.push(`${y}-${String(m).padStart(2, '0')}`);
-    m += 1;
-    if (m > 12) {
-      m = 1;
-      y += 1;
-    }
-  }
+  const allMonthKeys = monthKeysBetween(firstKey, lastKey);
 
   const rankedBars = (deptMap: Map<string, number>): RaceBar[] =>
     departments
@@ -341,4 +347,198 @@ export function pipelineValueTrend(entries: TenderHistoryEntry[]): TrendPoint[] 
   }
 
   return Array.from(byDay.values()).sort((a, b) => a.timestamp - b.timestamp);
+}
+
+/**
+ * One bar in a waterfall/bridge chart. A 'total' bar is an actual running value (a start-of- or
+ * end-of-period anchor); a 'delta' bar is the signed change contributed between two anchors
+ * (positive = bar rises, negative = bar falls).
+ */
+export interface WaterfallBar {
+  label: string;
+  amount: number;
+  kind: 'total' | 'delta';
+}
+
+/** Month options ('YYYY-MM' keys, with a display label) for a bridge chart's Prev/Next navigator. */
+export interface MonthOption {
+  key: string;
+  label: string;
+}
+
+function monthRangeOptions(monthKeys: string[]): MonthOption[] {
+  const now = new Date();
+  const nowKey = raceMonthKey(now);
+  const keys = monthKeys.length > 0 ? monthKeys : [nowKey];
+  const sorted = [...keys].sort();
+  const firstKey = sorted[0];
+  const lastKey = sorted[sorted.length - 1] > nowKey ? sorted[sorted.length - 1] : nowKey;
+  return monthKeysBetween(firstKey, lastKey).map((key) => ({ key, label: raceMonthLabel(key) }));
+}
+
+/**
+ * Every navigable month ('YYYY-MM') for the Active Project Value bridge — from the earliest
+ * contract start through the current month, so Prev/Next always lands somewhere with data (or at
+ * least the current month, if there's none yet).
+ */
+export function activeProjectBridgeMonths(tenders: Tender[]): MonthOption[] {
+  const keys = tenders
+    .filter((t) => t.stage === 'Won' && t.contractStart)
+    .map((t) => t.contractStart.slice(0, 7));
+  return monthRangeOptions(keys);
+}
+
+/**
+ * Builds the Active Project Value bridge for one calendar month: start-of-month active value,
+ * plus contracts that newly went active this month (by `contractStart`), minus projects closed
+ * out this month (by `closedOutAt`), equals end-of-month active value.
+ *
+ * `tenders` should be every Won tender in scope (active AND already closed-out — see
+ * useWonTenders) so closed-out projects still contribute their exit from the month they left in;
+ * usePastProjects/useActiveProjects alone would each only have half the picture.
+ *
+ * Reopening a project (closeOutProject reversed) doesn't leave a trace of when it was closed —
+ * that's deliberate: a reopened project is treated as having been active all along, which is the
+ * correct "current understanding" even though it changes what an already-elapsed month's bridge
+ * would have shown while it was still closed out.
+ */
+export function activeProjectValueBridge(tenders: Tender[], monthKey: string): WaterfallBar[] {
+  const [y, m] = monthKey.split('-').map(Number);
+  const monthStart = new Date(y, m - 1, 1).getTime();
+  const monthEnd = new Date(y, m, 1).getTime();
+
+  let startValue = 0;
+  let enteringValue = 0;
+  let exitingValue = 0;
+
+  for (const t of tenders) {
+    if (t.stage !== 'Won' || !t.contractStart) continue;
+    const startMs = new Date(`${t.contractStart}T12:00:00`).getTime();
+    if (Number.isNaN(startMs)) continue;
+    const closedMs = t.closedOutAt ?? null;
+    const value = t.tenderValue || 0;
+
+    if (startMs < monthStart && (closedMs === null || closedMs >= monthStart)) {
+      startValue += value;
+    }
+    if (startMs >= monthStart && startMs < monthEnd) {
+      enteringValue += value;
+    }
+    if (closedMs !== null && closedMs >= monthStart && closedMs < monthEnd) {
+      exitingValue += value;
+    }
+  }
+
+  const endValue = startValue + enteringValue - exitingValue;
+
+  const bars: WaterfallBar[] = [{ label: 'Start of Month', amount: startValue, kind: 'total' }];
+  if (enteringValue !== 0) bars.push({ label: 'New Contracts', amount: enteringValue, kind: 'delta' });
+  if (exitingValue !== 0) bars.push({ label: 'Closed Out', amount: -exitingValue, kind: 'delta' });
+  bars.push({ label: 'End of Month', amount: endValue, kind: 'total' });
+  return bars;
+}
+
+/** Internal replay state shared by pipelineValueTrend and pipelineValueBridge. */
+interface TenderReplayState {
+  value: number;
+  stage: Stage;
+  removed: boolean;
+}
+
+function applyHistoryEntry(state: Map<string, TenderReplayState>, e: TenderHistoryEntry) {
+  if (e.type === 'deleted') {
+    state.set(e.tenderId, { value: 0, stage: e.stage, removed: true });
+  } else {
+    state.set(e.tenderId, { value: e.value, stage: e.stage, removed: false });
+  }
+}
+
+function openValueOf(state: Map<string, TenderReplayState>): number {
+  let sum = 0;
+  for (const s of state.values()) {
+    if (!s.removed && OPEN_STAGES.includes(s.stage)) sum += s.value;
+  }
+  return sum;
+}
+
+/**
+ * Every navigable month ('YYYY-MM') for the Pipeline Value bridge, from the earliest history
+ * entry through the current month.
+ */
+export function pipelineBridgeMonths(entries: TenderHistoryEntry[]): MonthOption[] {
+  const keys = entries.map((e) => raceMonthKey(new Date(e.timestamp)));
+  return monthRangeOptions(keys);
+}
+
+/**
+ * Builds the open Pipeline Value bridge for one calendar month by replaying the full audit
+ * trail: start-of-month open pipeline value, plus new tenders entering the pipeline, plus/minus
+ * tenders moving between open stages with a value correction, minus tenders that moved to Won,
+ * minus tenders that moved to Lost, minus tenders deleted while still open, equals end-of-month
+ * open pipeline value. Every delta bucket is a real, reconciling contributor — start + every
+ * delta always sums to exactly the end value — which is what makes a shrinking end value
+ * meaningful to read: whether it shrank because deals were Won (good) or Lost / never replaced
+ * by new intake (not good) is visible in which bars moved, not just the final number.
+ */
+export function pipelineValueBridge(entries: TenderHistoryEntry[], monthKey: string): WaterfallBar[] {
+  const [y, m] = monthKey.split('-').map(Number);
+  const monthStart = new Date(y, m - 1, 1).getTime();
+  const monthEnd = new Date(y, m, 1).getTime();
+
+  const sorted = [...entries].sort((a, b) => a.timestamp - b.timestamp);
+  const state = new Map<string, TenderReplayState>();
+
+  let i = 0;
+  for (; i < sorted.length && sorted[i].timestamp < monthStart; i++) {
+    applyHistoryEntry(state, sorted[i]);
+  }
+  const startValue = openValueOf(state);
+
+  let newValue = 0;
+  let wonValue = 0;
+  let lostValue = 0;
+  let removedValue = 0;
+  let adjustValue = 0;
+
+  for (; i < sorted.length && sorted[i].timestamp < monthEnd; i++) {
+    const e = sorted[i];
+    const prev = state.get(e.tenderId);
+    const prevOpen = !!prev && !prev.removed && OPEN_STAGES.includes(prev.stage);
+    const prevValue = prevOpen ? prev!.value : 0;
+
+    if (e.type === 'deleted') {
+      if (prevOpen) removedValue -= prevValue;
+      applyHistoryEntry(state, e);
+      continue;
+    }
+
+    applyHistoryEntry(state, e);
+    const nowOpen = OPEN_STAGES.includes(e.stage);
+
+    if (e.type === 'created') {
+      if (nowOpen) newValue += e.value; // created directly as Won/Lost never touched the open pool
+    } else if (e.type === 'stage_change') {
+      if (prevOpen && !nowOpen) {
+        if (e.stage === 'Won') wonValue -= prevValue;
+        else if (e.stage === 'Lost') lostValue -= prevValue;
+      } else if (!prevOpen && nowOpen) {
+        newValue += e.value; // reopened from a closed stage back into the pipeline
+      } else if (prevOpen && nowOpen && prevValue !== e.value) {
+        adjustValue += e.value - prevValue;
+      }
+    } else if (e.type === 'value_change' && prevOpen && nowOpen) {
+      adjustValue += e.value - prevValue;
+    }
+  }
+
+  const endValue = startValue + newValue + wonValue + lostValue + removedValue + adjustValue;
+
+  const bars: WaterfallBar[] = [{ label: 'Start of Month', amount: startValue, kind: 'total' }];
+  if (newValue !== 0) bars.push({ label: 'New Tenders', amount: newValue, kind: 'delta' });
+  if (wonValue !== 0) bars.push({ label: 'Won', amount: wonValue, kind: 'delta' });
+  if (lostValue !== 0) bars.push({ label: 'Lost', amount: lostValue, kind: 'delta' });
+  if (removedValue !== 0) bars.push({ label: 'Removed', amount: removedValue, kind: 'delta' });
+  if (adjustValue !== 0) bars.push({ label: 'Value Adjustments', amount: adjustValue, kind: 'delta' });
+  bars.push({ label: 'End of Month', amount: endValue, kind: 'total' });
+  return bars;
 }
