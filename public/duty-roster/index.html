@@ -2297,6 +2297,7 @@
         const g = guardById(btn.getAttribute("data-toggle-guard"));
         g.active = g.active === false ? true : false;
         if(g.active) g.inactiveFrom = null;
+        currentConfig().isSample = false;
         addLog(`${g.active ? "Reactivated" : "Deactivated"} guard ${g.name}.`);
         persistConfig();
         showToast(g.active ? `Reactivated ${g.name}.` : `Deactivated ${g.name}.`);
@@ -2316,6 +2317,7 @@
           onConfirm: () => {
             const cfg = currentConfig();
             cfg.guards = cfg.guards.filter(x => x.id !== id);
+            cfg.isSample = false;
             addLog(`Removed guard ${g.name} from the roster.`);
             persistConfig();
             showToast(`Removed ${g.name}.`);

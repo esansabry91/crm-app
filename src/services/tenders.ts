@@ -385,6 +385,11 @@ async function setLinkedSitesArchived(tenderId: string, archived: boolean) {
  * Deleting a tender must not leave its last known value "stuck" forever in the pipeline-value
  * trend (which is reconstructed by replaying history). So we first log a `deleted` marker —
  * value 0, excluded from every trend bucket — and only then remove the tender document itself.
+ *
+ * Also archives any Duty Roster site still linked to this tender (see setLinkedSitesArchived()
+ * above) so a deleted tender doesn't leave an orphaned, fully-active site sitting in the branch's
+ * site picker forever — mirrors what closeOutProject() already does when a project is merely
+ * moved to Past Projects rather than deleted outright.
  */
 export async function deleteTender(tender: Tender, actor: { uid: string; name: string }) {
   await addHistoryEntry(tender.id, {
@@ -395,6 +400,7 @@ export async function deleteTender(tender: Tender, actor: { uid: string; name: s
     changedByName: actor.name,
     ownerUid: tender.ownerUid,
   });
+  await setLinkedSitesArchived(tender.id, true);
   await deleteDoc(doc(db, 'tenders', tender.id));
 }
 
