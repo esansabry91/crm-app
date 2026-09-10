@@ -1881,12 +1881,21 @@
         const d = btn.getAttribute("data-remove-holiday");
         const cfg2 = currentConfig();
         const removedName = configHolidayNames(cfg2)[d];
-        cfg2.publicHolidays = configHolidays(cfg2).filter(x => x !== d);
-        delete configHolidayNames(cfg2)[d];
-        addLog(`Removed public holiday ${d}${removedName ? ` (${removedName})` : ""}.`);
-        persistConfig();
-        showToast(`Removed ${d} from public holidays.`);
-        render();
+        const label = removedName ? `${removedName} (${d})` : d;
+        openConfirmModal({
+          title: "Remove public holiday",
+          message: `Remove ${label} from this site's public holidays? Any shifts already worked on this date will no longer count as holiday work in the Summary Report.`,
+          okLabel: "Remove",
+          danger: true,
+          onConfirm: () => {
+            cfg2.publicHolidays = configHolidays(cfg2).filter(x => x !== d);
+            delete configHolidayNames(cfg2)[d];
+            addLog(`Removed public holiday ${d}${removedName ? ` (${removedName})` : ""}.`);
+            persistConfig();
+            showToast(`Removed ${d} from public holidays.`);
+            render();
+          }
+        });
       });
     });
   }
