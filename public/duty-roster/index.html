@@ -328,11 +328,6 @@
     <button class="btn sm danger" id="deleteSiteBtn" type="button">Delete site</button>
   </div>
 
-  <div class="banner" id="sampleBanner" hidden>
-    <span>This roster is loaded with example guards and shifts so you can see how scheduling works. Add your own guards in <strong>Guards &amp; Shifts</strong> when ready.</span>
-    <button class="btn sm" id="clearSampleBtn">Clear sample data</button>
-  </div>
-
   <div class="tabs" role="tablist">
     <button class="tab active" data-tab="roster" role="tab">Roster</button>
     <button class="tab" data-tab="setup" role="tab">Guards &amp; Shifts</button>
@@ -1754,7 +1749,6 @@
 
   function render(){
     renderSiteSelect();
-    renderSampleBanner();
     renderTabsVisibility();
     renderMonthNav();
     const {y,m} = parseYM(state.currentMonth);
@@ -1795,10 +1789,6 @@
       if(READONLY_EXEMPT_IDS.has(el.id) || el.classList.contains("vt")) return;
       el.disabled = true;
     });
-  }
-
-  function renderSampleBanner(){
-    $("#sampleBanner").hidden = !currentConfig().isSample;
   }
 
   function renderTabsVisibility(){ /* no-op placeholder for future gating */ }
@@ -4535,30 +4525,6 @@
     persistMonth();
     showToast("Swapped shifts.");
     render();
-  });
-
-  $("#clearSampleBtn").addEventListener("click", () => {
-    openConfirmModal({
-      title: "Clear sample data",
-      message: "This removes the example guards and shift history for this site so you can start fresh with your own. This cannot be undone.",
-      okLabel: "Clear sample data",
-      danger: true,
-      onConfirm: () => {
-        const id = state.currentSiteId;
-        const prev = state.configsCache[id] || {};
-        const name = prev.name || "Site 1";
-        // Preserve the site's branch/state/holiday assignments — this is a data reset for the
-        // sample guards and shift history, not a re-creation of the site itself.
-        state.configsCache[id] = { id, name, branch: prev.branch || null, state: prev.state || null,
-          stateHolidayDates: prev.stateHolidayDates || [], publicHolidays: prev.publicHolidays || [],
-          guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, updatedAt: nowIso() };
-        Object.keys(state.monthsCache).forEach(k => { if(k.indexOf(id+"::") === 0) delete state.monthsCache[k]; });
-        persistConfig();
-        persistMonth();
-        showToast("Sample data cleared. Add your own guards below.");
-        render();
-      }
-    });
   });
 
   /* ---------------- site management ---------------- */
