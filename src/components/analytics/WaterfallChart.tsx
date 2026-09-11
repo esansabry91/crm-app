@@ -39,30 +39,39 @@ function colorFor(row: ChartRow): string {
   return row.amount >= 0 ? VIZ.status.good : VIZ.status.critical;
 }
 
+/**
+ * Renders the value label above one bar. Reads amount/kind/display straight off the props
+ * Recharts hands us for THIS bar (spread from its own data entry, alongside that same entry's
+ * x/y/width) rather than looking the row up via an `index` into our own `rows` array — the two
+ * don't reliably line up (Recharts drops/renumbers entries internally when a bar's value is
+ * exactly 0, e.g. an empty "Start of Month" bar, which silently shifted every later label onto
+ * the wrong bar). Reading a bar's own fields off its own props can't be misaligned like that.
+ */
 function BarTopLabel({
   x,
   y,
   width,
-  index,
-  rows,
+  amount,
+  kind,
+  display,
   formatValue,
 }: {
   x?: number;
   y?: number;
   width?: number;
-  index?: number;
-  rows: ChartRow[];
+  amount?: number;
+  kind?: 'total' | 'delta';
+  display?: number;
   formatValue: (v: number) => string;
 }) {
-  if (x == null || y == null || width == null || index == null) return null;
-  const row = rows[index];
-  if (!row || row.display === 0) return null;
+  if (x == null || y == null || width == null || amount == null || kind == null) return null;
+  if (!display) return null;
   const text =
-    row.kind === 'total'
-      ? formatValue(row.amount)
-      : row.amount >= 0
-        ? `+${formatValue(row.amount)}`
-        : `-${formatValue(Math.abs(row.amount))}`;
+    kind === 'total'
+      ? formatValue(amount)
+      : amount >= 0
+        ? `+${formatValue(amount)}`
+        : `-${formatValue(Math.abs(amount))}`;
   return (
     <text x={x + width / 2} y={y - 6} textAnchor="middle" fontSize={10.5} fill={VIZ.ink.secondary}>
       {text}
@@ -137,16 +146,7 @@ export default function WaterfallChart({
           {rows.map((row, i) => (
             <Cell key={row.name + i} fill={colorFor(row)} />
           ))}
-          {/* dataKey is "name" (always a non-empty string), not "amount" — Recharts' LabelList
-              builds its own positional array from this field's values, and a numeric dataKey
-              whose value is legitimately 0 (the "Start of Month" bar when the period opens with
-              an empty pipeline) gets treated as "no data point" and dropped from that array,
-              shifting every later bar's label onto the WRONG bar (label text one slot behind its
-              rectangle). "name" is never falsy, so every bar keeps its own label slot. */}
-          <LabelList
-            dataKey="name"
-            content={(props: object) => <BarTopLabel {...props} rows={rows} formatValue={formatValue} />}
-          />
+          <LabelList content={(props: object) => <BarTopLabel {...props} formatValue={formatValue} />} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
