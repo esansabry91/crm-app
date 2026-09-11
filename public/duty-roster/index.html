@@ -318,8 +318,8 @@
   </div>
 
   <div class="sitebar">
-    <label class="small" style="margin:0;" id="payrollBranchFilterLabel" hidden>Branch</label>
-    <select id="payrollBranchFilter" hidden></select>
+    <label class="small" style="margin:0;" id="branchFilterLabel" hidden>Branch</label>
+    <select id="branchFilter" hidden></select>
     <label class="small" style="margin:0;">Client site</label>
     <select id="siteSelect"></select>
     <span class="small" id="siteBranchBadge" style="color:var(--muted, #64748b);"></span>
@@ -1124,7 +1124,7 @@
   // DutyRosterPage.tsx and the "Duty Roster" action in ActiveProjectsPage.tsx) so the console
   // can auto-create-or-select the ONE site tied to that tender instead of a branch user ever
   // touching New/Rename/Delete — see handleTenderDeepLinkIfNeeded(), createSite()'s tenderId
-  // param, and applyPayrollUiLockdown()'s canManageSites. Read once at load; deepLinkHandled
+  // param, and applyRoleUiLockdown()'s canManageSites. Read once at load; deepLinkHandled
   // latches true the first time it's acted on so later site-list updates don't re-trigger it.
   const deepLinkParams = new URLSearchParams(location.search);
   const deepLinkTenderId = deepLinkParams.get("tenderId");
@@ -1143,7 +1143,7 @@
     isPrivileged: false,   // admin, or department "HQ" — reaches every branch's sites, like elsewhere in the CRM
     isPayroll: false,       // "payroll" role — reaches every branch's sites like a privileged user, but strictly view/export only
     canEdit: true,          // false for payroll — drives the read-only lockdown
-    payrollBranchFilterValue: "", // currently selected branch in the payroll-only branch filter dropdown ("" = all)
+    branchFilterValue: "", // currently selected branch in the sitebar's branch filter dropdown (Admin/HQ/Payroll only — "" = all)
     branchOptions: [],     // branch names from the CRM's own branch list, for the "assign to branch" picker
     // "siteId::monthKey" -> {homeGuardId: [{dateStr,hours}, ...]}. Populated on demand by the
     // "Refresh combined hours" button (computeIncomingSupportDates()) — raw, unclassified
@@ -3994,8 +3994,8 @@
   $("#siteSelect").addEventListener("change", () => {
     switchSite($("#siteSelect").value);
   });
-  $("#payrollBranchFilter").addEventListener("change", () => {
-    state.payrollBranchFilterValue = $("#payrollBranchFilter").value;
+  $("#branchFilter").addEventListener("change", () => {
+    state.branchFilterValue = $("#branchFilter").value;
     // A full render() (rather than just renderSiteSelect()) so everything on the page —
     // stats, calendar, the read-only branch badge, etc. — reflects whichever site
     // renderSiteSelect() lands on for the newly-selected branch, not just the dropdown itself.
@@ -4641,12 +4641,12 @@
   function renderSiteSelect(){
     const sel = $("#siteSelect");
     if(!sel) return;
-    applyPayrollUiLockdown();
+    applyRoleUiLockdown();
     let visibleSites = state.sites;
-    if(state.isPayroll && state.payrollBranchFilterValue){
-      visibleSites = state.payrollBranchFilterValue === "__unassigned__"
+    if((state.isPayroll || state.isPrivileged) && state.branchFilterValue){
+      visibleSites = state.branchFilterValue === "__unassigned__"
         ? state.sites.filter(s => !s.branch)
-        : state.sites.filter(s => s.branch === state.payrollBranchFilterValue);
+        : state.sites.filter(s => s.branch === state.branchFilterValue);
     }
     // A closed-out project's site archives itself (see setLinkedSitesArchived() in the CRM's
     // tenders.ts) — Admin/HQ/Payroll still need to reach it for historical records and payroll
@@ -4679,11 +4679,11 @@
     }
     const delBtn = $("#deleteSiteBtn");
     if(delBtn) delBtn.disabled = state.sites.length <= 1;
-    // Re-applied here (already called once at the top of this function, for the payroll
-    // branch-filter dropdown) because Rename/Delete's visibility depends on which site is
-    // CURRENTLY selected, and the switchSite() call above — for the "the site we were on just
-    // dropped out of the filtered list" case — can change that partway through this function.
-    applyPayrollUiLockdown();
+    // Re-applied here (already called once at the top of this function, for the branch-filter
+    // dropdown) because Rename/Delete's visibility depends on which site is CURRENTLY selected,
+    // and the switchSite() call above — for the "the site we were on just dropped out of the
+    // filtered list" case — can change that partway through this function.
+    applyRoleUiLockdown();
     renderSiteBranchControl();
   }
 
@@ -4701,25 +4701,27 @@
     else if(state.myDepartment) el.textContent = `${state.myDepartment} — security guard scheduling`;
   }
 
-  // Payroll accounts get a read-only view across every branch/site, reached via the two
-  // dropdowns in the sitebar (branch filter + client site), but none of the actions that
-  // change what sites exist or which branch owns one. Runs once the role is known (called
-  // from initDb()) and again whenever the site list re-renders, since #payrollBranchFilter's
-  // own <option>s need to stay in sync with state.branchOptions.
-  function applyPayrollUiLockdown(){
-    const filterLabel = $("#payrollBranchFilterLabel");
-    const filterSel = $("#payrollBranchFilter");
+  // Admin, HQ, and Payroll accounts all see every branch's sites in the Client Site dropdown
+  // (reachableSiteQueries() in initDb() returns the whole collection unfiltered for all three),
+  // which gets long fast across many branches — this branch filter narrows that list first.
+  // Everyone else only ever reaches their own branch's sites, so a filter would have nothing to
+  // narrow. Runs once the role is known (called from initDb()) and again whenever the site list
+  // re-renders, since #branchFilter's own <option>s need to stay in sync with
+  // state.branchOptions.
+  function applyRoleUiLockdown(){
+    const filterLabel = $("#branchFilterLabel");
+    const filterSel = $("#branchFilter");
     const newBtn = $("#newSiteBtn");
     const renameBtn = $("#renameSiteBtn");
     const delBtn = $("#deleteSiteBtn");
     if(!filterSel) return;
-    if(state.isPayroll){
+    if(state.isPayroll || state.isPrivileged){
       if(filterLabel) filterLabel.hidden = false;
       filterSel.hidden = false;
       filterSel.innerHTML = `<option value="">All branches</option>` +
         state.branchOptions.filter(b => b !== "HQ").map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join("") +
         `<option value="__unassigned__">Unassigned</option>`;
-      filterSel.value = state.payrollBranchFilterValue || "";
+      filterSel.value = state.branchFilterValue || "";
     } else {
       if(filterLabel) filterLabel.hidden = true;
       filterSel.hidden = true;
@@ -4975,7 +4977,7 @@
       // "Payroll" is a strictly view/export-only role: it reaches every branch's sites like a
       // privileged user (so it must be included in the unfiltered query below), but it must
       // never be treated as privileged elsewhere — it doesn't get "+ New site"/Rename/Delete
-      // (nobody does any more — see applyPayrollUiLockdown()) or any edit control. document.body
+      // (nobody does any more — see applyRoleUiLockdown()) or any edit control. document.body
       // carries a "readonly-mode" class (see the CSS block near the top of this file) that
       // disables every input/select/button inside the four tab views except navigation and the
       // two Export to Excel buttons, which are explicitly exempted there.
@@ -4983,7 +4985,7 @@
       state.canEdit = !state.isPayroll;
       document.body.classList.toggle("readonly-mode", state.isPayroll);
       updateBrandSubtitle();
-      applyPayrollUiLockdown();
+      applyRoleUiLockdown();
       if(state.isPayroll) render();
 
       const branchesSnap = await dbHandle.collection("branches").get().catch(() => ({docs:[]}));
