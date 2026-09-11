@@ -2195,7 +2195,11 @@
         const s = summary[id] || {};
         const entry = supportGuards[id] || {};
         totals.manHours += n(s.manHours);
-        out.push([entry.employeeId||"", `${entry.name || "(unknown)"} (Support — ${entry.homeSiteName||"?"})`, n(s.manHours), "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+        const rate = supportGuardRate();
+        const amount = rate != null ? rate * n(s.manHours) : null;
+        totals.amount += n(amount);
+        out.push([entry.employeeId||"", `${entry.name || "(unknown)"} (Support — ${entry.homeSiteName||"?"})`, n(s.manHours), "", "", "", "", "", "", "", "", "", "", "",
+          rate != null ? rate : "", amount != null ? amount : ""]);
       });
     }
 
@@ -2669,11 +2673,17 @@
         const entry = supportGuards[id] || {};
         const name = entry.name || "(unknown)";
         totals.manHours += n(s.manHours);
+        const rate = supportGuardRate();
+        const amount = rate != null ? rate * n(s.manHours) : null;
+        if(rate == null) anyMissingRate = true;
+        totals.amount += n(amount);
         return `<tr>
           <td class="mono">${escapeHtml(entry.employeeId || "—")}</td>
           <td>${escapeHtml(name)} <span style="color:var(--muted, #64748b);font-size:12px;">(Support — ${escapeHtml(entry.homeSiteName || "?")})</span></td>
           <td class="mono">${h(s.manHours)}</td>
-          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
+          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
+          <td class="mono">${rate != null ? rm(rate) : "—"}</td>
+          <td class="mono">${amount != null ? rm(amount) : "—"}</td>
         </tr>`;
       }).join("");
     }
@@ -2707,7 +2717,7 @@
         + (holidayCount
             ? `${holidayCount} public holiday${holidayCount===1?"":"s"} marked this month. `
             : `No public holidays marked this month — add them in Guards & Shifts if this month has any. `)
-        + (guards.length && anyMissingRate
+        + ((guards.length || supportIds.length) && anyMissingRate
             ? `Some guards have no billing rate resolved — set one up in this project's Project Details, and give each guard a matching Position if it bills by position; their Amount is excluded from the total until then.`
             : ``);
     }
@@ -4758,6 +4768,26 @@
     }
     if(rc.guardRateMode === "same"){
       return rc.guardRate != null ? (Number(rc.guardRate) || 0) : null;
+    }
+    return null;
+  }
+  // A borrowed-in support guard has no `position` of their own on this site's tender, so they
+  // can't be matched against `guardRatePositions` the way guardRate() matches a permanent guard.
+  // Their man-hours still belong on this site's invoice, so they always bill at a rate: the flat
+  // rate in 'same' mode (identical to everyone else here), or — in 'multiple' mode — the
+  // lowest-priced listed position (the plain "normal guard" rate, as opposed to a Leader/
+  // Supervisor premium). Returns null — shown as "Not set" — only when there's no rate config,
+  // or a 'multiple'-mode config with no positions priced yet.
+  function supportGuardRate(){
+    const rc = state.currentTenderRate;
+    if(!rc) return null;
+    if(rc.guardRateMode === "same"){
+      return rc.guardRate != null ? (Number(rc.guardRate) || 0) : null;
+    }
+    if(rc.guardRateMode === "multiple"){
+      const rates = (rc.guardRatePositions || []).map(p => Number(p.rate)).filter(r => Number.isFinite(r));
+      if(!rates.length) return null;
+      return Math.min.apply(null, rates);
     }
     return null;
   }
