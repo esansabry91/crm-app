@@ -396,6 +396,7 @@
             <input type="text" id="newGuardEmpId" placeholder="Employee ID (optional)" style="max-width:160px;">
             <button class="btn primary" id="addGuardBtn">Add guard</button>
           </div>
+          <p class="sub" id="guardSetupGateNote" style="color:var(--warn);" hidden></p>
           <table class="simple">
             <thead><tr><th>Name</th><th>Employee ID</th><th>Status</th><th></th></tr></thead>
             <tbody id="guardTableBody"></tbody>
@@ -472,6 +473,7 @@
             <tbody id="holidayTableBody"></tbody>
           </table>
           <p class="empty" id="holidayEmpty" hidden>No public holidays added for this site yet.</p>
+          <button class="btn primary sm" id="saveHolidaysBtn" style="margin-top:6px;">Save public holidays</button>
         </div>
       </div>
     </div>
@@ -869,6 +871,41 @@
   function activeSupportIds(ms){
     const overrideValues = new Set(Object.values(ms.overrides || {}));
     return Object.keys(monthSupportGuards(ms)).filter(id => overrideValues.has(id));
+  }
+
+  // Whether a site's Client Site Requirement / Rest Rules / Public Holidays have each been
+  // explicitly saved at least once since the last edit to that section — gates the "Add guard"
+  // button (see renderSetupGate()) so a brand-new site's basic shape and rules are locked in
+  // before anyone starts adding guards against them, and again after any later edit to one of
+  // these 3 sections until it's explicitly re-saved (see markSiteSetupDirty()/
+  // markSiteSetupSaved()). Deliberately NOT persisted proactively on every keystroke — only
+  // written to Firestore when an actual Save button is clicked, or incidentally alongside
+  // whatever save call happens next — matching how these 3 sections already defer committing
+  // their own field values until Save is clicked (see saveSiteBtn/saveRestBtn's own handlers).
+  //
+  // A site created before this feature existed has no `setupSaved` field at all — treated as
+  // already-saved once it already has at least one guard (never retroactively locks out an
+  // established site), but starts unsaved, same as brand-new, if it somehow has none yet either.
+  function siteSetupSaved(cfg){
+    if(cfg.setupSaved) return cfg.setupSaved;
+    const already = !!(cfg.guards && cfg.guards.length);
+    return { site: already, rest: already, holidays: already };
+  }
+  function allSiteSetupSaved(cfg){
+    const s = siteSetupSaved(cfg);
+    return !!(s.site && s.rest && s.holidays);
+  }
+  // Marks one section's fields as edited-but-not-yet-saved, re-locking "Add guard" (via
+  // renderSetupGate()) until that section's own Save button is clicked again. Called from the
+  // section's own input/change listeners — cheap, in-memory only (see siteSetupSaved()'s doc
+  // comment for why this doesn't persist by itself).
+  function markSiteSetupDirty(cfg, key){
+    cfg.setupSaved = Object.assign({}, siteSetupSaved(cfg), { [key]: false });
+  }
+  // Marks one section as saved — called from that section's own Save button handler, right
+  // before persistConfig() actually writes it (and the section's real field values) to Firestore.
+  function markSiteSetupSaved(cfg, key){
+    cfg.setupSaved = Object.assign({ site:false, rest:false, holidays:false }, siteSetupSaved(cfg), { [key]: true });
   }
   function configHolidays(cfg){ if(!cfg.publicHolidays) cfg.publicHolidays = []; return cfg.publicHolidays; }
   function configStateHolidayDates(cfg){ if(!cfg.stateHolidayDates) cfg.stateHolidayDates = []; return cfg.stateHolidayDates; }
@@ -1459,6 +1496,7 @@
     renderSiteStateSelect();
     renderHolidayTable();
     renderRestInputs();
+    renderSetupGate();
     renderLeaveGuardSelect();
     renderTempGuardPanel(lastResult);
     renderSupportGuardPanel(lastResult);
@@ -2515,6 +2553,7 @@
             cfg2.publicHolidays = configHolidays(cfg2).filter(x => x !== d);
             delete configHolidayNames(cfg2)[d];
             addLog(`Removed public holiday ${d}${removedName ? ` (${removedName})` : ""}.`);
+            markSiteSetupDirty(cfg2, "holidays");
             persistConfig();
             showToast(`Removed ${d} from public holidays.`);
             render();
@@ -2679,6 +2718,30 @@
     $("#restDaysWeek").value = currentConfig().restRule.restDaysPerWeek;
     $("#restMinHours").value = currentConfig().restRule.minRestHours;
     $("#restSummary").textContent = `= up to ${maxConsecutiveDaysFor(currentConfig())} consecutive working days before a rest day is due.`;
+  }
+
+  // Drives the "Add guard" lock — see siteSetupSaved()'s doc comment for the full rule. Kept
+  // deliberately separate from the full render() cycle (rather than folded into it) so the input
+  // listeners below can call just this narrow update after every keystroke without triggering
+  // renderSiteRequirement()/renderSitePostsFields(), which would stomp the very field the user is
+  // mid-typing in back to its last-saved value on every character.
+  const SETUP_GATE_LABELS = { site: "Client Site Requirement", rest: "Rest Rules", holidays: "Public Holidays" };
+  function renderSetupGate(){
+    const cfg = currentConfig();
+    const setup = siteSetupSaved(cfg);
+    const missing = Object.keys(SETUP_GATE_LABELS).filter(k => !setup[k]).map(k => SETUP_GATE_LABELS[k]);
+    const locked = missing.length > 0;
+    const btn = $("#addGuardBtn");
+    if(btn) btn.disabled = locked;
+    const nameInput = $("#newGuardName");
+    if(nameInput) nameInput.disabled = locked;
+    const empInput = $("#newGuardEmpId");
+    if(empInput) empInput.disabled = locked;
+    const note = $("#guardSetupGateNote");
+    if(note){
+      note.hidden = !locked;
+      note.textContent = locked ? `Save ${missing.join(", ")} below first before adding guards.` : "";
+    }
   }
 
   function renderLeaveGuardSelect(){
@@ -3537,6 +3600,14 @@
   $("#exportTimeAttendanceBtn").addEventListener("click", exportTimeAttendanceToExcel);
 
   $("#addGuardBtn").addEventListener("click", () => {
+    // Belt-and-braces alongside the button's own .disabled state (see renderSetupGate()) — a
+    // disabled button already blocks both mouse clicks and the Enter-key shortcuts below (a
+    // native <button disabled> never fires its click handler, even via .click()), but this keeps
+    // the rule enforced here too in case that ever changes.
+    if(!allSiteSetupSaved(currentConfig())){
+      showToast("Save Client Site Requirement, Rest Rules, and Public Holidays first.", true);
+      return;
+    }
     const input = $("#newGuardName");
     const empInput = $("#newGuardEmpId");
     const name = input.value.trim();
@@ -3568,6 +3639,7 @@
     input.value = "";
     if(nameInput) nameInput.value = "";
     addLog(`Added public holiday ${d}${name ? ` (${name})` : ""}.`);
+    markSiteSetupDirty(cfg, "holidays");
     persistConfig();
     showToast(`Added ${d} as a public holiday.`);
     render();
@@ -3582,6 +3654,7 @@
       addLog(stateName
         ? `Assigned this site to ${stateName} — auto-filled ${count} public holiday date${count===1?"":"s"} from the state calendar.`
         : `Cleared this site's assigned state and its auto-filled public holidays.`);
+      markSiteSetupDirty(cfg, "holidays");
       persistConfig();
       showToast(stateName ? `Applied ${stateName}'s public holidays.` : `Cleared the state assignment.`);
       render();
@@ -3604,7 +3677,17 @@
     }
   });
 
-  $("#sitePattern").addEventListener("change", renderSitePostsFields);
+  // Everything below marks Client Site Requirement dirty (re-locking "Add guard" — see
+  // renderSetupGate()) the moment any of its fields changes, without touching persisted data or
+  // repainting the fields themselves (see renderSetupGate()'s own doc comment for why it stays
+  // separate from the full render() cycle).
+  function markSiteDirty(){ markSiteSetupDirty(currentConfig(), "site"); renderSetupGate(); }
+
+  $("#sitePattern").addEventListener("change", () => { renderSitePostsFields(); markSiteDirty(); });
+  ["siteHoursDay","siteDaysWeek","siteShiftHrs","siteRosterStart","siteNormalHours"].forEach(id => {
+    const el = $("#"+id);
+    if(el) el.addEventListener("input", markSiteDirty);
+  });
 
   // "+ Add post" / remove-post buttons inside the FULLH category editors are
   // re-created every renderSitePostsFields() call, so this listener is
@@ -3618,6 +3701,7 @@
         const lastInput = rows.querySelector(".fullh-row:last-child .fullh-hours");
         rows.insertAdjacentHTML("beforeend", fullHRowHtml(lastInput ? Number(lastInput.value) : 12));
       }
+      markSiteDirty();
       return;
     }
     if(e.target.classList && e.target.classList.contains("fullh-remove")){
@@ -3629,8 +3713,17 @@
         return;
       }
       row.remove();
+      markSiteDirty();
     }
   });
+  // Same delegation reasoning as the click listener above, for plain number-input edits inside
+  // the dynamically-rendered posts fields (data-site-field inputs, siteNightStart, and each
+  // FULLH row's .fullh-hours input) — none of these exist in the DOM until renderSitePostsFields()
+  // runs, so a per-element listener can't be attached ahead of time.
+  $("#sitePostsFields").addEventListener("input", markSiteDirty);
+
+  $("#restDaysWeek").addEventListener("input", () => { markSiteSetupDirty(currentConfig(), "rest"); renderSetupGate(); });
+  $("#restMinHours").addEventListener("input", () => { markSiteSetupDirty(currentConfig(), "rest"); renderSetupGate(); });
 
   $("#saveSiteBtn").addEventListener("click", () => {
     const site = currentConfig().site;
@@ -3655,6 +3748,7 @@
     site.normalHoursPerDay = Number($("#siteNormalHours").value) || 8;
     currentConfig().isSample = false;
     addLog(`Updated client site requirement (pattern: ${site.pattern}, ${site.hoursDay}h/day coverage, ${site.daysWeek} days/week).`);
+    markSiteSetupSaved(currentConfig(), "site");
     persistConfig();
     showToast("Site requirement saved.");
     render();
@@ -3664,8 +3758,23 @@
     currentConfig().restRule.restDaysPerWeek = Math.max(0, Math.min(6, Number($("#restDaysWeek").value) || 0));
     currentConfig().restRule.minRestHours = Number($("#restMinHours").value) || 0;
     addLog(`Updated rest rules: ${currentConfig().restRule.restDaysPerWeek} rest day(s)/week, min ${currentConfig().restRule.minRestHours}h rest between shifts.`);
+    markSiteSetupSaved(currentConfig(), "rest");
     persistConfig();
     showToast("Rest rules saved.");
+    render();
+  });
+
+  // Public Holidays has no "unsaved draft" the way Site Requirement/Rest Rules do — every
+  // Add/Remove holiday and state pick already writes immediately (see those handlers above). This
+  // button is purely the explicit confirmation "Add guard" waits on (see siteSetupSaved()'s doc
+  // comment) — it exists even for a site that genuinely needs zero holidays, and, like the other
+  // two sections, goes dirty again the moment anything in this panel changes afterward.
+  $("#saveHolidaysBtn").addEventListener("click", () => {
+    const cfg = currentConfig();
+    markSiteSetupSaved(cfg, "holidays");
+    addLog("Confirmed public holidays for this site.");
+    persistConfig();
+    showToast("Public holidays saved.");
     render();
   });
 
