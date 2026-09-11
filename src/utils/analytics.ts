@@ -599,6 +599,12 @@ export function pipelineBridgePeriods(entries: TenderHistoryEntry[], view: Bridg
  * inflating both the New Tenders bucket (on the way back in) and the Won/Lost bucket (on the way
  * out): see closedThisPeriod below. A reopen of something closed in an EARLIER period still counts
  * as new to *this* period, since it genuinely wasn't part of this period's starting open pool.
+ *
+ * A tender created directly into Won/Lost (e.g. backfilling a historical win rather than dragging
+ * it through the pipeline) is shown the same way: as a same-period pass-through into New Tenders
+ * and straight back out via Won/Lost, landing on whichever period its own (possibly backdated)
+ * closedDate falls in. That keeps backfilled history visible on the chart instead of silently
+ * vanishing, while still netting to zero so it never distorts the end-of-period open total.
  */
 export function pipelineValueBridge(
   entries: TenderHistoryEntry[],
@@ -642,7 +648,22 @@ export function pipelineValueBridge(
     const nowOpen = OPEN_STAGES.includes(e.stage);
 
     if (e.type === 'created') {
-      if (nowOpen) newValue += e.value; // created directly as Won/Lost never touched the open pool
+      if (nowOpen) {
+        newValue += e.value;
+      } else if (e.stage === 'Won' || e.stage === 'Lost') {
+        // Backfilled straight into Won/Lost — never touched the open pool, but still show it as
+        // a same-period pass-through (added to New Tenders, immediately taken back out via the
+        // matching bucket) so backfilled history isn't invisible here. Tracked in
+        // closedThisPeriod too, in case it gets reopened later in this same period.
+        newValue += e.value;
+        if (e.stage === 'Won') {
+          wonValue -= e.value;
+          closedThisPeriod.set(e.tenderId, { bucket: 'won', amount: e.value });
+        } else {
+          lostValue -= e.value;
+          closedThisPeriod.set(e.tenderId, { bucket: 'lost', amount: e.value });
+        }
+      }
     } else if (e.type === 'stage_change') {
       if (prevOpen && !nowOpen) {
         if (e.stage === 'Won') {
