@@ -264,9 +264,10 @@ export default function GuardBankPage() {
             label="Total permanent hired"
             value={String(poolGuards.length + deployedGuards.length)}
             sub="Unassigned + Deployed"
+            accent={VIZ.status.good}
           />
           <StatCard label="Unassigned guards" value={String(poolGuards.length)} sub="Guard Pool" />
-          <StatCard label="Dismissed guards" value={String(dismissedGuards.length)} />
+          <StatCard label="Dismissed guards" value={String(dismissedGuards.length)} accent={VIZ.status.critical} />
           <StatCard label="Buffer guards" value={String(bufferGuards.length)} />
           <StatCard
             label="Permit expiring ≤ 2 months"
