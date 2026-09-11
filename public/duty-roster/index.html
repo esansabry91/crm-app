@@ -270,10 +270,13 @@
   .toast.err{ background:var(--critical); color:#fff; }
   .modalveil{ position:fixed; inset:0; background:rgba(20,30,26,0.45); display:flex; align-items:center; justify-content:center; z-index:999; }
   .modalcard{ background:var(--surface); border-radius:12px; padding:20px 22px; box-shadow:var(--shadow); width:340px; max-width:90vw; }
+  .modalcard.wide{ width:460px; }
   .modalcard h3{ font-size:14.5px; margin-bottom:10px; }
   .modalcard p.msg{ font-size:13px; color:var(--muted); margin:0 0 14px; }
   .modalcard input[type=text]{ width:100%; margin-bottom:14px; }
+  .modalcard.wide input, .modalcard.wide select{ width:100%; }
   .modalcard .modalbtns{ display:flex; justify-content:flex-end; gap:8px; }
+  .modalcard table.simple td{ font-size:13px; padding:5px 8px; }
 
   /* Read-only lockdown for the "Payroll" role: view every tab, change nothing. Every
      input/select/button/textarea inside the four tab views (.view) is disabled — that covers
@@ -392,9 +395,7 @@
           <h2>Guard roster</h2>
           <p class="sub">Add a guard by name &mdash; employee ID is optional</p>
           <div class="fieldrow">
-            <input type="text" id="newGuardName" placeholder="e.g. Ahmad Faiz">
-            <input type="text" id="newGuardEmpId" placeholder="Employee ID (optional)" style="max-width:160px;">
-            <button class="btn primary" id="addGuardBtn">Add guard</button>
+            <button class="btn primary" id="addGuardBtn">+ Add guard</button>
           </div>
           <p class="sub" id="guardSetupGateNote" style="color:var(--warn);" hidden></p>
           <table class="simple">
@@ -543,6 +544,11 @@
           <div class="fieldrow">
             <div style="flex:1;"><label class="small">Temporary guard's name</label><input type="text" id="tempGuardName" placeholder="e.g. Zul (relief)"></div>
             <div style="flex:1;"><label class="small">Rate for this shift (RM)</label><input type="number" id="tempGuardRate" min="0" step="0.01" placeholder="0.00"></div>
+          </div>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">MyKad number</label><input type="text" id="tempGuardMykad" placeholder="901231-14-5678" maxlength="14"></div>
+            <div style="flex:1;"><label class="small">Age</label><input type="number" id="tempGuardAge" min="16" max="80" step="1"></div>
+            <div style="flex:1;"><label class="small">Phone number</label><input type="text" id="tempGuardPhone" placeholder="e.g. 012-3456789"></div>
           </div>
           <button class="btn primary sm" id="assignTempBtn">Assign temporary guard</button>
           <p class="empty" id="tempSlotEmpty" hidden>No unfilled slots this month &mdash; nothing needs a temporary guard right now.</p>
@@ -1377,6 +1383,21 @@
     setTimeout(() => { el.remove(); }, 3200);
   }
   function closeModal(){ $("#modalRoot").innerHTML = ""; }
+
+  // Auto-inserts dashes as a MyKad number is typed (YYMMDD-PB-###G, 12 digits total) — strips
+  // anything that isn't a digit first, so pasting an already-dashed number still works. Used by
+  // both the "Add guard" modal and "Assign a temporary guard"'s MyKad field.
+  function formatMykadInput(raw){
+    const digits = (raw || "").replace(/\D/g, "").slice(0, 12);
+    let out = digits.slice(0, 6);
+    if(digits.length > 6) out += "-" + digits.slice(6, 8);
+    if(digits.length > 8) out += "-" + digits.slice(8, 12);
+    return out;
+  }
+  function isValidMykad(formatted){
+    return /^\d{6}-\d{2}-\d{4}$/.test(formatted || "");
+  }
+
   function openPromptModal(opts){
     const root = $("#modalRoot");
     root.innerHTML = `
@@ -1468,6 +1489,170 @@
           <p class="msg">${escapeHtml(message)}</p>
           <div class="modalbtns">
             <button class="btn sm primary" id="modalOk" type="button">OK</button>
+          </div>
+        </div>
+      </div>`;
+    $("#modalOk").addEventListener("click", closeModal);
+    $("#modalVeil").addEventListener("click", e => { if(e.target.id === "modalVeil") closeModal(); });
+  }
+
+  // Category-specific fields for the "Add guard" popup below — Local guards give MyKad + phone,
+  // Nepal guards give passport + permit expiry, both end with Age. Employee ID and Full name are
+  // asked up front regardless of category (Employee ID stays optional, matching how it always
+  // has been; everything else here is required — see this feature's own design notes on why only
+  // Full name and Employee ID ever show in the guard roster table itself, with the rest tucked
+  // behind that row's "View" button — see openGuardDetailsModal()).
+  function renderAddGuardCategoryFields(category){
+    const host = $("#newGuardCategoryFields");
+    if(!host) return;
+    if(category === "nepal"){
+      host.innerHTML = `
+        <div style="margin-bottom:10px;">
+          <label class="small">Passport number</label>
+          <input type="text" id="newGuardPassport" placeholder="e.g. A1234567">
+        </div>
+        <div style="margin-bottom:10px;">
+          <label class="small">Permit expiry date</label>
+          <input type="date" id="newGuardPermitExpiry">
+        </div>`;
+    } else {
+      host.innerHTML = `
+        <div style="margin-bottom:10px;">
+          <label class="small">MyKad number</label>
+          <input type="text" id="newGuardMykad" placeholder="901231-14-5678" maxlength="14">
+        </div>
+        <div style="margin-bottom:10px;">
+          <label class="small">Phone number</label>
+          <input type="text" id="newGuardPhone" placeholder="e.g. 012-3456789">
+        </div>`;
+      const mykadInput = $("#newGuardMykad");
+      mykadInput.addEventListener("input", () => { mykadInput.value = formatMykadInput(mykadInput.value); });
+    }
+  }
+
+  function openAddGuardModal(){
+    const root = $("#modalRoot");
+    let category = "local";
+    root.innerHTML = `
+      <div class="modalveil" id="modalVeil">
+        <div class="modalcard wide">
+          <h3>Add guard</h3>
+          <p class="sub" style="margin:0 0 12px;">The fields below depend on the guard's category — only Full name and Employee ID show in the roster table itself; everything else is visible from that row's "View" button.</p>
+          <div style="margin-bottom:10px;">
+            <label class="small">Guard category</label>
+            <select id="newGuardCategory">
+              <option value="local">Local</option>
+              <option value="nepal">Nepal</option>
+            </select>
+          </div>
+          <div style="margin-bottom:10px;">
+            <label class="small">Employee ID (optional)</label>
+            <input type="text" id="newGuardEmpId" placeholder="e.g. EMP-1023">
+          </div>
+          <div style="margin-bottom:10px;">
+            <label class="small" id="newGuardNameLabel">Full name (as per MyKad)</label>
+            <input type="text" id="newGuardName" placeholder="e.g. Ahmad Faiz">
+          </div>
+          <div id="newGuardCategoryFields"></div>
+          <div style="margin-bottom:10px;">
+            <label class="small">Age</label>
+            <input type="number" id="newGuardAge" min="16" max="80" step="1">
+          </div>
+          <p class="msg" id="newGuardError" style="color:var(--critical);display:none;margin:0 0 10px;"></p>
+          <div class="modalbtns">
+            <button class="btn sm" id="modalCancel" type="button">Cancel</button>
+            <button class="btn sm primary" id="modalOk" type="button">Add guard</button>
+          </div>
+        </div>
+      </div>`;
+    renderAddGuardCategoryFields(category);
+    $("#newGuardCategory").addEventListener("change", () => {
+      category = $("#newGuardCategory").value;
+      $("#newGuardNameLabel").textContent = category === "nepal" ? "Full name" : "Full name (as per MyKad)";
+      renderAddGuardCategoryFields(category);
+    });
+
+    function showErr(msg){
+      const el = $("#newGuardError");
+      el.textContent = msg;
+      el.style.display = "block";
+    }
+
+    function submit(){
+      const employeeId = $("#newGuardEmpId").value.trim();
+      const name = $("#newGuardName").value.trim();
+      const ageRaw = $("#newGuardAge").value;
+      const age = Number(ageRaw);
+      if(!name){ showErr("Full name is required."); return; }
+      if(ageRaw.trim() === "" || !Number.isFinite(age) || age <= 0){ showErr("Enter a valid age."); return; }
+
+      const guard = { id:newId("g"), name, employeeId, active:true, inactiveFrom:null, category, age };
+      if(category === "nepal"){
+        const passportNumber = $("#newGuardPassport").value.trim();
+        const permitExpiryDate = $("#newGuardPermitExpiry").value;
+        if(!passportNumber){ showErr("Passport number is required."); return; }
+        if(!permitExpiryDate){ showErr("Permit expiry date is required."); return; }
+        guard.passportNumber = passportNumber;
+        guard.permitExpiryDate = permitExpiryDate;
+      } else {
+        const mykadNumber = $("#newGuardMykad").value.trim();
+        const phoneNumber = $("#newGuardPhone").value.trim();
+        if(!isValidMykad(mykadNumber)){ showErr("Enter a valid 12-digit MyKad number (e.g. 901231-14-5678)."); return; }
+        if(!phoneNumber){ showErr("Phone number is required."); return; }
+        guard.mykadNumber = mykadNumber;
+        guard.phoneNumber = phoneNumber;
+      }
+
+      currentConfig().guards.push(guard);
+      currentConfig().isSample = false;
+      closeModal();
+      addLog(`Added guard ${name}${employeeId ? ` (ID ${employeeId})` : ""}.`);
+      persistConfig(); persistMonth();
+      showToast(`Added guard ${name}.`);
+      render();
+    }
+
+    $("#modalOk").addEventListener("click", submit);
+    $("#modalCancel").addEventListener("click", closeModal);
+    $("#modalVeil").addEventListener("click", e => { if(e.target.id === "modalVeil") closeModal(); });
+    $("#newGuardName").focus();
+  }
+
+  // Read-only popup for everything about a guard beyond Full name/Employee ID (which already
+  // show directly in the Guard roster table) — MyKad/phone or passport/permit, plus age. A guard
+  // added before this feature existed has no `category` at all yet; every one of these fields
+  // just shows "Not set" for them rather than forcing retroactive data entry (see
+  // openAddGuardModal()'s own doc comment for the category-driven field set new guards use).
+  function openGuardDetailsModal(guardId){
+    const g = guardById(guardId);
+    if(!g) return;
+    const rows = [
+      ["Employee ID", g.employeeId || "—"],
+      ["Full name", g.name || "—"],
+      ["Category", g.category === "nepal" ? "Nepal" : g.category === "local" ? "Local" : "Not set"],
+    ];
+    if(g.category === "nepal"){
+      rows.push(["Passport number", g.passportNumber || "Not set"]);
+      rows.push(["Permit expiry date", g.permitExpiryDate || "Not set"]);
+    } else {
+      rows.push(["MyKad number", g.mykadNumber || "Not set"]);
+      rows.push(["Phone number", g.phoneNumber || "Not set"]);
+    }
+    rows.push(["Age", g.age != null ? g.age : "Not set"]);
+    rows.push(["Status", g.active === false ? "Inactive" : "Active"]);
+
+    const root = $("#modalRoot");
+    root.innerHTML = `
+      <div class="modalveil" id="modalVeil">
+        <div class="modalcard wide">
+          <h3>Guard details</h3>
+          <table class="simple" style="margin-bottom:14px;">
+            <tbody>
+              ${rows.map(([label,val]) => `<tr><td style="color:var(--muted);white-space:nowrap;">${escapeHtml(label)}</td><td>${escapeHtml(String(val))}</td></tr>`).join("")}
+            </tbody>
+          </table>
+          <div class="modalbtns">
+            <button class="btn sm primary" id="modalOk" type="button">Close</button>
           </div>
         </div>
       </div>`;
@@ -2575,11 +2760,15 @@
         <td class="mono">${escapeHtml(g.employeeId || "—")}</td>
         <td><span class="pill ${inactive?'inactive':'active'}">${statusLabel}</span></td>
         <td style="white-space:nowrap;">
+          <button class="btn sm" data-view-guard="${g.id}">View</button>
           <button class="btn sm" data-toggle-guard="${g.id}">${inactive?'Reactivate':'Deactivate'}</button>
           <button class="btn sm danger" data-remove-guard="${g.id}">Remove</button>
         </td>
       </tr>`;
     }).join("");
+    $$("[data-view-guard]").forEach(btn => {
+      btn.addEventListener("click", () => openGuardDetailsModal(btn.getAttribute("data-view-guard")));
+    });
     $$("[data-toggle-guard]").forEach(btn => {
       btn.addEventListener("click", () => {
         const g = guardById(btn.getAttribute("data-toggle-guard"));
@@ -2866,6 +3055,40 @@
     return st ? st.label : shiftId;
   }
 
+  // Read-only popup for a temporary guard's MyKad/age/phone — only his name shows directly in
+  // the "temporary guards this month" table (see renderTempGuardPanel()); a temp guard assigned
+  // before this feature existed just shows "Not set" for all three, same as a pre-existing
+  // permanent guard does in openGuardDetailsModal().
+  function openTempGuardDetailsModal(tempId){
+    const tg = monthTempGuards(currentMonthState());
+    const t = tg[tempId];
+    if(!t) return;
+    const rows = [
+      ["Full name", t.name || "—"],
+      ["MyKad number", t.mykadNumber || "Not set"],
+      ["Age", t.age != null ? t.age : "Not set"],
+      ["Phone number", t.phoneNumber || "Not set"],
+      ["Rate (RM)", (Number(t.rate) || 0).toFixed(2)],
+    ];
+    const root = $("#modalRoot");
+    root.innerHTML = `
+      <div class="modalveil" id="modalVeil">
+        <div class="modalcard wide">
+          <h3>Temporary guard details</h3>
+          <table class="simple" style="margin-bottom:14px;">
+            <tbody>
+              ${rows.map(([label,val]) => `<tr><td style="color:var(--muted);white-space:nowrap;">${escapeHtml(label)}</td><td>${escapeHtml(String(val))}</td></tr>`).join("")}
+            </tbody>
+          </table>
+          <div class="modalbtns">
+            <button class="btn sm primary" id="modalOk" type="button">Close</button>
+          </div>
+        </div>
+      </div>`;
+    $("#modalOk").addEventListener("click", closeModal);
+    $("#modalVeil").addEventListener("click", e => { if(e.target.id === "modalVeil") closeModal(); });
+  }
+
   function renderTempGuardPanel(result){
     const ms = currentMonthState();
     const tg = monthTempGuards(ms);
@@ -2898,12 +3121,18 @@
         <td>${escapeHtml(shiftLabelForKey(r.date, r.shiftId))}, Slot ${r.slot+1}</td>
         <td>${escapeHtml(r.name)}</td>
         <td class="mono">${r.rate.toFixed(2)}</td>
-        <td><button class="btn sm danger" data-remove-temp="${escapeHtml(r.tempId)}" data-remove-temp-key="${escapeHtml(r.key)}">Remove</button></td>
+        <td style="white-space:nowrap;">
+          <button class="btn sm" data-view-temp="${escapeHtml(r.tempId)}">View</button>
+          <button class="btn sm danger" data-remove-temp="${escapeHtml(r.tempId)}" data-remove-temp-key="${escapeHtml(r.key)}">Remove</button>
+        </td>
       </tr>
     `).join("");
     const total = rows.reduce((sum,r) => sum + r.rate, 0);
     $("#tempGuardTotal").textContent = rows.length ? `Total to pay this month: RM ${total.toFixed(2)}` : "";
 
+    $$("[data-view-temp]").forEach(btn => {
+      btn.addEventListener("click", () => openTempGuardDetailsModal(btn.getAttribute("data-view-temp")));
+    });
     $$("[data-remove-temp]").forEach(btn => {
       btn.addEventListener("click", () => {
         const tempId = btn.getAttribute("data-remove-temp");
@@ -3601,29 +3830,14 @@
 
   $("#addGuardBtn").addEventListener("click", () => {
     // Belt-and-braces alongside the button's own .disabled state (see renderSetupGate()) — a
-    // disabled button already blocks both mouse clicks and the Enter-key shortcuts below (a
-    // native <button disabled> never fires its click handler, even via .click()), but this keeps
-    // the rule enforced here too in case that ever changes.
+    // disabled button already blocks mouse clicks (a native <button disabled> never fires its
+    // click handler), but this keeps the rule enforced here too in case that ever changes.
     if(!allSiteSetupSaved(currentConfig())){
       showToast("Save Client Site Requirement, Rest Rules, and Public Holidays first.", true);
       return;
     }
-    const input = $("#newGuardName");
-    const empInput = $("#newGuardEmpId");
-    const name = input.value.trim();
-    const employeeId = empInput ? empInput.value.trim() : "";
-    if(!name){ showToast("Type a guard name first.", true); input.focus(); return; }
-    currentConfig().guards.push({ id:newId("g"), name, employeeId, active:true, inactiveFrom:null });
-    currentConfig().isSample = false;
-    input.value = "";
-    if(empInput) empInput.value = "";
-    addLog(`Added guard ${name}${employeeId ? ` (ID ${employeeId})` : ""}.`);
-    persistConfig(); persistMonth();
-    showToast(`Added guard ${name}.`);
-    render();
+    openAddGuardModal();
   });
-  $("#newGuardName").addEventListener("keydown", e => { if(e.key === "Enter") $("#addGuardBtn").click(); });
-  $("#newGuardEmpId").addEventListener("keydown", e => { if(e.key === "Enter") $("#addGuardBtn").click(); });
 
   $("#addHolidayBtn").addEventListener("click", () => {
     const input = $("#newHolidayDate");
@@ -3912,19 +4126,29 @@
     const key = $("#tempSlotSelect").value;
     const name = $("#tempGuardName").value.trim();
     const rate = Number($("#tempGuardRate").value);
+    const mykadNumber = $("#tempGuardMykad").value.trim();
+    const ageRaw = $("#tempGuardAge").value;
+    const age = Number(ageRaw);
+    const phoneNumber = $("#tempGuardPhone").value.trim();
     if(!key){ showToast("Pick an unfilled slot first.", true); return; }
     if(!name){ showToast("Enter the temporary guard's name.", true); return; }
     if(!(rate >= 0)){ showToast("Enter a valid rate.", true); return; }
+    if(!isValidMykad(mykadNumber)){ showToast("Enter a valid 12-digit MyKad number (e.g. 901231-14-5678).", true); return; }
+    if(ageRaw.trim() === "" || !Number.isFinite(age) || age <= 0){ showToast("Enter a valid age.", true); return; }
+    if(!phoneNumber){ showToast("Enter the temporary guard's phone number.", true); return; }
     const ms = currentMonthState();
     const tg = monthTempGuards(ms);
     const tempId = newId("temp");
-    tg[tempId] = { name, rate, createdAt: nowIso() };
+    tg[tempId] = { name, rate, mykadNumber, age, phoneNumber, createdAt: nowIso() };
     ms.overrides[key] = tempId;
     const [date, shiftId, slot] = key.split("|");
     const label = shiftLabelForKey(date, shiftId);
     addLog(`Assigned temporary guard ${name} (RM ${rate.toFixed(2)}) to ${label}, Slot ${Number(slot)+1} on ${date}.`);
     $("#tempGuardName").value = "";
     $("#tempGuardRate").value = "";
+    $("#tempGuardMykad").value = "";
+    $("#tempGuardAge").value = "";
+    $("#tempGuardPhone").value = "";
     persistMonth();
     showToast(`Assigned ${name} to cover ${date}.`);
     render();
