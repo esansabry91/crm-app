@@ -170,3 +170,93 @@ export async function updateBufferGuardContact(
 ): Promise<void> {
   await updateDoc(doc(db, 'bufferGuards', id), patch);
 }
+
+
+export interface BackfillResult {
+  sitesScanned: number;
+  guardsScanned: number;
+  created: number;
+  updated: number;
+  skippedNoEmployeeId: number;
+}
+
+/**
+ * Reconciliation sync, meant to be run anytime (not just once): matches-or-creates every guard
+ * from every site's own `guards[]` array (the same data Duty Roster itself reads) into Guard
+ * Bank by employeeId — identical to what the live per-action sync in
+ * public/duty-roster/index.html does on its own, just swept across the whole firm in one pass
+ * instead of triggered by a single add/dismiss/reactivate click. Two reasons this is worth
+ * keeping around as a standing "Refresh" action rather than a one-off migration step: it's what
+ * catches guards that were already in a site's roster before Guard Bank existed, AND it's the
+ * recovery path if one of those live per-action syncs ever silently fails (they're all
+ * best-effort and swallow their own errors, by design, so a dropped call there leaves no other
+ * trace). Fully idempotent — re-running it just re-confirms data that's already correct.
+ *
+ * Two honesty notes about the result, both because a guard synced here for the first time
+ * carries no real history:
+ * - `createdAt` is set to "now" for anyone newly created by this backfill, so the trailing-12-
+ *   month turnover's "active at start of period" estimate will undercount them until enough real
+ *   time passes — there's no historical join date to recover this from.
+ * - A guard whose roster entry has `active: false` (Duty Roster's old un-reasoned inactive flag)
+ *   comes in as 'dismissed' with `dismissalReason` and `dismissedAt` left null — we genuinely
+ *   don't know why or when, and guessing "today" would artificially inflate the turnover rate's
+ *   trailing-12-month numerator. The Dismissed Guards count itself is unaffected either way.
+ */
+export async function backfillGuardsFromDutyRoster(): Promise<BackfillResult> {
+  const sitesSnap = await getDocs(collection(db, 'sites'));
+  const result: BackfillResult = {
+    sitesScanned: sitesSnap.docs.length,
+    guardsScanned: 0,
+    created: 0,
+    updated: 0,
+    skippedNoEmployeeId: 0,
+  };
+  const now = Date.now();
+
+  for (const siteDoc of sitesSnap.docs) {
+    const site = siteDoc.data() as { name?: string; branch?: string | null; guards?: Record<string, unknown>[] };
+    const rosterGuards = Array.isArray(site.guards) ? site.guards : [];
+    for (const g of rosterGuards) {
+      result.guardsScanned += 1;
+      const employeeId = typeof g.employeeId === 'string' ? g.employeeId : '';
+      if (!employeeId) {
+        result.skippedNoEmployeeId += 1;
+        continue;
+      }
+      const dismissed = g.active === false;
+      const category = g.category === 'nepal' ? 'nepal' : 'local';
+      const payload: Record<string, unknown> = {
+        name: g.name ?? '',
+        employeeId,
+        category,
+        age: (g.age as number | undefined) ?? null,
+        state: (g.state as string | undefined) ?? null,
+        city: (g.city as string | undefined) ?? null,
+        passportNumber: category === 'nepal' ? (g.passportNumber as string | undefined) ?? null : null,
+        permitExpiryDate: category === 'nepal' ? (g.permitExpiryDate as string | undefined) ?? null : null,
+        mykadNumber: category === 'local' ? (g.mykadNumber as string | undefined) ?? null : null,
+        phoneNumber: category === 'local' ? (g.phoneNumber as string | undefined) ?? null : null,
+        status: dismissed ? 'dismissed' : 'deployed',
+        siteId: siteDoc.id,
+        siteName: site.name || null,
+        branch: site.branch ?? null,
+        updatedAt: now,
+      };
+      // Neither branch knows a real reason/date (see the doc comment above), so both leave
+      // these null rather than guess.
+      payload.dismissalReason = null;
+      payload.dismissedAt = null;
+
+      const existing = await findByEmployeeId(employeeId);
+      if (existing) {
+        await updateDoc(doc(db, 'guards', existing.id), payload);
+        result.updated += 1;
+      } else {
+        await addDoc(guardsCollection(), { ...payload, createdAt: now });
+        result.created += 1;
+      }
+    }
+  }
+
+  return result;
+}

@@ -3,8 +3,14 @@ import clsx from 'clsx';
 import StatCard from '../components/analytics/StatCard';
 import RegisterGuardModal from '../components/guard-bank/RegisterGuardModal';
 import AssignGuardModal from '../components/guard-bank/AssignGuardModal';
+import { useAuth } from '../contexts/AuthContext';
 import { useGuards, useBufferGuards, useSitesForPicker } from '../hooks/useGuards';
-import { computeGuardTurnover, guardsWithPermitExpiringSoon, updateBufferGuardContact } from '../services/guards';
+import {
+  backfillGuardsFromDutyRoster,
+  computeGuardTurnover,
+  guardsWithPermitExpiringSoon,
+  updateBufferGuardContact,
+} from '../services/guards';
 import { formatDate, formatDateTime, formatRM } from '../utils/format';
 import { VIZ } from '../utils/vizColors';
 import type { BufferGuard, Guard } from '../types';
@@ -31,6 +37,7 @@ function isPermitSoon(g: Guard): boolean {
 }
 
 export default function GuardBankPage() {
+  const { profile } = useAuth();
   const { guards, loading: guardsLoading } = useGuards();
   const { bufferGuards, loading: bufferLoading } = useBufferGuards();
   const { sites } = useSitesForPicker();
@@ -41,6 +48,7 @@ export default function GuardBankPage() {
   const [assignGuard, setAssignGuard] = useState<Guard | null>(null);
   const [editingBufferId, setEditingBufferId] = useState<string | null>(null);
   const [editPhone, setEditPhone] = useState('');
+  const [backfilling, setBackfilling] = useState(false);
 
   const poolGuards = useMemo(() => guards.filter((g) => g.status === 'pool'), [guards]);
   const deployedGuards = useMemo(() => guards.filter((g) => g.status === 'deployed'), [guards]);
@@ -54,6 +62,33 @@ export default function GuardBankPage() {
   function flash(message: string) {
     setToast(message);
     window.setTimeout(() => setToast((cur) => (cur === message ? null : cur)), 3500);
+  }
+
+  // A standing safety net, not a one-off migration step: Duty Roster's live per-action sync
+  // (add/dismiss/reactivate/temp-guard) is what keeps Guard Bank current moment-to-moment, but
+  // every one of those syncs is best-effort and swallows its own errors (see the doc comment
+  // above syncGuardBankOnAdd() etc. in index.html) — a dropped network call there would silently
+  // drift Guard Bank out of sync with nothing to flag it. This button re-scans every site's
+  // roster and reconciles it against Guard Bank by Employee ID, so it's safe to click anytime,
+  // not just once. Admin-only since it needs to read every site across every branch to
+  // reconcile the whole firm in one pass. See backfillGuardsFromDutyRoster()'s doc comment in
+  // services/guards.ts for what it does and doesn't know about guards it's seeing for the first
+  // time (no real historical join/dismissal dates to recover).
+  async function runDutyRosterSync() {
+    setBackfilling(true);
+    try {
+      const result = await backfillGuardsFromDutyRoster();
+      flash(
+        `Synced ${result.guardsScanned} guard(s) across ${result.sitesScanned} site(s): ` +
+          `${result.created} added, ${result.updated} updated` +
+          (result.skippedNoEmployeeId ? `, ${result.skippedNoEmployeeId} skipped (no Employee ID)` : '') +
+          '.'
+      );
+    } catch (err) {
+      flash(err instanceof Error ? err.message : 'Could not sync from Duty Roster.');
+    } finally {
+      setBackfilling(false);
+    }
   }
 
   async function saveBufferContact(id: string) {
@@ -79,14 +114,27 @@ export default function GuardBankPage() {
               Every registered guard across all branches — unassigned, deployed, dismissed and buffer.
             </p>
           </div>
-          {tab === 'Guard Pool' && (
-            <button
-              onClick={() => setRegisterOpen(true)}
-              className="px-3.5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
-            >
-              + Register guard
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {profile?.role === 'admin' && (
+              <button
+                onClick={runDutyRosterSync}
+                disabled={backfilling}
+                title="Reconcile Guard Bank against every site's live roster in Duty Roster — safe to use anytime, not just once"
+                className="px-3.5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-60 rounded-lg border border-slate-200 inline-flex items-center gap-1.5"
+              >
+                <span aria-hidden className={backfilling ? 'animate-spin' : ''}>↻</span>
+                {backfilling ? 'Syncing…' : 'Refresh from Duty Roster'}
+              </button>
+            )}
+            {tab === 'Guard Pool' && (
+              <button
+                onClick={() => setRegisterOpen(true)}
+                className="px-3.5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+              >
+                + Register guard
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-4">
