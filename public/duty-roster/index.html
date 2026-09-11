@@ -294,6 +294,8 @@
   }
   body.readonly-mode #prevMonth,
   body.readonly-mode #nextMonth,
+  body.readonly-mode #prevMonthReport,
+  body.readonly-mode #nextMonthReport,
   body.readonly-mode .viewtoggle .vt,
   body.readonly-mode #exportExcelBtn,
   body.readonly-mode #exportTimeAttendanceBtn{
@@ -618,9 +620,15 @@
 
   <!-- SUMMARY REPORT VIEW -->
   <div class="view" id="view-report">
+    <div class="monthnav">
+      <button class="iconbtn" id="prevMonthReport" aria-label="Previous month">&larr;</button>
+      <div class="lbl" id="monthLabelReport"></div>
+      <button class="iconbtn" id="nextMonthReport" aria-label="Next month">&rarr;</button>
+    </div>
+
     <div class="panel">
       <h2>Summary report - home site view for invoice reference</h2>
-      <p class="sub" id="summaryReportSub">Per-guard totals for the month shown on the Roster tab</p>
+      <p class="sub" id="summaryReportSub">Per-guard totals for the month shown above</p>
       <div class="tablewrap" style="overflow-x:auto;">
         <table class="simple">
           <thead><tr>
@@ -1780,7 +1788,7 @@
   // textarea inside a .view, which also blocks keyboard activation (Tab+Enter/Space) and form
   // submission, not just pointer clicks. The same short exception list as the CSS keeps
   // navigation and the two Export to Excel buttons usable.
-  const READONLY_EXEMPT_IDS = new Set(["prevMonth", "nextMonth", "exportExcelBtn", "exportTimeAttendanceBtn"]);
+  const READONLY_EXEMPT_IDS = new Set(["prevMonth", "nextMonth", "prevMonthReport", "nextMonthReport", "exportExcelBtn", "exportTimeAttendanceBtn"]);
   function enforceReadonlyLockdown(){
     if(!state.isPayroll) return;
     $$(".view input, .view select, .view textarea, .view button").forEach(el => {
@@ -1798,6 +1806,8 @@
   function renderMonthNav(){
     const {y,m} = parseYM(state.currentMonth);
     $("#monthLabel").textContent = monthLabel(y,m);
+    const reportLabel = $("#monthLabelReport");
+    if(reportLabel) reportLabel.textContent = monthLabel(y,m);
   }
 
   function renderRosterStats(result){
@@ -2149,6 +2159,16 @@
     };
     let combinedKnown = false;
 
+    // Same per-rate breakdown as renderSummaryReport() — see that function's rateGroups comment.
+    const rateGroups = {};
+    function addToRateGroup(rate, hours){
+      if(rate == null) return;
+      const key = rate.toFixed(2);
+      if(!rateGroups[key]) rateGroups[key] = { rate, manHours:0, amount:0 };
+      rateGroups[key].manHours += n(hours);
+      rateGroups[key].amount += rate * n(hours);
+    }
+
     const rows = guards.map(g => {
       const s = summary[g.id] || {};
       totals.manHours += n(s.manHours); totals.normalDays += n(s.normalDays);
@@ -2168,6 +2188,7 @@
       // comment. Same figures the on-screen Summary Report shows (renderSummaryReport()).
       const rate = guardRate(g);
       const amount = rate != null ? rate * n(s.manHours) : null;
+      addToRateGroup(rate, s.manHours);
       totals.amount += n(amount);
       return [g.employeeId||"", g.name, n(s.manHours), n(s.normalDays), n(s.restDaysWorked), n(s.holidayDaysWorked),
         n(s.normalOTHours), n(s.restOTHours), n(s.holidayOTHours), n(s.mc), n(s.absent), n(s.leave), n(s.unpaidLeave), combinedCell,
@@ -2197,9 +2218,22 @@
         totals.manHours += n(s.manHours);
         const rate = supportGuardRate();
         const amount = rate != null ? rate * n(s.manHours) : null;
+        addToRateGroup(rate, s.manHours);
         totals.amount += n(amount);
         out.push([entry.employeeId||"", `${entry.name || "(unknown)"} (Support — ${entry.homeSiteName||"?"})`, n(s.manHours), "", "", "", "", "", "", "", "", "", "", "",
           rate != null ? rate : "", amount != null ? amount : ""]);
+      });
+    }
+
+    // Same "only when it actually says something" gate as renderSummaryReport() — a 'multiple'-
+    // mode project with 2+ distinct rates in play this month.
+    const rc = state.currentTenderRate;
+    const rateGroupKeys = Object.keys(rateGroups).sort((ka,kb) => rateGroups[ka].rate - rateGroups[kb].rate);
+    if(rc && rc.guardRateMode === "multiple" && rateGroupKeys.length > 1){
+      out.push(["", "Subtotal by rate", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+      rateGroupKeys.forEach(key => {
+        const grp = rateGroups[key];
+        out.push(["", `Subtotal — RM${grp.rate.toFixed(2)}/hr`, grp.manHours, "", "", "", "", "", "", "", "", "", "", "", grp.rate, grp.amount]);
       });
     }
 
@@ -2606,6 +2640,21 @@
     // total never looks complete when it silently isn't.
     let anyMissingRate = false;
 
+    // rate (as a "RM.CC" string key, to bucket floating-point-equal rates together) -> { rate,
+    // manHours, amount } — filled in below alongside the per-row totals. Only rendered (see
+    // rateGroupSection) for a 'multiple'-mode project with more than one rate actually in use
+    // this month, where a client invoice reads better broken out per rate than blended into one
+    // number; a 'same'-mode project only ever has the one rate, so the grand total already says
+    // everything a breakdown would.
+    const rateGroups = {};
+    function addToRateGroup(rate, hours){
+      if(rate == null) return;
+      const key = rate.toFixed(2);
+      if(!rateGroups[key]) rateGroups[key] = { rate, manHours:0, amount:0 };
+      rateGroups[key].manHours += n(hours);
+      rateGroups[key].amount += rate * n(hours);
+    }
+
     const permanentRows = guards.map(g => {
       const s = summary[g.id] || {};
       totals.manHours += n(s.manHours);
@@ -2622,6 +2671,7 @@
       const rate = guardRate(g);
       const amount = rate != null ? rate * n(s.manHours) : null;
       if(rate == null) anyMissingRate = true;
+      addToRateGroup(rate, s.manHours);
       totals.amount += n(amount);
       return `<tr>
         <td class="mono">${escapeHtml(g.employeeId || "—")}</td>
@@ -2676,6 +2726,7 @@
         const rate = supportGuardRate();
         const amount = rate != null ? rate * n(s.manHours) : null;
         if(rate == null) anyMissingRate = true;
+        addToRateGroup(rate, s.manHours);
         totals.amount += n(amount);
         return `<tr>
           <td class="mono">${escapeHtml(entry.employeeId || "—")}</td>
@@ -2684,6 +2735,27 @@
           ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
           <td class="mono">${rate != null ? rm(rate) : "—"}</td>
           <td class="mono">${amount != null ? rm(amount) : "—"}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    // Only a 'multiple'-mode project can have more than one rate in play; only show the
+    // breakdown when it actually would (2+ distinct rates this month) — with just one, it would
+    // just repeat the grand total below.
+    const rc = state.currentTenderRate;
+    const rateGroupKeys = Object.keys(rateGroups).sort((ka,kb) => rateGroups[ka].rate - rateGroups[kb].rate);
+    let rateGroupSection = "";
+    if(rc && rc.guardRateMode === "multiple" && rateGroupKeys.length > 1){
+      rateGroupSection += `<tr><td colspan="15" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Subtotal by rate</td></tr>`;
+      rateGroupSection += rateGroupKeys.map(key => {
+        const grp = rateGroups[key];
+        return `<tr>
+          <td></td>
+          <td>Subtotal — RM${rm(grp.rate)}/hr</td>
+          <td class="mono">${h(grp.manHours)}</td>
+          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
+          <td class="mono">${rm(grp.rate)}</td>
+          <td class="mono"><strong>${rm(grp.amount)}</strong></td>
         </tr>`;
       }).join("");
     }
@@ -2707,7 +2779,7 @@
     </tr>` : "";
 
     body.innerHTML = (guards.length || tempIds.length || supportIds.length)
-      ? permanentRows.join("") + tempSection + supportSection + totalsRow
+      ? permanentRows.join("") + tempSection + supportSection + rateGroupSection + totalsRow
       : `<tr><td colspan="15" class="empty">Add guards to see the summary report.</td></tr>`;
 
     const holidayCount = configHolidays(config).filter(d => d.slice(0,7) === state.currentMonth).length;
@@ -3978,20 +4050,21 @@
     });
   });
 
-  $("#prevMonth").addEventListener("click", () => {
+  // Shared by both sets of month-nav buttons — the original pair on the Roster tab, and the
+  // matching pair added to the Summary Report tab so reviewing an invoice doesn't require a
+  // detour through Roster to pick a different month. Both pairs drive the same
+  // state.currentMonth, so navigating from either tab moves both in lockstep.
+  function shiftMonth(delta){
     const {y,m} = parseYM(state.currentMonth);
-    const nx = addMonths(y,m,-1);
+    const nx = addMonths(y,m,delta);
     state.currentMonth = monthKey(nx.y, nx.m);
     loadMonthIfNeeded();
     render();
-  });
-  $("#nextMonth").addEventListener("click", () => {
-    const {y,m} = parseYM(state.currentMonth);
-    const nx = addMonths(y,m,1);
-    state.currentMonth = monthKey(nx.y, nx.m);
-    loadMonthIfNeeded();
-    render();
-  });
+  }
+  $("#prevMonth").addEventListener("click", () => shiftMonth(-1));
+  $("#nextMonth").addEventListener("click", () => shiftMonth(1));
+  $("#prevMonthReport").addEventListener("click", () => shiftMonth(-1));
+  $("#nextMonthReport").addEventListener("click", () => shiftMonth(1));
   $("#exportExcelBtn").addEventListener("click", exportCurrentMonthToExcel);
   $("#exportTimeAttendanceBtn").addEventListener("click", exportTimeAttendanceToExcel);
 
