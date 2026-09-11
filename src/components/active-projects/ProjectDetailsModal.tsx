@@ -6,6 +6,14 @@ interface Props {
   open: boolean;
   onClose: () => void;
   tender: Tender | null;
+  /**
+   * The tender's live Duty Roster active-guard count, when it has one (see
+   * useLiveGuardCountsByTender in hooks/useActiveProjects.ts) — undefined means no live site
+   * exists yet, so the manual field below still works as a plain typed-in number. When a live
+   * count IS present, guardsDeployed is roster-driven and the field becomes a read-only display
+   * instead, so nobody types a number here that the roster would just overwrite the meaning of.
+   */
+  liveGuardCount?: number;
 }
 
 /**
@@ -16,7 +24,7 @@ interface Props {
  * TenderFormModal — that one edits the sales record and is locked to the owner/admin; this one
  * edits only these four fields, which the Firestore rules allow more people to touch.
  */
-export default function ProjectDetailsModal({ open, onClose, tender }: Props) {
+export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCount }: Props) {
   const [location, setLocation] = useState('');
   const [contactPerson, setContactPerson] = useState('');
   const [guardsDeployed, setGuardsDeployed] = useState('');
@@ -39,8 +47,10 @@ export default function ProjectDetailsModal({ open, onClose, tender }: Props) {
     e.preventDefault();
     setError(null);
 
+    // Never overwrite a roster-driven count from this manual field — see the liveGuardCount
+    // prop doc comment above.
     let guards: number | undefined;
-    if (guardsDeployed.trim() !== '') {
+    if (liveGuardCount == null && guardsDeployed.trim() !== '') {
       guards = Number(guardsDeployed);
       if (!Number.isFinite(guards) || guards < 0) {
         setError('Enter a valid number of guards, or leave it blank.');
@@ -98,14 +108,23 @@ export default function ProjectDetailsModal({ open, onClose, tender }: Props) {
           </Field>
 
           <Field label="Security Guards Deployed">
-            <input
-              type="number"
-              min={0}
-              value={guardsDeployed}
-              onChange={(e) => setGuardsDeployed(e.target.value)}
-              className="input"
-              placeholder="0"
-            />
+            {liveGuardCount != null ? (
+              <div className="input bg-slate-50 text-slate-600 flex items-center justify-between gap-2">
+                <span className="font-medium">
+                  {liveGuardCount} guard{liveGuardCount === 1 ? '' : 's'}
+                </span>
+                <span className="text-[11px] text-slate-400 whitespace-nowrap">Synced from Duty Roster</span>
+              </div>
+            ) : (
+              <input
+                type="number"
+                min={0}
+                value={guardsDeployed}
+                onChange={(e) => setGuardsDeployed(e.target.value)}
+                className="input"
+                placeholder="0"
+              />
+            )}
           </Field>
 
           <Field label="Tender Document No.">

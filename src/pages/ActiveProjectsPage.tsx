@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useWonTenders } from '../hooks/useActiveProjects';
+import { useLiveGuardCountsByTender, useWonTenders } from '../hooks/useActiveProjects';
 import { useBranches } from '../hooks/useBranches';
 import {
   acceptReassignment,
@@ -80,8 +80,24 @@ function ContractStatusBadge({ contractEnd }: { contractEnd: string }) {
 
 export default function ActiveProjectsPage() {
   const { profile } = useAuth();
-  const { wonTenders, loading, seesAllBranches } = useWonTenders(profile);
+  const { wonTenders: rawWonTenders, loading, seesAllBranches } = useWonTenders(profile);
   const isBranchManager = profile?.role === 'branchManager';
+
+  // Overlays each tender's guardsDeployed with the Duty Roster site's own live active-guard
+  // count where one exists (see useLiveGuardCountsByTender's doc comment) — done once, up front,
+  // so every downstream computation below (totals, the per-row list, the brand breakdown, the
+  // race/bridge charts) automatically reflects the roster's real headcount without each of them
+  // needing to know about sites at all. A tender with no live site yet (or a closed-out one whose
+  // site was archived) keeps its manually-typed guardsDeployed untouched.
+  const liveGuardCounts = useLiveGuardCountsByTender(profile, seesAllBranches);
+  const wonTenders = useMemo(
+    () =>
+      rawWonTenders.map((t) => {
+        const liveCount = liveGuardCounts.get(t.id);
+        return liveCount === undefined ? t : { ...t, guardsDeployed: liveCount };
+      }),
+    [rawWonTenders, liveGuardCounts]
+  );
 
   // useWonTenders() merges in a second query for tenders pending reassignment TO this branch
   // (see its own doc comment) — activeBranch on those still points at the OLD branch, so they're
@@ -551,6 +567,7 @@ export default function ActiveProjectsPage() {
         open={detailsTender !== null}
         tender={detailsTender}
         onClose={() => setDetailsTender(null)}
+        liveGuardCount={detailsTender ? liveGuardCounts.get(detailsTender.id) : undefined}
       />
     </div>
   );
