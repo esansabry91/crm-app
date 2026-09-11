@@ -861,6 +861,14 @@
   // Defensive accessors: months/configs saved before these fields existed won't have them.
   function monthTempGuards(ms){ if(!ms.tempGuards) ms.tempGuards = {}; return ms.tempGuards; }
   function monthSupportGuards(ms){ if(!ms.supportGuards) ms.supportGuards = {}; return ms.supportGuards; }
+  // Support guard ids whose override slot still actually points at them this month — same
+  // orphan check already used by renderSupportGuardPanel() and supportGuardExportRows(), pulled
+  // out so the Summary Report (both the on-screen table and its export) can use it too instead
+  // of listing every record ever created for the month, including ones no longer assigned.
+  function activeSupportIds(ms){
+    const overrideValues = new Set(Object.values(ms.overrides || {}));
+    return Object.keys(monthSupportGuards(ms)).filter(id => overrideValues.has(id));
+  }
   function configHolidays(cfg){ if(!cfg.publicHolidays) cfg.publicHolidays = []; return cfg.publicHolidays; }
   function configStateHolidayDates(cfg){ if(!cfg.stateHolidayDates) cfg.stateHolidayDates = []; return cfg.stateHolidayDates; }
   // date ("YYYY-MM-DD") -> holiday name, for dates in configHolidays(cfg). Populated automatically
@@ -1821,7 +1829,7 @@
     const tempGuards = monthTempGuards(monthState);
     const tempIds = Object.keys(tempGuards);
     const supportGuards = monthSupportGuards(monthState);
-    const supportIds = Object.keys(supportGuards);
+    const supportIds = activeSupportIds(monthState);
     const n = v => v || 0;
     const header = ["Employee ID","Guard","Man-hours","Normal worked days","Worked rest days","Worked public holidays",
       "Normal OT (hrs)","Rest-day OT (hrs)","Public holiday OT (hrs)","MC","Absent","Leave","Unpaid leave",
@@ -2177,7 +2185,7 @@
     const tempGuards = monthTempGuards(monthState);
     const tempIds = Object.keys(tempGuards);
     const supportGuards = monthSupportGuards(monthState);
-    const supportIds = Object.keys(supportGuards);
+    const supportIds = activeSupportIds(monthState);
     const body = $("#summaryReportBody");
     if(!body) return;
 
