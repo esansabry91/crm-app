@@ -27,8 +27,9 @@ interface Props {
  * sales record and is locked to the owner/admin; this one edits only these fields, which the
  * Firestore rules allow more people to touch. Every field is required before Save will submit —
  * see handleSave — except Security Guards Deployed once it's roster-driven (see the
- * liveGuardCount prop doc comment) and the Guard Rate section, which is optional since a rate
- * may get finalized separately from the rest of a project's details.
+ * liveGuardCount prop doc comment), Tender Document No. (often not issued yet when these details
+ * are first filled in), and the Guard Rate section, which is optional since a rate may get
+ * finalized separately from the rest of a project's details.
  */
 export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCount }: Props) {
   const [location, setLocation] = useState('');
@@ -69,13 +70,13 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     e.preventDefault();
     setError(null);
 
-    // Every field on this form is required before it can be saved.
+    // Every field on this form is required before it can be saved, except Tender Document No.
+    // (often not issued yet) and the Guard Rate section below.
     if (!location.trim()) { setError('Location is required.'); return; }
     if (!stateName.trim()) { setError('State is required.'); return; }
     if (!city.trim()) { setError('City is required.'); return; }
     if (!postcode.trim()) { setError('Postcode is required.'); return; }
     if (!contactPerson.trim()) { setError('Contact Person is required.'); return; }
-    if (!tenderDocNumber.trim()) { setError('Tender Document No. is required.'); return; }
 
     // Never overwrite a roster-driven count from this manual field — see the liveGuardCount
     // prop doc comment above. When there's no live site, this is a plain required field like
