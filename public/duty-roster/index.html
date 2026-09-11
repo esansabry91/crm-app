@@ -551,6 +551,7 @@
             <div style="flex:1;"><label class="small">State <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardState" placeholder="e.g. Selangor"></div>
             <div style="flex:1;"><label class="small">City <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardCity" placeholder="e.g. Petaling Jaya"></div>
           </div>
+          <p class="sub" id="tempGuardMatchHint" hidden style="color:var(--accent);"></p>
           <button class="btn primary sm" id="assignTempBtn">Assign temporary guard</button>
           <p class="empty" id="tempSlotEmpty" hidden>No unfilled slots this month &mdash; nothing needs a temporary guard right now.</p>
           <table class="simple" style="margin-top:12px;">
@@ -4418,8 +4419,9 @@
     render();
   });
 
-  $("#tempGuardMykad").addEventListener("input", () => { $("#tempGuardMykad").value = formatMykadInput($("#tempGuardMykad").value); });
+  $("#tempGuardMykad").addEventListener("input", () => { $("#tempGuardMykad").value = formatMykadInput($("#tempGuardMykad").value); scheduleTempGuardMatchLookup(); });
   $("#tempGuardPhone").addEventListener("input", () => { $("#tempGuardPhone").value = formatPhoneInput($("#tempGuardPhone").value); });
+  $("#tempGuardName").addEventListener("input", scheduleTempGuardMatchLookup);
   $("#assignTempBtn").addEventListener("click", () => {
     const key = $("#tempSlotSelect").value;
     const name = $("#tempGuardName").value.trim();
@@ -4456,6 +4458,7 @@
     $("#tempGuardPhone").value = "";
     $("#tempGuardState").value = "";
     $("#tempGuardCity").value = "";
+    $("#tempGuardMatchHint").hidden = true;
     persistMonth();
     syncBufferGuardOnAssign(tg[tempId], state.currentSiteId);
     showToast(`Assigned ${name} to cover ${date}.`);
@@ -4953,6 +4956,44 @@
         }, {merge:true}).catch(()=>{});
       });
     });
+  }
+  // Live "have we used this person before?" lookup for the temp-guard form: fires (debounced)
+  // as the admin types the name/MyKad, matched the exact same way syncBufferGuardOnAssign()
+  // dedupes (name + mykadNumber, both exact) so the record shown here is guaranteed to be the
+  // one that assignment will actually update. On a match, Age/Phone/State/City are filled in
+  // from the buffer guard's last-known details (still editable — those can go stale) and a
+  // hint shows the rate they were paid last time. Rate itself is deliberately left untouched:
+  // it's per-shift and shouldn't silently inherit an old number.
+  let tempGuardMatchTimer = null;
+  function scheduleTempGuardMatchLookup(){
+    if(tempGuardMatchTimer) clearTimeout(tempGuardMatchTimer);
+    tempGuardMatchTimer = setTimeout(lookupBufferGuardForTempForm, 400);
+  }
+  function lookupBufferGuardForTempForm(){
+    const hint = $("#tempGuardMatchHint");
+    const name = $("#tempGuardName").value.trim();
+    const mykadNumber = $("#tempGuardMykad").value.trim();
+    if(!dbHandle || !name || !isValidMykad(mykadNumber)){ hint.hidden = true; return; }
+    dbHandle.collection("bufferGuards")
+      .where("name", "==", name)
+      .where("mykadNumber", "==", mykadNumber)
+      .limit(1).get()
+      .then(snap => {
+        // The admin may have kept typing while this was in flight — only apply it if the
+        // name/MyKad fields still match what this lookup was for.
+        if($("#tempGuardName").value.trim() !== name || $("#tempGuardMykad").value.trim() !== mykadNumber) return;
+        if(snap.empty){ hint.hidden = true; return; }
+        const bg = snap.docs[0].data() || {};
+        if(bg.age != null) $("#tempGuardAge").value = bg.age;
+        if(bg.phoneNumber) $("#tempGuardPhone").value = bg.phoneNumber;
+        if(bg.state) $("#tempGuardState").value = bg.state;
+        if(bg.city) $("#tempGuardCity").value = bg.city;
+        const timesUsed = bg.timesUsed || 0;
+        const lastRate = bg.rate != null ? `RM ${Number(bg.rate).toFixed(2)}` : "unknown";
+        hint.textContent = `Matched a buffer guard used ${timesUsed} time${timesUsed === 1 ? "" : "s"} before — last rate ${lastRate}. Age/Phone/State/City filled in from their last record; enter today's rate above.`;
+        hint.hidden = false;
+      })
+      .catch(() => { hint.hidden = true; });
   }
   // Fires whenever a temp/relief guard is assigned to cover a slot — recorded in bufferGuards
   // purely for future contact, deduped by name+MyKad, with NO linkage back to guards/sites.
