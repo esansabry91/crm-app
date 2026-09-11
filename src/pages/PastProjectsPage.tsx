@@ -78,7 +78,7 @@ export default function PastProjectsPage() {
           </div>
 
           <p className="text-xs text-slate-400 max-w-2xl">
-            These stay counted as Won revenue in Performance Analysis — closing out only moves a
+            These stay counted as Won revenue in Pipeline Analysis — closing out only moves a
             project out of the Active Projects view.
           </p>
 

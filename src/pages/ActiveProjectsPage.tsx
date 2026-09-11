@@ -266,7 +266,7 @@ export default function ActiveProjectsPage() {
     const confirmed = window.confirm(
       `Close out "${t.clientName}"?\n\n` +
         `It will move out of Active Projects and into Past Projects. Its value keeps counting in ` +
-        `Performance Analysis as Won revenue — this only affects the Active Projects view.`
+        `Pipeline Analysis as Won revenue — this only affects the Active Projects view.`
     );
     if (!confirmed) return;
     closeOutProject(t.id);

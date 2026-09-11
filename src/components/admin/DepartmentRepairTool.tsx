@@ -82,7 +82,7 @@ function FixRow({
  * match any real department (HQ or a branch currently in the Branches & Brands list). These
  * happen when a department was typed freehand (e.g. before this list was locked down) or a
  * branch was later renamed/removed while records still reference the old name. Left alone, they
- * show up as confusing extra "branches" in Performance Analysis and Active Projects.
+ * show up as confusing extra "branches" in Pipeline Analysis and Active Projects.
  */
 export default function DepartmentRepairTool() {
   const { profile } = useAuth();
@@ -120,7 +120,7 @@ export default function DepartmentRepairTool() {
         <p className="text-xs text-slate-400 mt-0.5">
           Finds team members or tenders whose department doesn't match a real branch or "HQ" —
           usually left over from a typo or a renamed branch. Left unfixed, these show up as
-          confusing duplicate bars in Performance Analysis and Active Projects.
+          confusing duplicate bars in Pipeline Analysis and Active Projects.
         </p>
       </div>
 

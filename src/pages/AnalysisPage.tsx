@@ -109,7 +109,7 @@ export default function AnalysisPage() {
     <div className="h-screen overflow-y-auto">
       <header className="px-6 py-5 border-b border-slate-200 bg-white flex items-center justify-between gap-4 flex-wrap sticky top-0 z-10">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Performance Analysis</h1>
+          <h1 className="text-lg font-semibold text-slate-900">Pipeline Analysis</h1>
           <p className="text-sm text-slate-500">
             {profile.role === 'admin' ? 'All branches · all staff' : 'Your tenders'}
           </p>

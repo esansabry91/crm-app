@@ -1,5 +1,5 @@
 // Reference palette from the dataviz skill (validated categorical order + status colors).
-// Used as-is (unmodified) across every chart in the Performance Analysis page.
+// Used as-is (unmodified) across every chart in the Pipeline Analysis page.
 
 export const VIZ = {
   categorical: {

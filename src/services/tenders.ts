@@ -345,7 +345,7 @@ export async function updateActiveProjectDetails(
  * Closes out an Active Project once its work is actually finished (typically once the contract
  * has ended, but nothing stops closing it out early). Deliberately mirrors `setActiveBranch` /
  * `updateActiveProjectDetails`: no history entry, because `stage` and `tenderValue` are untouched
- * — the tender keeps counting as Won revenue forever in Performance Analysis, staff performance,
+ * — the tender keeps counting as Won revenue forever in Pipeline Analysis, staff performance,
  * brand breakdown, and the sales race charts. It just moves out of Active Projects (and its value
  * totals / breakdowns) and into Past Projects.
  */

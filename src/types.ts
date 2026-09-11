@@ -3,7 +3,7 @@
 /**
  * 'dutyStaff' is a separate, narrower role from 'branchManager' — a "Staff" account can ONLY
  * reach the Duty Roster tab (see hideFromStaff in ProtectedRoute/App.tsx and the nav gating in
- * AppLayout); it has no access to Pipeline, Performance Analysis, Active/Past Projects, or
+ * AppLayout); it has no access to Pipeline, Pipeline Analysis, Active/Past Projects, or
  * Admin Settings. Deliberately NOT called 'staff' — that string is still in flight as the
  * legacy value some old 'branchManager' accounts haven't been migrated off yet (see the
  * migration banner in UserManager.tsx); reusing it here would make the two unrelated meanings

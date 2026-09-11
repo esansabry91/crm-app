@@ -1,8 +1,8 @@
 import {
+  Area,
+  AreaChart,
   CartesianGrid,
   Legend,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -23,7 +23,7 @@ export default function PipelineTrendChart({ data }: { data: TrendPoint[] }) {
 
   return (
     <ResponsiveContainer width="100%" height={280}>
-      <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+      <AreaChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
         <CartesianGrid stroke={VIZ.chrome.gridline} vertical={false} />
         <XAxis
           dataKey="date"
@@ -44,25 +44,29 @@ export default function PipelineTrendChart({ data }: { data: TrendPoint[] }) {
           contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: VIZ.chrome.gridline }}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Line
+        <Area
           type="monotone"
           dataKey="openValue"
           name="Open pipeline value"
           stroke={VIZ.categorical.blue}
           strokeWidth={2}
+          fill={VIZ.categorical.blue}
+          fillOpacity={0.12}
           dot={false}
           activeDot={{ r: 4 }}
         />
-        <Line
+        <Area
           type="monotone"
           dataKey="wonValue"
           name="Won value"
           stroke={VIZ.status.good}
           strokeWidth={2}
+          fill={VIZ.status.good}
+          fillOpacity={0.12}
           dot={false}
           activeDot={{ r: 4 }}
         />
-      </LineChart>
+      </AreaChart>
     </ResponsiveContainer>
   );
 }

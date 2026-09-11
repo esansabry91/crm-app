@@ -34,10 +34,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <span aria-hidden>🗂️</span> Pipeline
               </NavLink>
               <NavLink to="/analysis" className={navItemClass}>
-                <span aria-hidden>📊</span> Performance Analysis
+                <span aria-hidden>📊</span> Pipeline Analysis
               </NavLink>
               <NavLink to="/active-projects" className={navItemClass}>
                 <span aria-hidden>🏗️</span> Active Projects
+              </NavLink>
+              <NavLink to="/duty-roster" className={navItemClass}>
+                <span aria-hidden>🗓️</span> Duty Roster
               </NavLink>
               <NavLink to="/past-projects" className={navItemClass}>
                 <span aria-hidden>📦</span> Past Projects
@@ -47,9 +50,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </NavLink>
             </>
           )}
-          <NavLink to="/duty-roster" className={navItemClass}>
-            <span aria-hidden>🗓️</span> Duty Roster
-          </NavLink>
+          {(profile?.role === 'dutyStaff' || profile?.role === 'payroll') && (
+            <NavLink to="/duty-roster" className={navItemClass}>
+              <span aria-hidden>🗓️</span> Duty Roster
+            </NavLink>
+          )}
           {profile?.role === 'admin' && (
             <NavLink to="/admin" className={navItemClass}>
               <span aria-hidden>⚙️</span> Admin Settings
