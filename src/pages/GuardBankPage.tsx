@@ -259,7 +259,12 @@ export default function GuardBankPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
+          <StatCard
+            label="Total permanent hired"
+            value={String(poolGuards.length + deployedGuards.length)}
+            sub="Unassigned + Deployed"
+          />
           <StatCard label="Unassigned guards" value={String(poolGuards.length)} sub="Guard Pool" />
           <StatCard label="Dismissed guards" value={String(dismissedGuards.length)} />
           <StatCard label="Buffer guards" value={String(bufferGuards.length)} />
