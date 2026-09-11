@@ -4839,6 +4839,16 @@
       .then(snap => snap.empty ? null : snap.docs[0])
       .catch(() => null);
   }
+  // Best-effort lookup of a tender's client brand, so a deployed/dismissed guard's Guard Bank
+  // record can be filtered by brand (see Guard.brandId/brandName's doc comment in
+  // src/types.ts). A site with no linked tender, or a caller without read access to it, just
+  // gets nulls back — this never blocks the guard sync it's part of.
+  function guardBankResolveBrand(tenderId){
+    if(!dbHandle || !tenderId) return Promise.resolve({brandId:null, brandName:null});
+    return dbHandle.doc("tenders/"+tenderId).get()
+      .then(snap => snap.exists ? {brandId: snap.data().brandId || null, brandName: snap.data().brandName || null} : {brandId:null, brandName:null})
+      .catch(() => ({brandId:null, brandName:null}));
+  }
   function guardBankIdentityFields(g){
     const out = {
       name: g.name, employeeId: g.employeeId || "", category: g.category || "local",
@@ -4863,18 +4873,20 @@
     if(!dbHandle || !g.employeeId) return;
     const site = state.sites.find(s => s.id === state.currentSiteId) || {};
     const now = Date.now();
-    guardBankMatchByEmployeeId(g.employeeId).then(existingDoc => {
-      const payload = Object.assign(guardBankIdentityFields(g), {
-        status: "deployed", siteId: state.currentSiteId, siteName: site.name || null,
-        branch: site.branch || null, dismissalReason: null, dismissedAt: null, updatedAt: now
+    Promise.all([guardBankMatchByEmployeeId(g.employeeId), guardBankResolveBrand(site.tenderId)])
+      .then(([existingDoc, brand]) => {
+        const payload = Object.assign(guardBankIdentityFields(g), {
+          status: "deployed", siteId: state.currentSiteId, siteName: site.name || null,
+          branch: site.branch || null, brandId: brand.brandId, brandName: brand.brandName,
+          dismissalReason: null, dismissedAt: null, updatedAt: now
+        });
+        if(existingDoc){
+          existingDoc.ref.set(payload, {merge:true}).catch(()=>{});
+        } else {
+          payload.createdAt = now;
+          dbHandle.collection("guards").add(payload).catch(()=>{});
+        }
       });
-      if(existingDoc){
-        existingDoc.ref.set(payload, {merge:true}).catch(()=>{});
-      } else {
-        payload.createdAt = now;
-        dbHandle.collection("guards").add(payload).catch(()=>{});
-      }
-    });
   }
   // Fires from the Dismiss modal — the ONLY place a guard's Guard Bank status ever becomes
   // "dismissed" (Guard Bank itself has no dismiss action of its own).
@@ -4888,12 +4900,14 @@
         // Guard predates Guard Bank — create the record now so the dismissal still shows up
         // there instead of silently going untracked.
         const site = state.sites.find(s => s.id === state.currentSiteId) || {};
-        const payload = Object.assign(guardBankIdentityFields(g), {
-          status: "dismissed", siteId: state.currentSiteId, siteName: site.name || null,
-          branch: site.branch || null, dismissalReason: reason, dismissedAt: now,
-          createdAt: now, updatedAt: now
+        guardBankResolveBrand(site.tenderId).then(brand => {
+          const payload = Object.assign(guardBankIdentityFields(g), {
+            status: "dismissed", siteId: state.currentSiteId, siteName: site.name || null,
+            branch: site.branch || null, brandId: brand.brandId, brandName: brand.brandName,
+            dismissalReason: reason, dismissedAt: now, createdAt: now, updatedAt: now
+          });
+          dbHandle.collection("guards").add(payload).catch(()=>{});
         });
-        dbHandle.collection("guards").add(payload).catch(()=>{});
       }
     });
   }
@@ -4904,10 +4918,13 @@
     guardBankMatchByEmployeeId(g.employeeId).then(existingDoc => {
       if(!existingDoc) return;
       const site = state.sites.find(s => s.id === state.currentSiteId) || {};
-      existingDoc.ref.set({
-        status:"deployed", siteId: state.currentSiteId, siteName: site.name || null,
-        branch: site.branch || null, dismissalReason: null, dismissedAt: null, updatedAt: now
-      }, {merge:true}).catch(()=>{});
+      guardBankResolveBrand(site.tenderId).then(brand => {
+        existingDoc.ref.set({
+          status:"deployed", siteId: state.currentSiteId, siteName: site.name || null,
+          branch: site.branch || null, brandId: brand.brandId, brandName: brand.brandName,
+          dismissalReason: null, dismissedAt: null, updatedAt: now
+        }, {merge:true}).catch(()=>{});
+      });
     });
   }
   // Fires whenever a temp/relief guard is assigned to cover a slot — recorded in bufferGuards

@@ -66,12 +66,23 @@ export function useSitesForPicker() {
       (snap) => {
         const list = snap.docs
           .map((d) => {
-            const data = d.data() as { name?: string; branch?: string | null; archived?: boolean };
-            return { id: d.id, name: data.name || 'Untitled site', branch: data.branch ?? null, archived: !!data.archived };
+            const data = d.data() as {
+              name?: string;
+              branch?: string | null;
+              tenderId?: string | null;
+              archived?: boolean;
+            };
+            return {
+              id: d.id,
+              name: data.name || 'Untitled site',
+              branch: data.branch ?? null,
+              tenderId: data.tenderId ?? null,
+              archived: !!data.archived,
+            };
           })
           .filter((s) => !s.archived)
           .sort((a, b) => a.name.localeCompare(b.name));
-        setSites(list.map(({ id, name, branch }) => ({ id, name, branch })));
+        setSites(list.map(({ id, name, branch, tenderId }) => ({ id, name, branch, tenderId })));
         setLoading(false);
       },
       (err) => {

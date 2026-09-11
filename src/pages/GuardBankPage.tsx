@@ -4,6 +4,7 @@ import StatCard from '../components/analytics/StatCard';
 import RegisterGuardModal from '../components/guard-bank/RegisterGuardModal';
 import AssignGuardModal from '../components/guard-bank/AssignGuardModal';
 import { useAuth } from '../contexts/AuthContext';
+import { useBranches } from '../hooks/useBranches';
 import { useGuards, useBufferGuards, useSitesForPicker } from '../hooks/useGuards';
 import {
   backfillGuardsFromDutyRoster,
@@ -17,6 +18,15 @@ import type { BufferGuard, Guard } from '../types';
 
 const TABS = ['Guard Pool', 'Deployed Guards', 'Dismissed Guards', 'Buffer Guards'] as const;
 type Tab = (typeof TABS)[number];
+
+const ALL = '__all__';
+const UNASSIGNED_BRANCH = '__unassigned__';
+type CategoryFilter = 'all' | 'local' | 'nepal';
+const CATEGORY_OPTIONS: { value: CategoryFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'local', label: 'Local' },
+  { value: 'nepal', label: 'Nepal' },
+];
 
 function CategoryPill({ category }: { category: Guard['category'] }) {
   return (
@@ -41,6 +51,7 @@ export default function GuardBankPage() {
   const { guards, loading: guardsLoading } = useGuards();
   const { bufferGuards, loading: bufferLoading } = useBufferGuards();
   const { sites } = useSitesForPicker();
+  const { branches } = useBranches();
 
   const [tab, setTab] = useState<Tab>('Guard Pool');
   const [toast, setToast] = useState<string | null>(null);
@@ -50,6 +61,12 @@ export default function GuardBankPage() {
   const [editPhone, setEditPhone] = useState('');
   const [backfilling, setBackfilling] = useState(false);
 
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
+  const [branchFilter, setBranchFilter] = useState(ALL);
+  const [stateFilter, setStateFilter] = useState(ALL);
+  const [cityFilter, setCityFilter] = useState(ALL);
+  const [brandFilter, setBrandFilter] = useState(ALL);
+
   const poolGuards = useMemo(() => guards.filter((g) => g.status === 'pool'), [guards]);
   const deployedGuards = useMemo(() => guards.filter((g) => g.status === 'deployed'), [guards]);
   const dismissedGuards = useMemo(
@@ -58,6 +75,56 @@ export default function GuardBankPage() {
   );
   const permitSoon = useMemo(() => guardsWithPermitExpiringSoon(guards), [guards]);
   const turnover = useMemo(() => computeGuardTurnover(guards), [guards]);
+
+  // Category/brand only exist on `guards` (Buffer Guards has neither), so the Buffer Guards tab
+  // only ever honors the branch/state/city filters below — see the disabled Category/Brand
+  // controls in the filter bar when that tab is active.
+  const stateOptions = useMemo(() => {
+    const set = new Set<string>();
+    guards.forEach((g) => g.state && set.add(g.state));
+    bufferGuards.forEach((bg) => bg.state && set.add(bg.state));
+    return Array.from(set).sort();
+  }, [guards, bufferGuards]);
+  const cityOptions = useMemo(() => {
+    const set = new Set<string>();
+    guards.forEach((g) => g.city && set.add(g.city));
+    bufferGuards.forEach((bg) => bg.city && set.add(bg.city));
+    return Array.from(set).sort();
+  }, [guards, bufferGuards]);
+  const brandOptions = useMemo(() => {
+    const set = new Set<string>();
+    guards.forEach((g) => g.brandName && set.add(g.brandName));
+    return Array.from(set).sort();
+  }, [guards]);
+
+  const branchMatches = (branch: string | null | undefined) => {
+    if (branchFilter === ALL) return true;
+    if (branchFilter === UNASSIGNED_BRANCH) return !branch;
+    return branch === branchFilter;
+  };
+  const guardMatchesFilters = (g: Guard) =>
+    (categoryFilter === 'all' || g.category === categoryFilter) &&
+    branchMatches(g.branch) &&
+    (stateFilter === ALL || g.state === stateFilter) &&
+    (cityFilter === ALL || g.city === cityFilter) &&
+    (brandFilter === ALL || g.brandName === brandFilter);
+  const bufferMatchesFilters = (bg: BufferGuard) =>
+    branchMatches(bg.lastBranch) && (stateFilter === ALL || bg.state === stateFilter) && (cityFilter === ALL || bg.city === cityFilter);
+
+  const filteredPool = useMemo(() => poolGuards.filter(guardMatchesFilters), [poolGuards, categoryFilter, branchFilter, stateFilter, cityFilter, brandFilter]);
+  const filteredDeployed = useMemo(() => deployedGuards.filter(guardMatchesFilters), [deployedGuards, categoryFilter, branchFilter, stateFilter, cityFilter, brandFilter]);
+  const filteredDismissed = useMemo(() => dismissedGuards.filter(guardMatchesFilters), [dismissedGuards, categoryFilter, branchFilter, stateFilter, cityFilter, brandFilter]);
+  const filteredBuffer = useMemo(() => bufferGuards.filter(bufferMatchesFilters), [bufferGuards, branchFilter, stateFilter, cityFilter]);
+
+  const filtersActive =
+    categoryFilter !== 'all' || branchFilter !== ALL || stateFilter !== ALL || cityFilter !== ALL || brandFilter !== ALL;
+  function clearFilters() {
+    setCategoryFilter('all');
+    setBranchFilter(ALL);
+    setStateFilter(ALL);
+    setCityFilter(ALL);
+    setBrandFilter(ALL);
+  }
 
   function flash(message: string) {
     setToast(message);
@@ -139,14 +206,14 @@ export default function GuardBankPage() {
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-4">
           <StatCard label="Unassigned guards" value={String(poolGuards.length)} sub="Guard Pool" />
+          <StatCard label="Dismissed guards" value={String(dismissedGuards.length)} />
+          <StatCard label="Buffer guards" value={String(bufferGuards.length)} />
           <StatCard
             label="Permit expiring ≤ 2 months"
             value={String(permitSoon.length)}
             sub="Nepal category"
             accent={permitSoon.length > 0 ? VIZ.status.warning : undefined}
           />
-          <StatCard label="Dismissed guards" value={String(dismissedGuards.length)} />
-          <StatCard label="Buffer guards" value={String(bufferGuards.length)} />
           <StatCard
             label="Turnover rate (12mo)"
             value={`${turnover.rate.toFixed(1)}%`}
@@ -180,6 +247,86 @@ export default function GuardBankPage() {
             </button>
           ))}
         </div>
+
+        <div className="flex items-center gap-2 mt-3 flex-wrap">
+          <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden shrink-0">
+            {CATEGORY_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                disabled={tab === 'Buffer Guards'}
+                onClick={() => setCategoryFilter(opt.value)}
+                className={clsx(
+                  'px-3 py-1.5 text-xs font-medium transition disabled:opacity-40 disabled:cursor-not-allowed',
+                  categoryFilter === opt.value && tab !== 'Buffer Guards'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-slate-500 hover:bg-slate-50'
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <select
+            className="text-xs rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 bg-white"
+            value={branchFilter}
+            onChange={(e) => setBranchFilter(e.target.value)}
+          >
+            <option value={ALL}>All branches</option>
+            <option value={UNASSIGNED_BRANCH}>Unassigned</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.name}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="text-xs rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 bg-white"
+            value={stateFilter}
+            onChange={(e) => setStateFilter(e.target.value)}
+          >
+            <option value={ALL}>All states</option>
+            {stateOptions.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="text-xs rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 bg-white"
+            value={cityFilter}
+            onChange={(e) => setCityFilter(e.target.value)}
+          >
+            <option value={ALL}>All cities</option>
+            {cityOptions.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+
+          <select
+            disabled={tab === 'Buffer Guards'}
+            className="text-xs rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 bg-white disabled:opacity-40 disabled:cursor-not-allowed"
+            value={brandFilter}
+            onChange={(e) => setBrandFilter(e.target.value)}
+          >
+            <option value={ALL}>All brands</option>
+            {brandOptions.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+
+          {filtersActive && (
+            <button onClick={clearFilters} className="text-xs font-medium text-slate-400 hover:text-slate-600 underline">
+              Clear filters
+            </button>
+          )}
+        </div>
       </header>
 
       {toast && (
@@ -190,10 +337,11 @@ export default function GuardBankPage() {
         {loading ? (
           <p className="text-sm text-slate-400">Loading…</p>
         ) : tab === 'Guard Pool' ? (
-          poolGuards.length === 0 ? (
+          filteredPool.length === 0 ? (
             <p className="text-sm text-slate-400">
-              No unassigned guards. New batches get registered here first, via "+ Register guard" above, or
-              automatically whenever Duty Roster adds a guard whose Employee ID isn't in Guard Bank yet.
+              {poolGuards.length === 0
+                ? 'No unassigned guards. New batches get registered here first, via "+ Register guard" above, or automatically whenever Duty Roster adds a guard whose Employee ID isn\'t in Guard Bank yet.'
+                : 'No unassigned guards match these filters.'}
             </p>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
@@ -209,7 +357,7 @@ export default function GuardBankPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {poolGuards.map((g) => (
+                  {filteredPool.map((g) => (
                     <tr key={g.id} className="border-b border-slate-50 last:border-0">
                       <td className="px-4 py-2.5 font-medium text-slate-800">{g.name}</td>
                       <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{g.employeeId}</td>
@@ -233,8 +381,10 @@ export default function GuardBankPage() {
             </div>
           )
         ) : tab === 'Deployed Guards' ? (
-          deployedGuards.length === 0 ? (
-            <p className="text-sm text-slate-400">No guards currently deployed.</p>
+          filteredDeployed.length === 0 ? (
+            <p className="text-sm text-slate-400">
+              {deployedGuards.length === 0 ? 'No guards currently deployed.' : 'No deployed guards match these filters.'}
+            </p>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
               <table className="w-full text-sm">
@@ -245,11 +395,12 @@ export default function GuardBankPage() {
                     <th className="px-4 py-2.5">Category</th>
                     <th className="px-4 py-2.5">Site</th>
                     <th className="px-4 py-2.5">Branch</th>
+                    <th className="px-4 py-2.5">Brand</th>
                     <th className="px-4 py-2.5">Permit expiry</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {deployedGuards.map((g) => (
+                  {filteredDeployed.map((g) => (
                     <tr key={g.id} className="border-b border-slate-50 last:border-0">
                       <td className="px-4 py-2.5 font-medium text-slate-800">{g.name}</td>
                       <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{g.employeeId}</td>
@@ -258,6 +409,7 @@ export default function GuardBankPage() {
                       </td>
                       <td className="px-4 py-2.5 text-slate-600">{g.siteName || '-'}</td>
                       <td className="px-4 py-2.5 text-slate-500">{g.branch || 'Unassigned'}</td>
+                      <td className="px-4 py-2.5 text-slate-500">{g.brandName || '-'}</td>
                       <td className="px-4 py-2.5">
                         {g.category === 'nepal' && g.permitExpiryDate ? (
                           <span
@@ -280,8 +432,10 @@ export default function GuardBankPage() {
             </div>
           )
         ) : tab === 'Dismissed Guards' ? (
-          dismissedGuards.length === 0 ? (
-            <p className="text-sm text-slate-400">No dismissed guards.</p>
+          filteredDismissed.length === 0 ? (
+            <p className="text-sm text-slate-400">
+              {dismissedGuards.length === 0 ? 'No dismissed guards.' : 'No dismissed guards match these filters.'}
+            </p>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
               <table className="w-full text-sm">
@@ -290,16 +444,18 @@ export default function GuardBankPage() {
                     <th className="px-4 py-2.5">Name</th>
                     <th className="px-4 py-2.5">Employee ID</th>
                     <th className="px-4 py-2.5">Last site</th>
+                    <th className="px-4 py-2.5">Brand</th>
                     <th className="px-4 py-2.5">Reason</th>
                     <th className="px-4 py-2.5">Dismissed</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {dismissedGuards.map((g) => (
+                  {filteredDismissed.map((g) => (
                     <tr key={g.id} className="border-b border-slate-50 last:border-0">
                       <td className="px-4 py-2.5 font-medium text-slate-800">{g.name}</td>
                       <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{g.employeeId}</td>
                       <td className="px-4 py-2.5 text-slate-500">{g.siteName || '-'}</td>
+                      <td className="px-4 py-2.5 text-slate-500">{g.brandName || '-'}</td>
                       <td className="px-4 py-2.5">
                         <span
                           className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
@@ -315,10 +471,11 @@ export default function GuardBankPage() {
               </table>
             </div>
           )
-        ) : bufferGuards.length === 0 ? (
+        ) : filteredBuffer.length === 0 ? (
           <p className="text-sm text-slate-400">
-            No buffer guards yet — they're recorded automatically whenever Duty Roster assigns a temporary
-            guard to cover a shift.
+            {bufferGuards.length === 0
+              ? "No buffer guards yet — they're recorded automatically whenever Duty Roster assigns a temporary guard to cover a shift."
+              : 'No buffer guards match these filters.'}
           </p>
         ) : (
           <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
@@ -335,7 +492,7 @@ export default function GuardBankPage() {
                 </tr>
               </thead>
               <tbody>
-                {bufferGuards
+                {filteredBuffer
                   .slice()
                   .sort((a, b) => b.lastUsedAt - a.lastUsedAt)
                   .map((bg: BufferGuard) => (

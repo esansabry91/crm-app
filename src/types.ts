@@ -194,6 +194,17 @@ export interface Guard {
   siteId?: string;
   siteName?: string;
   branch?: string | null;
+  /**
+   * The client brand this guard is deployed under — resolved from the deployed site's linked
+   * tender (site.tenderId -> Tender.brandId/brandName) at sync/assign time and denormalized here,
+   * the same way Tender itself denormalizes brandName. Best-effort: a site with no linked tender,
+   * or a sync that can't read that tender (see firestore.rules' tender read scoping), leaves
+   * these unset rather than blocking the rest of the sync. Kept (not cleared) once a guard is
+   * dismissed, same as siteId/siteName/branch, so the Dismissed tab can still be filtered by the
+   * brand they last worked under.
+   */
+  brandId?: string | null;
+  brandName?: string | null;
   /** Set once status is 'dismissed'; cleared again if Duty Roster reactivates the guard. */
   dismissalReason?: DismissalReason;
   dismissedAt?: number;

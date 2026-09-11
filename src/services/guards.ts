@@ -3,6 +3,7 @@ import {
   arrayUnion,
   collection,
   doc,
+  getDoc,
   getDocs,
   limit,
   query,
@@ -35,6 +36,9 @@ export interface SitePickerOption {
   id: string;
   name: string;
   branch: string | null;
+  /** The tender this site is linked to, if any — used to resolve which client brand a guard
+   *  deployed here should be filed under (see resolveBrandForTender()). */
+  tenderId: string | null;
 }
 
 function guardsCollection() {
@@ -45,6 +49,24 @@ function guardsCollection() {
 async function findByEmployeeId(employeeId: string) {
   const snap = await getDocs(query(guardsCollection(), where('employeeId', '==', employeeId), limit(1)));
   return snap.empty ? null : { id: snap.docs[0].id, ...(snap.docs[0].data() as Omit<Guard, 'id'>) };
+}
+
+/**
+ * Best-effort lookup of a tender's client brand, for denormalizing onto a deployed guard (see
+ * Guard.brandId/brandName's doc comment in types.ts). Swallows its own errors — a caller without
+ * read access to this particular tender (firestore.rules scopes tender reads by ownership/
+ * department/stage) just gets nulls back rather than the whole assign/sync failing.
+ */
+async function resolveBrandForTender(tenderId: string | null | undefined): Promise<{ brandId: string | null; brandName: string | null }> {
+  if (!tenderId) return { brandId: null, brandName: null };
+  try {
+    const snap = await getDoc(doc(db, 'tenders', tenderId));
+    if (!snap.exists()) return { brandId: null, brandName: null };
+    const data = snap.data() as { brandId?: string; brandName?: string };
+    return { brandId: data.brandId ?? null, brandName: data.brandName ?? null };
+  } catch {
+    return { brandId: null, brandName: null };
+  }
 }
 
 /**
@@ -76,6 +98,8 @@ export async function registerGuard(input: GuardIdentityInput): Promise<string> 
     siteId: null,
     siteName: null,
     branch: null,
+    brandId: null,
+    brandName: null,
     dismissalReason: null,
     dismissedAt: null,
     createdAt: now,
@@ -92,6 +116,7 @@ export async function registerGuard(input: GuardIdentityInput): Promise<string> 
  * inside index.html itself — see the doc comment above the `guards` collection in firestore.rules.
  */
 export async function assignGuardToSite(guard: Guard, site: SitePickerOption): Promise<void> {
+  const brand = await resolveBrandForTender(site.tenderId);
   const rosterGuard: Record<string, unknown> = {
     id: `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
     name: guard.name,
@@ -122,6 +147,8 @@ export async function assignGuardToSite(guard: Guard, site: SitePickerOption): P
     siteId: site.id,
     siteName: site.name,
     branch: site.branch,
+    brandId: brand.brandId,
+    brandName: brand.brandName,
     dismissalReason: null,
     dismissedAt: null,
     updatedAt: Date.now(),
@@ -213,9 +240,25 @@ export async function backfillGuardsFromDutyRoster(): Promise<BackfillResult> {
   };
   const now = Date.now();
 
+  // One tender lookup per SITE (not per guard) — every guard at the same site shares the same
+  // brand, so this avoids re-reading the same tender doc once per guard on a busy site.
+  const brandCache = new Map<string, { brandId: string | null; brandName: string | null }>();
+
   for (const siteDoc of sitesSnap.docs) {
-    const site = siteDoc.data() as { name?: string; branch?: string | null; guards?: Record<string, unknown>[] };
+    const site = siteDoc.data() as {
+      name?: string;
+      branch?: string | null;
+      tenderId?: string | null;
+      guards?: Record<string, unknown>[];
+    };
     const rosterGuards = Array.isArray(site.guards) ? site.guards : [];
+    if (rosterGuards.length === 0) continue;
+
+    if (!brandCache.has(siteDoc.id)) {
+      brandCache.set(siteDoc.id, await resolveBrandForTender(site.tenderId));
+    }
+    const brand = brandCache.get(siteDoc.id)!;
+
     for (const g of rosterGuards) {
       result.guardsScanned += 1;
       const employeeId = typeof g.employeeId === 'string' ? g.employeeId : '';
@@ -240,6 +283,8 @@ export async function backfillGuardsFromDutyRoster(): Promise<BackfillResult> {
         siteId: siteDoc.id,
         siteName: site.name || null,
         branch: site.branch ?? null,
+        brandId: brand.brandId,
+        brandName: brand.brandName,
         updatedAt: now,
       };
       // Neither branch knows a real reason/date (see the doc comment above), so both leave
