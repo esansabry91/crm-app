@@ -329,6 +329,9 @@ export async function updateActiveProjectDetails(
     contactPerson: string;
     guardsDeployed: number;
     tenderDocNumber: string;
+    guardRateMode: 'same' | 'multiple';
+    guardRate: number;
+    guardRatePositions: { name: string; rate: number }[];
   }>
 ) {
   const data: Record<string, unknown> = { updatedAt: Date.now() };

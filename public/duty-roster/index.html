@@ -637,6 +637,8 @@
             <th>Absent</th>
             <th>Leave</th>
             <th>Unpaid leave</th>
+            <th>Rate (RM/manhour)</th>
+            <th>Amount (RM)</th>
           </tr></thead>
           <tbody id="summaryReportBody"></tbody>
         </table>
@@ -1141,6 +1143,11 @@
     combinedHoursCache: {},
     myUid: null,            // this signed-in user's auth uid — recorded on a Combined Hours confirmation
     myName: null,           // this signed-in user's display name — shown on a Combined Hours confirmation
+    // The linked tender's guard-rate config for whichever site is currently on screen — null
+    // when that site has no tenderId, the tender doc doesn't exist, or nothing's been configured
+    // there yet. Kept live via subscribeTenderRate() (never snapshotted onto a guard), per this
+    // feature's own design: {guardRateMode:'same'|'multiple', guardRate, guardRatePositions}.
+    currentTenderRate: null,
     // True only while the Confirm/Unconfirm click itself is persisting state.confirmed — every
     // other persistMonthByKey()/persistSiteConfig() call leaves this false, so an ordinary
     // roster/config edit still auto-revokes a confirmation the normal way. See
@@ -1573,6 +1580,10 @@
   function openAddGuardModal(){
     const root = $("#modalRoot");
     let category = "local";
+    // Captured once at open-time — the linked tender's position list, when this project bills
+    // per position (see ratePositionNames()). A 'same'-rate or not-yet-configured project shows
+    // no Position field at all, same as every other optional field here degrading gracefully.
+    const posNames = ratePositionNames();
     root.innerHTML = `
       <div class="modalveil" id="modalVeil">
         <div class="modalcard wide">
@@ -1602,6 +1613,14 @@
             <label class="small">City</label>
             <input type="text" id="newGuardCity" placeholder="e.g. Petaling Jaya">
           </div>
+          ${posNames.length ? `
+          <div style="margin-bottom:10px;">
+            <label class="small">Position</label>
+            <select id="newGuardPosition">
+              <option value="">Select a position…</option>
+              ${posNames.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("")}
+            </select>
+          </div>` : ``}
           <div style="margin-bottom:10px;">
             <label class="small">Age</label>
             <input type="number" id="newGuardAge" min="16" max="80" step="1">
@@ -1633,13 +1652,16 @@
       const cityVal = $("#newGuardCity").value.trim();
       const ageRaw = $("#newGuardAge").value;
       const age = Number(ageRaw);
+      const position = posNames.length ? $("#newGuardPosition").value : "";
       if(!employeeId){ showErr("Employee ID is required."); return; }
       if(!name){ showErr("Full name is required."); return; }
       if(!stateVal){ showErr("State is required."); return; }
       if(!cityVal){ showErr("City is required."); return; }
+      if(posNames.length && !position){ showErr("Pick a position."); return; }
       if(ageRaw.trim() === "" || !Number.isFinite(age) || age <= 0){ showErr("Enter a valid age."); return; }
 
       const guard = { id:newId("g"), name, employeeId, active:true, inactiveFrom:null, category, age, state: stateVal, city: cityVal };
+      if(position) guard.position = position;
       if(category === "nepal"){
         const passportNumber = $("#newGuardPassport").value.trim();
         const permitExpiryDate = $("#newGuardPermitExpiry").value;
@@ -1693,6 +1715,11 @@
     }
     rows.push(["State", g.state || "Not set"]);
     rows.push(["City", g.city || "Not set"]);
+    if(g.position) rows.push(["Position", g.position]);
+    // Resolved live off the linked project's current rate config, never something stored on the
+    // guard — see guardRate()'s own doc comment.
+    const liveRate = guardRate(g);
+    rows.push(["Rate (RM/manhour)", liveRate != null ? liveRate.toFixed(2) : "Not set"]);
     rows.push(["Age", g.age != null ? g.age : "Not set"]);
     rows.push(["Status", g.active === false ? "Inactive" : "Active"]);
 
@@ -2113,12 +2140,12 @@
     const n = v => v || 0;
     const header = ["Employee ID","Guard","Man-hours","Normal worked days","Worked rest days","Worked public holidays",
       "Normal OT (hrs)","Rest-day OT (hrs)","Public holiday OT (hrs)","MC","Absent","Leave","Unpaid leave",
-      "Combined (incl. support elsewhere)"];
+      "Combined (incl. support elsewhere)","Rate (RM/manhour)","Amount (RM)"];
 
     const totals = {
       manHours:0, normalDays:0, restDaysWorked:0, holidayDaysWorked:0,
       normalOTHours:0, restOTHours:0, holidayOTHours:0,
-      mc:0, absent:0, leave:0, unpaidLeave:0, combined:0
+      mc:0, absent:0, leave:0, unpaidLeave:0, combined:0, amount:0
     };
     let combinedKnown = false;
 
@@ -2137,8 +2164,14 @@
         totals.combined += combined;
         combinedCell = combined;
       }
+      // Resolved live off the linked project's current rate config — see guardRate()'s own doc
+      // comment. Same figures the on-screen Summary Report shows (renderSummaryReport()).
+      const rate = guardRate(g);
+      const amount = rate != null ? rate * n(s.manHours) : null;
+      totals.amount += n(amount);
       return [g.employeeId||"", g.name, n(s.manHours), n(s.normalDays), n(s.restDaysWorked), n(s.holidayDaysWorked),
-        n(s.normalOTHours), n(s.restOTHours), n(s.holidayOTHours), n(s.mc), n(s.absent), n(s.leave), n(s.unpaidLeave), combinedCell];
+        n(s.normalOTHours), n(s.restOTHours), n(s.holidayOTHours), n(s.mc), n(s.absent), n(s.leave), n(s.unpaidLeave), combinedCell,
+        rate != null ? rate : "", amount != null ? amount : ""];
     });
 
     const out = [header, ...rows];
@@ -2146,29 +2179,29 @@
     // Temporary/relief guards, listed separately below the permanent roster — only their own
     // man-hours are meaningful here, but those hours still roll into the grand total below.
     if(tempIds.length){
-      out.push(["", "Temporary guards this month", "", "", "", "", "", "", "", "", "", "", "", ""]);
+      out.push(["", "Temporary guards this month", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
       tempIds.forEach(id => {
         const s = summary[id] || {};
         totals.manHours += n(s.manHours);
-        out.push(["", `${(tempGuards[id]||{}).name || "(unknown)"} (Temp)`, n(s.manHours), "", "", "", "", "", "", "", "", "", "", ""]);
+        out.push(["", `${(tempGuards[id]||{}).name || "(unknown)"} (Temp)`, n(s.manHours), "", "", "", "", "", "", "", "", "", "", "", "", ""]);
       });
     }
 
     // Support guards — real guards borrowed from another site — also feed the grand total below
     // (they really worked here) but never touch their home site's own numbers.
     if(supportIds.length){
-      out.push(["", "Support guards this month", "", "", "", "", "", "", "", "", "", "", "", ""]);
+      out.push(["", "Support guards this month", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
       supportIds.forEach(id => {
         const s = summary[id] || {};
         const entry = supportGuards[id] || {};
         totals.manHours += n(s.manHours);
-        out.push([entry.employeeId||"", `${entry.name || "(unknown)"} (Support — ${entry.homeSiteName||"?"})`, n(s.manHours), "", "", "", "", "", "", "", "", "", "", ""]);
+        out.push([entry.employeeId||"", `${entry.name || "(unknown)"} (Support — ${entry.homeSiteName||"?"})`, n(s.manHours), "", "", "", "", "", "", "", "", "", "", "", "", ""]);
       });
     }
 
     out.push(["", "Total — all guards", totals.manHours, totals.normalDays, totals.restDaysWorked, totals.holidayDaysWorked,
       totals.normalOTHours, totals.restOTHours, totals.holidayOTHours, totals.mc, totals.absent, totals.leave, totals.unpaidLeave,
-      combinedKnown ? totals.combined : ""]);
+      combinedKnown ? totals.combined : "", "", totals.amount]);
 
     return out;
   }
@@ -2555,13 +2588,19 @@
 
     const n = v => v || 0;
     const h = v => n(v).toFixed(1);
+    const rm = v => n(v).toFixed(2);
     const dash = `<td class="mono">—</td>`;
 
     const totals = {
       manHours:0, normalDays:0, restDaysWorked:0, holidayDaysWorked:0,
       normalOTHours:0, restOTHours:0, holidayOTHours:0,
-      mc:0, absent:0, leave:0, unpaidLeave:0
+      mc:0, absent:0, leave:0, unpaidLeave:0, amount:0
     };
+    // True the moment any permanent guard shown here has no resolvable rate (no project rate
+    // config at all, or — in 'multiple' mode — no position, or a position that no longer
+    // matches a currently-defined one) — surfaced in the panel's sub-text below so an invoice
+    // total never looks complete when it silently isn't.
+    let anyMissingRate = false;
 
     const permanentRows = guards.map(g => {
       const s = summary[g.id] || {};
@@ -2576,6 +2615,10 @@
       totals.absent += n(s.absent);
       totals.leave += n(s.leave);
       totals.unpaidLeave += n(s.unpaidLeave);
+      const rate = guardRate(g);
+      const amount = rate != null ? rate * n(s.manHours) : null;
+      if(rate == null) anyMissingRate = true;
+      totals.amount += n(amount);
       return `<tr>
         <td class="mono">${escapeHtml(g.employeeId || "—")}</td>
         <td>${escapeHtml(g.name)}</td>
@@ -2590,6 +2633,8 @@
         <td class="mono">${n(s.absent)}</td>
         <td class="mono">${n(s.leave)}</td>
         <td class="mono">${n(s.unpaidLeave)}</td>
+        <td class="mono">${rate != null ? rm(rate) : "—"}</td>
+        <td class="mono">${amount != null ? rm(amount) : "—"}</td>
       </tr>`;
     });
 
@@ -2598,7 +2643,7 @@
     // their man-hours still feed into the grand total below so the overall figure is complete.
     let tempSection = "";
     if(tempIds.length){
-      tempSection += `<tr><td colspan="13" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Temporary guards this month</td></tr>`;
+      tempSection += `<tr><td colspan="15" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Temporary guards this month</td></tr>`;
       tempSection += tempIds.map(id => {
         const s = summary[id] || {};
         const name = (tempGuards[id] || {}).name || "(unknown)";
@@ -2607,7 +2652,7 @@
           <td class="mono">—</td>
           <td>${escapeHtml(name)} <span style="color:var(--muted, #64748b);font-size:12px;">(Temp)</span></td>
           <td class="mono">${h(s.manHours)}</td>
-          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
+          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
         </tr>`;
       }).join("");
     }
@@ -2618,7 +2663,7 @@
     // into their home site's own numbers — see emptyMonthState's supportGuards comment.
     let supportSection = "";
     if(supportIds.length){
-      supportSection += `<tr><td colspan="13" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Support guards this month</td></tr>`;
+      supportSection += `<tr><td colspan="15" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Support guards this month</td></tr>`;
       supportSection += supportIds.map(id => {
         const s = summary[id] || {};
         const entry = supportGuards[id] || {};
@@ -2628,7 +2673,7 @@
           <td class="mono">${escapeHtml(entry.employeeId || "—")}</td>
           <td>${escapeHtml(name)} <span style="color:var(--muted, #64748b);font-size:12px;">(Support — ${escapeHtml(entry.homeSiteName || "?")})</span></td>
           <td class="mono">${h(s.manHours)}</td>
-          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
+          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
         </tr>`;
       }).join("");
     }
@@ -2647,19 +2692,24 @@
       <td class="mono"><strong>${n(totals.absent)}</strong></td>
       <td class="mono"><strong>${n(totals.leave)}</strong></td>
       <td class="mono"><strong>${n(totals.unpaidLeave)}</strong></td>
+      <td></td>
+      <td class="mono"><strong>${rm(totals.amount)}</strong></td>
     </tr>` : "";
 
     body.innerHTML = (guards.length || tempIds.length || supportIds.length)
       ? permanentRows.join("") + tempSection + supportSection + totalsRow
-      : `<tr><td colspan="13" class="empty">Add guards to see the summary report.</td></tr>`;
+      : `<tr><td colspan="15" class="empty">Add guards to see the summary report.</td></tr>`;
 
     const holidayCount = configHolidays(config).filter(d => d.slice(0,7) === state.currentMonth).length;
     const sub = $("#summaryReportSub");
     if(sub){
       sub.textContent = `${monthLabel(y,m)} — normal-day overtime starts after ${normalHoursLabel(config)}h/shift. `
         + (holidayCount
-            ? `${holidayCount} public holiday${holidayCount===1?"":"s"} marked this month.`
-            : `No public holidays marked this month — add them in Guards & Shifts if this month has any.`);
+            ? `${holidayCount} public holiday${holidayCount===1?"":"s"} marked this month. `
+            : `No public holidays marked this month — add them in Guards & Shifts if this month has any. `)
+        + (guards.length && anyMissingRate
+            ? `Some guards have no billing rate resolved — set one up in this project's Project Details, and give each guard a matching Position if it bills by position; their Amount is excluded from the total until then.`
+            : ``);
     }
   }
 
@@ -4439,7 +4489,7 @@
     Object.keys(monthUnsubs).forEach(k => { monthUnsubs[k](); delete monthUnsubs[k]; });
     state.currentSiteId = id;
     try{ localStorage.setItem("dutyRosterLastSite", id); }catch(e){}
-    if(dbHandle) subscribeMonth(id, state.currentMonth);
+    if(dbHandle){ subscribeMonth(id, state.currentMonth); subscribeTenderRate(id); }
     if(!(opts && opts.skipRender)) render();
   }
 
@@ -4632,6 +4682,7 @@
   let dbHandle = null;
   let sitesUnsubs = [];
   const monthUnsubs = {};
+  let tenderRateUnsub = null;
   let suppressPersist = false;
 
   function setSyncUi(mode){
@@ -4679,6 +4730,57 @@
         if(siteId === state.currentSiteId && key === state.currentMonth) render();
       }
     }, () => {});
+  }
+
+  // What position names are currently pickable for a NEW guard on this site, per the linked
+  // tender's live rate config — empty when the config isn't in "multiple" mode (or doesn't
+  // exist yet), in which case openAddGuardModal() shows no Position field at all.
+  function ratePositionNames(){
+    const rc = state.currentTenderRate;
+    if(!rc || rc.guardRateMode !== "multiple") return [];
+    return (rc.guardRatePositions || []).map(p => p.name).filter(Boolean);
+  }
+  // What a guard should currently bill the client at (RM per man-hour), resolved live off the
+  // site's linked tender — never read from anything stored on the guard, per this feature's
+  // "always live" design (see state.currentTenderRate's own doc comment): a 'same'-mode project
+  // bills every guard at its one flat rate; a 'multiple'-mode project bills a guard at whatever
+  // `guardRatePositions` entry currently matches their stored `position` name. Returns null —
+  // shown as "Not set" everywhere this is used — when there's no rate config at all, the guard
+  // has no position recorded, or their position no longer matches a currently-defined one (e.g.
+  // it was renamed or removed in Project Details since this guard was added).
+  function guardRate(guard){
+    const rc = state.currentTenderRate;
+    if(!rc) return null;
+    if(rc.guardRateMode === "multiple"){
+      if(!guard.position) return null;
+      const match = (rc.guardRatePositions || []).find(p => p.name === guard.position);
+      return match ? (Number(match.rate) || 0) : null;
+    }
+    if(rc.guardRateMode === "same"){
+      return rc.guardRate != null ? (Number(rc.guardRate) || 0) : null;
+    }
+    return null;
+  }
+  // Live-follows the given site's linked tender (Active Project) for its guard-rate config —
+  // never a one-off read, per this feature's "always live" design: editing a rate in Project
+  // Details should be reflected here (and in the invoice-reference Summary Report) immediately,
+  // for every guard holding that position, without anyone needing to re-open anything. Only one
+  // of these is ever active at a time (the currently-viewed site's), so switching sites tears
+  // down the old listener first — called alongside subscribeMonth() everywhere a site becomes
+  // the one on screen (switchSite(), and the initial-site-selection path in
+  // recombineSitesAndRender() — handleTenderDeepLinkIfNeeded()/createSite() both funnel through
+  // switchSite() already). A site with no tenderId (or no db capability at all) just leaves
+  // currentTenderRate null.
+  function subscribeTenderRate(siteId){
+    if(tenderRateUnsub){ tenderRateUnsub(); tenderRateUnsub = null; }
+    state.currentTenderRate = null;
+    const siteMeta = state.sites.find(s => s.id === siteId);
+    const tenderId = siteMeta && siteMeta.tenderId;
+    if(!tenderId || !dbHandle) return;
+    tenderRateUnsub = dbHandle.doc("tenders/"+tenderId).onSnapshot(snap => {
+      state.currentTenderRate = snap.exists ? (snap.data() || null) : null;
+      if(siteId === state.currentSiteId) render();
+    }, () => { state.currentTenderRate = null; });
   }
 
   // Brand-new (empty) Firestore project, or nothing reachable yet for this user's branch:
@@ -4856,6 +4958,7 @@
           const initial = (preferred && state.sites.find(s => s.id === preferred)) ? preferred : state.sites[0].id;
           state.currentSiteId = initial;
           subscribeMonth(initial, state.currentMonth);
+          subscribeTenderRate(initial);
         }
         render();
       }

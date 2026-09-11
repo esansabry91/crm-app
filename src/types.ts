@@ -127,6 +127,19 @@ export interface Tender {
   guardsDeployed?: number; // number of security guards currently deployed
   tenderDocNumber?: string; // official tender submission document number/ID
   /**
+   * How permanent guards on this project's Duty Roster site(s) are billed to the client, per
+   * man-hour actually worked (read live by public/duty-roster/index.html's Summary Report —
+   * "home site view for invoice reference" — never snapshotted onto a guard, so editing a rate
+   * here immediately changes every past and future guard's computed Amount there). 'same' means
+   * every guard bills at `guardRate`; 'multiple' means each guard is assigned one of
+   * `guardRatePositions` (matched by name) and bills at that position's rate. Undefined/unset
+   * means no rate has been configured yet for this project — the roster then shows "Not set"
+   * rather than a computed amount, exactly like every other not-yet-filled-in guard field.
+   */
+  guardRateMode?: 'same' | 'multiple';
+  guardRate?: number; // RM per man-hour, used when guardRateMode is 'same'
+  guardRatePositions?: { name: string; rate: number }[]; // RM per man-hour per named position, used when guardRateMode is 'multiple'
+  /**
    * Marks a Won tender's project as finished/closed out — it stops appearing in Active Projects
    * (the list, its value totals, and the By Brand / By Branch breakdowns) and shows up in Past
    * Projects instead. Deliberately does NOT touch `stage` or `tenderValue`, and closing out never

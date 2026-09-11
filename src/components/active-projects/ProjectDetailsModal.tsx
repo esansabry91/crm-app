@@ -20,12 +20,15 @@ interface Props {
  * Lets anyone who can see a project in Active Projects (its branch-mates, HQ, or admin — the
  * same audience Firestore's read rule allows) fill in the operational details that aren't part
  * of the sales record: worksite location (state, city, postcode included), an on-site/client
- * contact, how many guards are currently deployed, and the tender document reference number.
- * Deliberately separate from TenderFormModal — that one edits the sales record and is locked to
- * the owner/admin; this one edits only these seven fields, which the Firestore rules allow more
- * people to touch. Every field here is required before Save will submit — see handleSave — except
- * Security Guards Deployed once it's roster-driven (see the liveGuardCount prop doc comment),
- * since it's then a read-only display rather than something anyone types into.
+ * contact, how many guards are currently deployed, the tender document reference number, and how
+ * permanent guards on this project's Duty Roster site bill the client per man-hour (see
+ * Tender.guardRateMode's own doc comment in types.ts — read live from the Duty Roster's Summary
+ * Report, never snapshotted). Deliberately separate from TenderFormModal — that one edits the
+ * sales record and is locked to the owner/admin; this one edits only these fields, which the
+ * Firestore rules allow more people to touch. Every field is required before Save will submit —
+ * see handleSave — except Security Guards Deployed once it's roster-driven (see the
+ * liveGuardCount prop doc comment) and the Guard Rate section, which is optional since a rate
+ * may get finalized separately from the rest of a project's details.
  */
 export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCount }: Props) {
   const [location, setLocation] = useState('');
@@ -35,6 +38,9 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   const [contactPerson, setContactPerson] = useState('');
   const [guardsDeployed, setGuardsDeployed] = useState('');
   const [tenderDocNumber, setTenderDocNumber] = useState('');
+  const [rateMode, setRateMode] = useState<'same' | 'multiple'>('same');
+  const [flatRate, setFlatRate] = useState('');
+  const [positions, setPositions] = useState<{ name: string; rate: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +53,13 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     setContactPerson(tender.contactPerson || '');
     setGuardsDeployed(tender.guardsDeployed != null ? String(tender.guardsDeployed) : '');
     setTenderDocNumber(tender.tenderDocNumber || '');
+    setRateMode(tender.guardRateMode === 'multiple' ? 'multiple' : 'same');
+    setFlatRate(tender.guardRate != null ? String(tender.guardRate) : '');
+    setPositions(
+      tender.guardRatePositions && tender.guardRatePositions.length
+        ? tender.guardRatePositions.map((p) => ({ name: p.name, rate: String(p.rate) }))
+        : []
+    );
     setError(null);
   }, [open, tender]);
 
@@ -80,6 +93,40 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
       }
     }
 
+    // Guard Rate is the one optional section here — only written when something's actually
+    // been filled in, so an untouched project simply stays "not configured" (see
+    // Tender.guardRateMode's doc comment) rather than getting stamped with a meaningless RM 0.00.
+    let rateFields: Partial<{
+      guardRateMode: 'same' | 'multiple';
+      guardRate: number;
+      guardRatePositions: { name: string; rate: number }[];
+    }> = {};
+    if (rateMode === 'same') {
+      if (flatRate.trim() !== '') {
+        const rateNum = Number(flatRate);
+        if (!Number.isFinite(rateNum) || rateNum < 0) {
+          setError('Enter a valid rate (RM per man-hour), or leave it blank.');
+          return;
+        }
+        rateFields = { guardRateMode: 'same', guardRate: rateNum, guardRatePositions: [] };
+      }
+    } else {
+      const filledRows = positions.filter((p) => p.name.trim() !== '' || p.rate.trim() !== '');
+      if (filledRows.length > 0) {
+        const parsedPositions: { name: string; rate: number }[] = [];
+        for (const p of filledRows) {
+          if (!p.name.trim()) { setError('Each position needs a name.'); return; }
+          const rateNum = Number(p.rate);
+          if (!Number.isFinite(rateNum) || rateNum < 0) {
+            setError(`Enter a valid rate for "${p.name.trim()}".`);
+            return;
+          }
+          parsedPositions.push({ name: p.name.trim(), rate: rateNum });
+        }
+        rateFields = { guardRateMode: 'multiple', guardRatePositions: parsedPositions };
+      }
+    }
+
     setSaving(true);
     try {
       await updateActiveProjectDetails(tender.id, {
@@ -90,6 +137,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
         contactPerson: contactPerson.trim(),
         tenderDocNumber: tenderDocNumber.trim(),
         ...(guards !== undefined ? { guardsDeployed: guards } : {}),
+        ...rateFields,
       });
       onClose();
     } catch (err) {
@@ -187,6 +235,100 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
               placeholder="e.g. IPSB/T-2026/014"
             />
           </Field>
+
+          <div className="pt-2 border-t border-slate-100">
+            <p className="block text-xs font-medium text-slate-500 mb-2">
+              Guard Rate{' '}
+              <span className="text-slate-400 font-normal">
+                (optional — bills the client per man-hour worked, read live by the Duty Roster's
+                Summary Report)
+              </span>
+            </p>
+
+            <div className="flex gap-2 mb-3">
+              <button
+                type="button"
+                onClick={() => setRateMode('same')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg border ${
+                  rateMode === 'same'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                Same rate for all
+              </button>
+              <button
+                type="button"
+                onClick={() => setRateMode('multiple')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg border ${
+                  rateMode === 'multiple'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                Multiple rates by position
+              </button>
+            </div>
+
+            {rateMode === 'same' ? (
+              <Field label="Rate (RM per man-hour)">
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={flatRate}
+                  onChange={(e) => setFlatRate(e.target.value)}
+                  className="input"
+                  placeholder="e.g. 8.50"
+                />
+              </Field>
+            ) : (
+              <div className="space-y-2">
+                {positions.map((p, idx) => (
+                  <div key={idx} className="flex gap-2 items-start">
+                    <input
+                      value={p.name}
+                      onChange={(e) => {
+                        const next = [...positions];
+                        next[idx] = { ...next[idx], name: e.target.value };
+                        setPositions(next);
+                      }}
+                      className="input flex-1"
+                      placeholder="e.g. Leader"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={p.rate}
+                      onChange={(e) => {
+                        const next = [...positions];
+                        next[idx] = { ...next[idx], rate: e.target.value };
+                        setPositions(next);
+                      }}
+                      className="input w-24"
+                      placeholder="RM/hr"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPositions(positions.filter((_, i) => i !== idx))}
+                      className="text-slate-400 hover:text-rose-600 text-lg leading-none px-1 pt-1.5"
+                      aria-label={`Remove ${p.name || 'position'}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setPositions([...positions, { name: '', rate: '' }])}
+                  className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                >
+                  + Add position
+                </button>
+              </div>
+            )}
+          </div>
 
           {error && <p className="text-sm text-rose-600">{error}</p>}
 

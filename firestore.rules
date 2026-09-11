@@ -92,6 +92,12 @@ service cloud.firestore {
           || (resource.data.stage == 'Won'
               && resource.data.get('pendingReassignment', null) != null
               && resource.data.pendingReassignment.toBranch == myDepartment())
+          // Payroll already reads every branch's Duty Roster sites (see canReadSite() below) —
+          // including, now, each site's Summary Report Rate/Amount columns, which resolve live
+          // off this same tender doc's guardRateMode/guardRate/guardRatePositions (see
+          // subscribeTenderRate() in public/duty-roster/index.html). Without this, those columns
+          // would silently come up blank for Payroll on every site outside their own department.
+          || (resource.data.stage == 'Won' && isPayroll())
         );
 
       allow create: if isActiveUser()
@@ -122,7 +128,7 @@ service cloud.firestore {
             resource.data.stage == 'Won'
             && (resource.data.activeBranch == myDepartment() || myDepartment() == 'HQ')
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['location', 'state', 'city', 'postcode', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'closedOut', 'closedOutAt', 'updatedAt'])
+                 .hasOnly(['location', 'state', 'city', 'postcode', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'guardRateMode', 'guardRate', 'guardRatePositions', 'closedOut', 'closedOutAt', 'updatedAt'])
           )
           // Accepting a pending reassignment (see Tender.pendingReassignment and
           // acceptReassignment() in services/tenders.ts) — only the Branch Manager (not
