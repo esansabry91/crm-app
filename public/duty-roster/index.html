@@ -644,6 +644,9 @@
       <p class="sub" id="combinedReportSub">Each of this site's own guards, with support-guard shifts at other branch sites folded in</p>
       <button class="btn primary sm" id="exportTimeAttendanceBtn" type="button" style="margin-bottom:10px;" disabled>Export to Excel (TimeAttendance format)</button>
       <button class="btn sm" id="refreshCombinedBtn" type="button" style="margin-bottom:10px;">Refresh combined hours</button>
+      <button class="btn primary sm" id="confirmCombinedBtn" type="button" style="margin-bottom:10px;" disabled hidden>Confirm</button>
+      <button class="btn sm" id="unconfirmCombinedBtn" type="button" style="margin-bottom:10px;" hidden>Unconfirm</button>
+      <p class="empty" id="combinedConfirmStatus" style="margin:0 0 10px;" hidden></p>
       <p class="empty" id="combinedHoursNote" style="margin:0 0 10px;">Every column here is this site's own numbers (worked days, OT, leave, etc.) plus the same guard's shifts as a support guard at other branch sites this month &mdash; this is the figure the Excel export above uses, and it never changes the plain Summary report above. Click "Refresh combined hours" to (re)load it.</p>
       <div class="tablewrap" style="overflow-x:auto;">
         <table class="simple">
@@ -865,7 +868,32 @@
     // this back, live, to show his combined total (his support days always counted as rest-day
     // or holiday work, regardless of his home quota — see combinedGuardBreakdown()) without
     // touching its own official numbers.
-    return { month:key, overrides:{}, leaves:{}, log:[], tempGuards:{}, supportGuards:{}, updatedAt: nowIso() };
+    return { month:key, overrides:{}, leaves:{}, log:[], tempGuards:{}, supportGuards:{}, confirmed:null, confirmedIncoming:null, updatedAt: nowIso() };
+  }
+  // Whether a Branch Manager (or Admin/HQ) has locked in this month's Combined Hours figures —
+  // { byUid, byName, at } once confirmed, else null. Payroll can only ever see/export the frozen
+  // confirmedIncoming snapshot taken at that moment (see renderCombinedReport()), never a live
+  // recompute, and every other role keeps seeing their own live "Refresh combined hours" result
+  // regardless of this flag. See canConfirmCombinedHours() and revokeConfirmationIfPresent().
+  function monthConfirmed(ms){ return ms.confirmed || null; }
+  // Confirming/unconfirming Combined Hours is the same cross-site-aware, branch-level action as
+  // assigning a support guard (canAssignSupportGuard()) — Admin/HQ, or this site's own Branch
+  // Manager; never dutyStaff/Payroll, who only ever read the result once it's set.
+  function canConfirmCombinedHours(){
+    return state.canEdit && (state.isPrivileged || state.myRole === "branchManager");
+  }
+  // Clears a month's Combined Hours confirmation the moment anything that could change the
+  // figures it locked in happens, forcing "Refresh combined hours" + "Confirm" again before
+  // Payroll can see an updated number. Called from persistMonthByKey()/persistSiteConfig() (guarded
+  // by state.suppressConfirmRevoke while a Confirm/Unconfirm click is itself what's writing
+  // ms.confirmed) and from syncHomeSiteSupportLeave(), which writes a support guard's HOME site
+  // month doc directly — the one cross-site case (a guard covering at another branch site) that
+  // can change a site's combined figure without any edit happening on that site's own tab.
+  function revokeConfirmationIfPresent(ms){
+    if(ms && ms.confirmed){
+      ms.confirmed = null;
+      ms.confirmedIncoming = null;
+    }
   }
   // Defensive accessors: months/configs saved before these fields existed won't have them.
   function monthTempGuards(ms){ if(!ms.tempGuards) ms.tempGuards = {}; return ms.tempGuards; }
@@ -1106,7 +1134,14 @@
     // "siteId::monthKey" -> {homeGuardId: [{dateStr,hours}, ...]}. Populated on demand by the
     // "Refresh combined hours" button (computeIncomingSupportDates()) — raw, unclassified
     // support-elsewhere work days; see combinedGuardBreakdown() for how these get folded in.
-    combinedHoursCache: {}
+    combinedHoursCache: {},
+    myUid: null,            // this signed-in user's auth uid — recorded on a Combined Hours confirmation
+    myName: null,           // this signed-in user's display name — shown on a Combined Hours confirmation
+    // True only while the Confirm/Unconfirm click itself is persisting state.confirmed — every
+    // other persistMonthByKey()/persistSiteConfig() call leaves this false, so an ordinary
+    // roster/config edit still auto-revokes a confirmation the normal way. See
+    // revokeConfirmationIfPresent().
+    suppressConfirmRevoke: false
   };
   function currentConfig(){
     if(!state.currentSiteId){
@@ -2622,12 +2657,21 @@
     const monthState = currentMonthState();
     const summary = computeGuardSummary(y, m, config, monthState, result);
     const guards = config.guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
-    const incoming = currentCombinedHours(); // {homeGuardId: [{dateStr,hours},...]} or null if never refreshed
+    const liveIncoming = currentCombinedHours(); // {homeGuardId: [{dateStr,hours},...]} or null if never refreshed
+    renderCombinedConfirmControls(monthState, liveIncoming);
+    // Payroll is locked out of "Refresh combined hours" (see enforceReadonlyLockdown()) and
+    // never had a live cache of its own anyway, so it only ever sees the frozen
+    // confirmedIncoming snapshot the Branch Manager explicitly locked in via "Confirm" — never a
+    // live recompute. Everyone else keeps seeing their own live refreshed figures regardless of
+    // confirmation state, so they can check a number before (or after) confirming without it
+    // silently swapping out from under them. See canConfirmCombinedHours()/monthConfirmed().
+    const incoming = state.isPayroll ? (monthConfirmed(monthState) ? monthState.confirmedIncoming : null) : liveIncoming;
     const body = $("#combinedReportBody");
     if(!body) return;
 
     // Export stays disabled until "Refresh combined hours" has been clicked for THIS site/month
-    // — and goes back to disabled the moment anything changes, via invalidateCombinedHoursCache().
+    // — and goes back to disabled the moment anything changes, via invalidateCombinedHoursCache()
+    // — or, for Payroll, until the Branch Manager has confirmed this month at all.
     const exportBtn = $("#exportTimeAttendanceBtn");
     if(exportBtn) exportBtn.disabled = !incoming;
 
@@ -2635,7 +2679,9 @@
     const h = v => n(v).toFixed(1);
 
     if(!incoming){
-      body.innerHTML = `<tr><td colspan="13" class="empty">Click "Refresh combined hours" to load this.</td></tr>`;
+      body.innerHTML = state.isPayroll
+        ? `<tr><td colspan="13" class="empty">Waiting for the branch manager to confirm this month's combined hours.</td></tr>`
+        : `<tr><td colspan="13" class="empty">Click "Refresh combined hours" to load this.</td></tr>`;
       return;
     }
 
@@ -2683,6 +2729,44 @@
     </tr>`;
 
     body.innerHTML = rows.join("") + totalsRow;
+  }
+  // Shows/hides the Confirm and Unconfirm buttons and the status line above the Combined Hours
+  // table. Confirm is only ever offered to whoever's allowed to confirm (canConfirmCombinedHours())
+  // — never Payroll, who only reads the result — and stays disabled until this site/month's
+  // combined hours have actually been refreshed this session (liveIncoming), satisfying "must
+  // click Refresh before Confirm". Once confirmed, Confirm hides and Unconfirm takes its place;
+  // there's no direct re-confirm over an existing one — Unconfirm, then Confirm again — so a
+  // locked figure Payroll may already be relying on is never silently swapped out.
+  function renderCombinedConfirmControls(ms, liveIncoming){
+    const confirmBtn = $("#confirmCombinedBtn");
+    const unconfirmBtn = $("#unconfirmCombinedBtn");
+    const statusEl = $("#combinedConfirmStatus");
+    const noteEl = $("#combinedHoursNote");
+    if(!confirmBtn || !unconfirmBtn || !statusEl) return;
+    const confirmed = monthConfirmed(ms);
+    const canConfirm = canConfirmCombinedHours();
+
+    confirmBtn.hidden = state.isPayroll || !canConfirm || !!confirmed;
+    confirmBtn.disabled = !liveIncoming;
+    unconfirmBtn.hidden = state.isPayroll || !canConfirm || !confirmed;
+    if(noteEl) noteEl.hidden = state.isPayroll;
+
+    if(confirmed){
+      statusEl.hidden = false;
+      statusEl.textContent = `Confirmed by ${confirmed.byName || "someone"} on ${formatConfirmedAt(confirmed.at)}`
+        + (state.isPayroll ? "." : " — Payroll can now view and export this.");
+    } else if(state.isPayroll){
+      statusEl.hidden = false;
+      statusEl.textContent = "Waiting for the branch manager to confirm this month's combined hours.";
+    } else {
+      statusEl.hidden = true;
+      statusEl.textContent = "";
+    }
+  }
+  function formatConfirmedAt(iso){
+    if(!iso) return "";
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? iso : d.toLocaleString();
   }
   function normalHoursLabel(config){ return Number(config.site.normalHoursPerDay) || 8; }
 
@@ -3430,6 +3514,7 @@
       } else {
         return;
       }
+      revokeConfirmationIfPresent(ms);
       ms.updatedAt = nowIso();
       await ref.set(ms);
       // Writes straight to Firestore rather than through persistMonthByKey() (this may not even
@@ -4212,6 +4297,40 @@
     showToast("Combined hours refreshed.");
   });
 
+  $("#confirmCombinedBtn").addEventListener("click", () => {
+    if(!canConfirmCombinedHours()) return;
+    const incoming = currentCombinedHours();
+    if(!incoming){ showToast('Click "Refresh combined hours" first.'); return; }
+    const ms = currentMonthState();
+    ms.confirmed = { byUid: state.myUid || null, byName: state.myName || state.myDepartment || "Branch Manager", at: nowIso() };
+    ms.confirmedIncoming = incoming;
+    state.suppressConfirmRevoke = true;
+    persistMonth();
+    state.suppressConfirmRevoke = false;
+    showToast("Combined hours confirmed — Payroll can now view and export this month.");
+    render();
+  });
+
+  $("#unconfirmCombinedBtn").addEventListener("click", () => {
+    if(!canConfirmCombinedHours()) return;
+    openConfirmModal({
+      title: "Unconfirm combined hours",
+      message: "Payroll won't be able to view or export this month's combined hours until you confirm it again.",
+      okLabel: "Unconfirm",
+      danger: true,
+      onConfirm: () => {
+        const ms = currentMonthState();
+        ms.confirmed = null;
+        ms.confirmedIncoming = null;
+        state.suppressConfirmRevoke = true;
+        persistMonth();
+        state.suppressConfirmRevoke = false;
+        showToast("Combined hours unconfirmed.");
+        render();
+      }
+    });
+  });
+
   // A date change can move a FULLH swap between weekday/weekend, which can
   // change how many guard posts (and which shift ids) exist that day — so
   // the shift dropdown is refreshed for the new date, not just the slot list.
@@ -4501,6 +4620,10 @@
     const cfg = state.configsCache[siteId];
     if(!cfg) return;
     invalidateCombinedHoursCache();
+    if(!state.suppressConfirmRevoke){
+      const ms = state.monthsCache[monthCacheKey(siteId, state.currentMonth)];
+      if(ms) revokeConfirmationIfPresent(ms);
+    }
     cfg.updatedAt = nowIso();
     if(!dbHandle || suppressPersist) return;
     dbHandle.doc("sites/"+siteId).set(cfg).catch(()=>{});
@@ -4510,6 +4633,7 @@
     const ms = state.monthsCache[monthCacheKey(siteId, key)];
     if(!ms) return;
     invalidateCombinedHoursCache();
+    if(!state.suppressConfirmRevoke) revokeConfirmationIfPresent(ms);
     ms.updatedAt = nowIso();
     if(!dbHandle || suppressPersist) return;
     dbHandle.doc("sites/"+siteId).collection("months").doc(key).set(ms).catch(()=>{});
@@ -4610,7 +4734,9 @@
           const p = profileSnap.data() || {};
           state.myDepartment = p.department || null;
           state.myRole = p.role || null;
+          state.myName = p.name || null;
         }
+        state.myUid = authUser.uid;
       }
       state.isPrivileged = state.myRole === "admin" || state.myDepartment === "HQ";
       // "Payroll" is a strictly view/export-only role: it reaches every branch's sites like a
