@@ -4705,14 +4705,25 @@
     if(delBtn) delBtn.hidden = true;
   }
 
-  // Read-only for everyone now, Admin/HQ included — a site's branch is set once, automatically,
-  // by the tender-linking bootstrap (createSite()'s branch param) and only ever moves again
-  // through Active Projects' reassign-and-accept flow (see requestReassignBranch()/
-  // acceptReassignment() in the CRM's src/services/tenders.ts, which writes straight to this
-  // site's `branch` field on acceptance). There's nothing left for anyone to hand-pick here.
+  // Read-only for everyone who sees it — a site's branch is set once, automatically, by the
+  // tender-linking bootstrap (createSite()'s branch param) and only ever moves again through
+  // Active Projects' reassign-and-accept flow (see requestReassignBranch()/acceptReassignment()
+  // in the CRM's src/services/tenders.ts, which writes straight to this site's `branch` field on
+  // acceptance). There's nothing left for anyone to hand-pick here.
+  //
+  // Admin/HQ/Payroll don't see it at all: they already have the branch filter dropdown right
+  // next to it (applyRoleUiLockdown()) to work across branches, so a static, unclickable
+  // "Branch: X" badge for whichever site happens to be selected just reads as a stuck control.
+  // A plain Branch Manager/Staff account has no filter and only ever sees their own branch's
+  // sites anyway, so it stays as quiet, harmless context for them.
   function renderSiteBranchControl(){
     const badge = $("#siteBranchBadge");
     if(!badge) return;
+    if(state.isPayroll || state.isPrivileged){
+      badge.hidden = true;
+      return;
+    }
+    badge.hidden = false;
     const site = state.sites.find(s => s.id === state.currentSiteId);
     const branch = site ? (site.branch || null) : null;
     badge.textContent = branch ? `Branch: ${branch}` : "Branch: Unassigned";
