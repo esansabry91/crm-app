@@ -13,6 +13,7 @@ import {
   backfillGuardsFromDutyRoster,
   computeGuardTurnover,
   guardsWithPermitExpiringSoon,
+  removeBufferGuard,
   updateBufferGuardContact,
 } from '../services/guards';
 import { formatDate, formatDateTime, formatRM } from '../utils/format';
@@ -64,6 +65,7 @@ export default function GuardBankPage() {
   const [viewGuardId, setViewGuardId] = useState<string | null>(null);
   const [viewBuffer, setViewBuffer] = useState<BufferGuard | null>(null);
   const [editingBufferId, setEditingBufferId] = useState<string | null>(null);
+  const [removingBufferId, setRemovingBufferId] = useState<string | null>(null);
   const [editPhone, setEditPhone] = useState('');
   const [backfilling, setBackfilling] = useState(false);
 
@@ -198,6 +200,19 @@ export default function GuardBankPage() {
       flash('Could not save that contact number.');
     } finally {
       setEditingBufferId(null);
+    }
+  }
+
+  async function removeBuffer(bg: BufferGuard) {
+    if (!window.confirm(`Remove ${bg.name} from the Buffer Guards list? This cannot be undone.`)) return;
+    setRemovingBufferId(bg.id);
+    try {
+      await removeBufferGuard(bg.id);
+      flash(`Removed ${bg.name} from the Buffer Guards list.`);
+    } catch (err) {
+      flash(err instanceof Error ? err.message : 'Could not remove this buffer guard.');
+    } finally {
+      setRemovingBufferId(null);
     }
   }
 
@@ -620,12 +635,19 @@ export default function GuardBankPage() {
                       <td className="px-4 py-2.5 text-slate-500">{bg.lastSiteName || '-'}</td>
                       <td className="px-4 py-2.5 text-slate-400">{formatDateTime(bg.lastUsedAt)}</td>
                       <td className="px-4 py-2.5 text-slate-500 tabular-nums">{bg.timesUsed}</td>
-                      <td className="px-4 py-2.5 text-right">
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
                         <button
                           onClick={() => setViewBuffer(bg)}
                           className="px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-md"
                         >
                           View
+                        </button>
+                        <button
+                          onClick={() => removeBuffer(bg)}
+                          disabled={removingBufferId === bg.id}
+                          className="px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-60 rounded-md"
+                        >
+                          {removingBufferId === bg.id ? 'Removing…' : 'Remove'}
                         </button>
                       </td>
                     </tr>

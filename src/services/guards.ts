@@ -2,6 +2,7 @@ import {
   addDoc,
   arrayUnion,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -265,6 +266,17 @@ export async function updateBufferGuardContact(
   await updateDoc(doc(db, 'bufferGuards', id), patch);
 }
 
+/**
+ * Permanently removes a Buffer Guard record — e.g. someone who's no longer available for relief
+ * work, or a record added by mistake. Irreversible: unlike a guard's Guard Pool/Deployed/
+ * Dismissed lifecycle (which just moves them between states), Buffer Guards has no "dismissed"
+ * status to fall back on, so the row disappears entirely. If they cover a shift again later,
+ * syncBufferGuardOnAssign() in public/duty-roster/index.html will simply create a fresh record —
+ * their timesUsed history here is not preserved.
+ */
+export async function removeBufferGuard(id: string): Promise<void> {
+  await deleteDoc(doc(db, 'bufferGuards', id));
+}
 
 export interface BackfillResult {
   sitesScanned: number;
