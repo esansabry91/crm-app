@@ -1,5 +1,9 @@
 import { useSearchParams } from 'react-router-dom';
 
+// Injected by vite.config.ts's `define` block at build time — a fresh string every
+// build/deploy, used below to cache-bust the duty-roster iframe's src.
+declare const __APP_BUILD_ID__: string;
+
 /**
  * Wraps the standalone Duty Roster console (public/duty-roster/index.html) in an <iframe>.
  * That console is a separate, self-contained vanilla-JS app (its own Firestore reads/writes,
@@ -17,7 +21,12 @@ import { useSearchParams } from 'react-router-dom';
 export default function DutyRosterPage() {
   const [searchParams] = useSearchParams();
   const forwarded = searchParams.toString();
-  const src = forwarded ? `/duty-roster/index.html?${forwarded}` : '/duty-roster/index.html';
+  // Always append a build-tied version param (in addition to any forwarded tenderId/
+  // clientName/branch params) so the iframe's src changes on every new deploy, forcing it to
+  // re-fetch public/duty-roster/index.html instead of continuing to run whatever copy is
+  // already loaded in memory from a prior SPA-internal navigation.
+  const query = forwarded ? `${forwarded}&_v=${__APP_BUILD_ID__}` : `_v=${__APP_BUILD_ID__}`;
+  const src = `/duty-roster/index.html?${query}`;
 
   return (
     <div className="h-screen">

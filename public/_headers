@@ -1,0 +1,9 @@
+# Cloudflare Workers static assets normally serve with `Cache-Control: public, max-age=0,
+# must-revalidate` (see https://developers.cloudflare.com/workers/static-assets/headers/),
+# which still lets a browser/CDN cache a copy and only revalidate with a conditional request —
+# fine for most assets, but the duty-roster console is a hand-maintained single HTML file
+# (public/duty-roster/index.html) loaded inside a long-lived <iframe>, so we want browsers to
+# never serve a cached copy without checking, and no shared/CDN caching at all. Paired with the
+# `_v=<build id>` cache-busting query param added in src/pages/DutyRosterPage.tsx.
+/duty-roster/index.html
+  Cache-Control: no-store
