@@ -1170,6 +1170,18 @@
       const shiftDefs = computeShiftDefsForDay(config.site, dm);
       const leaveEntriesToday = leaveEntriesFor(monthState, dateStr);
       const leaveList = leaveEntriesToday.map(e => e.id);
+      // A "Support (Other Site)" leave entry created for a guard covering a shift elsewhere
+      // (see syncHomeSiteSupportLeave()) carries that shift's real end time. Seeding it into
+      // lastShiftEnd here — exactly like a real local shift's end updates it below — means this
+      // site's OWN rest-hour check (minRestHours, right below and in the override-flag check
+      // above) naturally sees him as busy until then, so it can never auto-pick him too soon
+      // after he gets back, and will flag a forced override that ignores it, the same way any
+      // other "less than Xh rest" violation is already flagged.
+      leaveEntriesToday.forEach(e => {
+        if(typeof e.supportShiftEndMs === "number"){
+          lastShiftEnd[e.id] = Math.max(lastShiftEnd[e.id] || 0, e.supportShiftEndMs);
+        }
+      });
       const dayAssignments = []; // per shiftDef -> array of guardId|null
       const workedToday = new Set();
 
@@ -2554,7 +2566,7 @@
       note.hidden = false;
       note.textContent = `Covering ${slotInfo.shiftLabel}, Slot ${slotInfo.slot+1} on ${dateStr} with a guard borrowed from another site — his own home site is marked automatically.`;
       fillLeaveSupportSites();
-      await fillLeaveSupportGuardSelect(dateStr);
+      await fillLeaveSupportGuardSelect(dateStr, slotInfo.shiftId);
     } else {
       coverWrap.hidden = true;
       supportRow.hidden = true;
@@ -2667,11 +2679,46 @@
   // both be live (in different panels) without stepping on each other's in-flight fetch.
   let leaveSupportGuardSelectKey = null;
 
+  // Given the ORIGIN site's own already-generated schedule for the month, checks that borrowing
+  // this guard for a support shift with this exact start/end window couldn't leave him
+  // under-rested at his OWN site on either side — scans that schedule for his closest real
+  // local shift strictly before the window (is there enough rest between it and the support
+  // shift starting?) and strictly after it (is there enough rest between the support shift
+  // ending and his next home shift?), against his own site's own minRestHours rule. Never
+  // touches or reschedules anything at the origin site — a guard who'd fail either check is
+  // simply left off the list, exactly the "don't restructure his home site to make room"
+  // requirement this exists for.
+  //
+  // Known narrow gap: only scans the ONE month the support date falls in, so a next/previous
+  // real shift that lands in the adjacent calendar month (only possible within the last/first
+  // couple of days of a month) isn't seen. Rare enough in practice to accept for now rather
+  // than fetch and generate a second month's schedule just to cover it.
+  function guardRestOkForSupportShift(cfg, result, guardId, supportStartMs, supportEndMs){
+    const minRestHours = Number(cfg.restRule.minRestHours) || 0;
+    if(!minRestHours) return true;
+    let prevEndMs = null, nextStartMs = null;
+    for(const day of result.days){
+      const shiftDefs = computeShiftDefsForDay(cfg.site, day.dm);
+      for(let si=0; si<day.assignments.length; si++){
+        if(day.assignments[si].indexOf(guardId) === -1) continue;
+        const {start, end} = shiftStartEnd(day.dateStr, shiftDefs[si]);
+        const startMs = start.getTime(), endMs = end.getTime();
+        if(endMs <= supportStartMs && (prevEndMs === null || endMs > prevEndMs)) prevEndMs = endMs;
+        if(startMs >= supportEndMs && (nextStartMs === null || startMs < nextStartMs)) nextStartMs = startMs;
+      }
+    }
+    if(prevEndMs !== null && (supportStartMs - prevEndMs) / 3600000 < minRestHours) return false;
+    if(nextStartMs !== null && (nextStartMs - supportEndMs) / 3600000 < minRestHours) return false;
+    return true;
+  }
+
   // Cross-site, read-only: runs the ORIGIN site's own scheduling logic for one specific date to
   // find out who's genuinely free there — not already assigned a shift (auto-picked or
-  // overridden) and not already on leave for some other reason — so "Assign a support guard"
-  // can never offer a guard who'd end up double-booked at his own site that day. Always fetches
-  // fresh (no caching) since this gates an actual write, unlike the read-only Combined column.
+  // overridden), not already on leave for some other reason, and (when supportWindow is given)
+  // not left under-rested by taking this specific shift either — see
+  // guardRestOkForSupportShift() above — so "Assign a support guard" can never offer a guard
+  // who'd end up double-booked OR quietly under-rested at his own site. Always fetches fresh (no
+  // caching) since this gates an actual write, unlike the read-only Combined column.
   //
   // Reuses generateMonth() itself rather than re-deriving the schedule by hand, by briefly
   // pointing state.currentSiteId/currentMonth/monthsCache at the origin site — generateMonth()'s
@@ -2679,7 +2726,10 @@
   // everything between the swap and the restore below is synchronous (no `await` in between),
   // so nothing else can observe the swap — JS won't interrupt a synchronous block to run a
   // timer, click handler, or Firestore callback in the middle of it.
-  async function computeFreeGuardsAt(siteId, dateStr){
+  //
+  // supportWindow, when given, is {startMs, endMs} for the DESTINATION shift being considered —
+  // both callers compute this from their own destination site's shift config before calling in.
+  async function computeFreeGuardsAt(siteId, dateStr, supportWindow){
     const cfg = state.configsCache[siteId];
     if(!cfg) return [];
     const monthKeyStr = dateStr.slice(0,7);
@@ -2709,6 +2759,9 @@
       if(day) day.assignments.forEach(slots => slots.forEach(id => { if(id) workingIds.add(id); }));
       const leaveIds = leaveGuardIdsFor(monthStateForCompute, dateStr);
       freeGuards = cfg.guards.filter(g => g.active !== false && !workingIds.has(g.id) && !leaveIds.includes(g.id));
+      if(supportWindow){
+        freeGuards = freeGuards.filter(g => guardRestOkForSupportShift(cfg, result, g.id, supportWindow.startMs, supportWindow.endMs));
+      }
     } finally {
       state.currentSiteId = savedSiteId;
       state.currentMonth = savedMonth;
@@ -2733,8 +2786,11 @@
       $("#assignSupportBtn").disabled = true;
       return;
     }
-    const dateStr = slotKey.split("|")[0];
-    const key = originId + "|" + dateStr;
+    const [dateStr, shiftId] = slotKey.split("|");
+    // Keyed on the full (origin, date, shift) combination, not just origin+date — switching
+    // between a day-shift slot and a night-shift slot on the SAME date needs a fresh check,
+    // since the rest-hours window (see supportWindow below) is different for each.
+    const key = originId + "|" + dateStr + "|" + shiftId;
     if(key === supportGuardSelectKey) return; // already showing (or already fetching) this exact combination
     supportGuardSelectKey = key;
 
@@ -2743,12 +2799,17 @@
     sel.innerHTML = `<option value="">Checking availability…</option>`;
     $("#assignSupportBtn").disabled = true;
 
-    const freeGuards = await computeFreeGuardsAt(originId, dateStr);
+    const destShiftDefs = computeShiftDefsForDay(currentConfig().site, dowMon(dateStr));
+    const destShift = destShiftDefs.find(sd => sd.id === shiftId);
+    const supportWindow = destShift
+      ? (({start, end}) => ({startMs: start.getTime(), endMs: end.getTime()}))(shiftStartEnd(dateStr, destShift))
+      : null;
+    const freeGuards = await computeFreeGuardsAt(originId, dateStr, supportWindow);
     if(supportGuardSelectKey !== key) return; // slot/origin changed again while this was in flight
 
     sel.disabled = false;
     if(!freeGuards.length){
-      sel.innerHTML = `<option value="">No guards free that day</option>`;
+      sel.innerHTML = `<option value="">No guards free that day (or would end up under-rested)</option>`;
       $("#assignSupportBtn").disabled = true;
       return;
     }
@@ -2771,20 +2832,25 @@
     if(prev && sites.some(s => s.id === prev)) sel.value = prev;
   }
 
-  // Mirrors fillSupportGuardSelect() above exactly (same computeFreeGuardsAt() availability
-  // check, same debounce-by-key pattern) but populates #leaveSupportGuardSelect for the
-  // "Mark a guard on leave" panel's own "Support guard" replacement mode instead.
-  async function fillLeaveSupportGuardSelect(dateStr){
+  // Mirrors fillSupportGuardSelect() above exactly (same computeFreeGuardsAt() availability +
+  // rest-window check, same debounce-by-key pattern) but populates #leaveSupportGuardSelect for
+  // the "Mark a guard on leave" panel's own "Support guard" replacement mode instead. shiftId is
+  // the SLOT'S OWN shift at THIS (destination) site — passed in by the caller, which already
+  // knows it from findGuardSlotOnDate(), rather than re-deriving it here.
+  async function fillLeaveSupportGuardSelect(dateStr, shiftId){
     const sel = $("#leaveSupportGuardSelect");
     if(!sel) return;
     const originId = $("#leaveSupportOriginSite").value;
-    if(!originId || !dateStr){
+    if(!originId || !dateStr || !shiftId){
       leaveSupportGuardSelectKey = null;
       sel.innerHTML = "";
       sel.disabled = true;
       return;
     }
-    const key = originId + "|" + dateStr;
+    // Keyed on (origin, date, shift) — see fillSupportGuardSelect()'s own comment on why shift
+    // matters here even though, for this panel, a given guard+date pins down one specific shift
+    // already (kept for consistency and to be safe against any future change to that).
+    const key = originId + "|" + dateStr + "|" + shiftId;
     if(key === leaveSupportGuardSelectKey) return;
     leaveSupportGuardSelectKey = key;
 
@@ -2792,12 +2858,17 @@
     sel.disabled = true;
     sel.innerHTML = `<option value="">Checking availability…</option>`;
 
-    const freeGuards = await computeFreeGuardsAt(originId, dateStr);
+    const destShiftDefs = computeShiftDefsForDay(currentConfig().site, dowMon(dateStr));
+    const destShift = destShiftDefs.find(sd => sd.id === shiftId);
+    const supportWindow = destShift
+      ? (({start, end}) => ({startMs: start.getTime(), endMs: end.getTime()}))(shiftStartEnd(dateStr, destShift))
+      : null;
+    const freeGuards = await computeFreeGuardsAt(originId, dateStr, supportWindow);
     if(leaveSupportGuardSelectKey !== key) return; // origin/date changed again while this was in flight
 
     sel.disabled = false;
     if(!freeGuards.length){
-      sel.innerHTML = `<option value="">No guards free that day</option>`;
+      sel.innerHTML = `<option value="">No guards free that day (or would end up under-rested)</option>`;
       return;
     }
     sel.innerHTML = freeGuards.map(g => `<option value="${g.id}">${escapeHtml(g.name)}${g.employeeId ? " ("+escapeHtml(g.employeeId)+")" : ""}</option>`).join("");
@@ -2813,7 +2884,13 @@
   // awaited by its caller in a way that blocks the actual assignment — if this write fails
   // (offline, permissions, home site since archived), the support assignment itself still
   // stands; the home site just needs the safeguard entry added by hand as before.
-  async function syncHomeSiteSupportLeave(homeSiteId, homeGuardId, dateStr, add){
+  //
+  // supportShiftEndMs (only meaningful when add=true) is the support shift's real end time —
+  // stored on the entry so generateMonth()'s own rest-hour check at the home site (see its
+  // lastShiftEnd-seeding near the top of this file) knows exactly when he's actually free again,
+  // rather than just "sometime that day" — this is what makes the check precise instead of only
+  // blocking the same calendar date.
+  async function syncHomeSiteSupportLeave(homeSiteId, homeGuardId, dateStr, add, supportShiftEndMs){
     if(!dbHandle || !homeSiteId || !homeGuardId || !dateStr) return;
     try{
       const monthKeyStr = dateStr.slice(0,7);
@@ -2824,8 +2901,10 @@
       const entries = leaveEntriesFor(ms, dateStr);
       const idx = entries.findIndex(e => e.id === homeGuardId);
       if(add){
-        if(idx >= 0) entries[idx].reason = "Support (Other Site)";
-        else entries.push({ id: homeGuardId, reason: "Support (Other Site)" });
+        const fields = { id: homeGuardId, reason: "Support (Other Site)" };
+        if(typeof supportShiftEndMs === "number") fields.supportShiftEndMs = supportShiftEndMs;
+        if(idx >= 0) Object.assign(entries[idx], fields);
+        else entries.push(fields);
         ms.leaves[dateStr] = entries;
       } else if(idx >= 0 && entries[idx].reason === "Support (Other Site)" && !entries[idx].replacementKey){
         // Only remove an entry this same mechanism would plausibly have created — never touch
@@ -3330,7 +3409,9 @@
   $("#leaveReplacementMode").addEventListener("change", updateLeaveReplacementUI);
   $("#leaveSupportOriginSite").addEventListener("change", () => {
     leaveSupportGuardSelectKey = null; // force a refetch since the origin site itself changed
-    fillLeaveSupportGuardSelect($("#leaveDate").value);
+    const dateStr = $("#leaveDate").value;
+    const slotInfo = findGuardSlotOnDate($("#leaveGuard").value, dateStr);
+    if(slotInfo) fillLeaveSupportGuardSelect(dateStr, slotInfo.shiftId);
   });
 
   $("#addLeaveBtn").addEventListener("click", async () => {
@@ -3347,8 +3428,9 @@
     const slotInfo = findGuardSlotOnDate(guardId, dateStr);
     let replacementMode = null, replacementGuardId = null, replacementKey = null, logSuffix = "";
     // Set only for the "support" mode — who to write the safeguard leave entry for, at their
-    // own home site, once this button's own write below has gone through.
-    let supportHomeSiteId = null, supportHomeGuardId = null;
+    // own home site, once this button's own write below has gone through, and exactly when he's
+    // free again (see syncHomeSiteSupportLeave()'s supportShiftEndMs param).
+    let supportHomeSiteId = null, supportHomeGuardId = null, supportShiftEndMs = null;
     if(slotInfo){
       const mode = $("#leaveReplacementMode").value;
       if(!mode){
@@ -3379,6 +3461,11 @@
         replacementGuardId = supportId;
         supportHomeSiteId = originId;
         supportHomeGuardId = originGuard.id;
+        {
+          const destShiftDefs = computeShiftDefsForDay(currentConfig().site, slotInfo.day.dm);
+          const destShift = destShiftDefs.find(sd => sd.id === slotInfo.shiftId);
+          if(destShift) supportShiftEndMs = shiftStartEnd(dateStr, destShift).end.getTime();
+        }
         logSuffix = ` — ${slotInfo.shiftLabel}, Slot ${slotInfo.slot+1} covered by ${originGuard.name} (support from ${originSite.name})`;
       } else {
         const coverId = $("#leaveCoverGuard").value;
@@ -3420,7 +3507,7 @@
     if(supportHomeSiteId && supportHomeGuardId){
       // Best-effort and doesn't block this UI on it — see syncHomeSiteSupportLeave()'s own doc
       // comment for why a failure here never undoes the assignment that was just made above.
-      syncHomeSiteSupportLeave(supportHomeSiteId, supportHomeGuardId, dateStr, true);
+      syncHomeSiteSupportLeave(supportHomeSiteId, supportHomeGuardId, dateStr, true, supportShiftEndMs);
       showToast(`Marked ${guardName(guardId)} ${leavePhrase(reason)} for ${dateStr}. His home site was marked automatically too.`);
     } else {
       showToast(`Marked ${guardName(guardId)} ${leavePhrase(reason)} for ${dateStr}.`);
@@ -3482,7 +3569,12 @@
     persistMonth();
     // Best-effort — same helper the "Support guard" replacement mode in "Mark a guard on leave"
     // uses, so this panel no longer relies on an admin remembering to do this step by hand.
-    syncHomeSiteSupportLeave(originId, originGuard.id, date, true);
+    // supportShiftEndMs (see that helper's own doc comment) is this destination shift's own
+    // real end time, so the home site's rest-hour check knows exactly when he's free again.
+    const destShiftDefsForEnd = computeShiftDefsForDay(currentConfig().site, dowMon(date));
+    const destShiftForEnd = destShiftDefsForEnd.find(sd => sd.id === shiftId);
+    const supportShiftEndMs = destShiftForEnd ? shiftStartEnd(date, destShiftForEnd).end.getTime() : null;
+    syncHomeSiteSupportLeave(originId, originGuard.id, date, true, supportShiftEndMs);
     showToast(`Assigned ${originGuard.name} to cover ${date}. His home site (${originSite.name}) was marked automatically.`);
     render();
   });
