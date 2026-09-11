@@ -70,6 +70,7 @@ export default function GuardBankPage() {
   const [stateFilter, setStateFilter] = useState(ALL);
   const [cityFilter, setCityFilter] = useState(ALL);
   const [brandFilter, setBrandFilter] = useState(ALL);
+  const [permitOnly, setPermitOnly] = useState(false);
 
   const poolGuards = useMemo(() => guards.filter((g) => g.status === 'pool'), [guards]);
   const deployedGuards = useMemo(() => guards.filter((g) => g.status === 'deployed'), [guards]);
@@ -111,23 +112,47 @@ export default function GuardBankPage() {
     branchMatches(g.branch) &&
     (stateFilter === ALL || g.state === stateFilter) &&
     (cityFilter === ALL || g.city === cityFilter) &&
-    (brandFilter === ALL || g.brandName === brandFilter);
+    (brandFilter === ALL || g.brandName === brandFilter) &&
+    (!permitOnly || isPermitSoon(g));
   const bufferMatchesFilters = (bg: BufferGuard) =>
     branchMatches(bg.lastBranch) && (stateFilter === ALL || bg.state === stateFilter) && (cityFilter === ALL || bg.city === cityFilter);
 
-  const filteredPool = useMemo(() => poolGuards.filter(guardMatchesFilters), [poolGuards, categoryFilter, branchFilter, stateFilter, cityFilter, brandFilter]);
-  const filteredDeployed = useMemo(() => deployedGuards.filter(guardMatchesFilters), [deployedGuards, categoryFilter, branchFilter, stateFilter, cityFilter, brandFilter]);
-  const filteredDismissed = useMemo(() => dismissedGuards.filter(guardMatchesFilters), [dismissedGuards, categoryFilter, branchFilter, stateFilter, cityFilter, brandFilter]);
+  const filteredPool = useMemo(() => poolGuards.filter(guardMatchesFilters), [poolGuards, categoryFilter, branchFilter, stateFilter, cityFilter, brandFilter, permitOnly]);
+  const filteredDeployed = useMemo(() => deployedGuards.filter(guardMatchesFilters), [deployedGuards, categoryFilter, branchFilter, stateFilter, cityFilter, brandFilter, permitOnly]);
+  const filteredDismissed = useMemo(() => dismissedGuards.filter(guardMatchesFilters), [dismissedGuards, categoryFilter, branchFilter, stateFilter, cityFilter, brandFilter, permitOnly]);
   const filteredBuffer = useMemo(() => bufferGuards.filter(bufferMatchesFilters), [bufferGuards, branchFilter, stateFilter, cityFilter]);
 
   const filtersActive =
-    categoryFilter !== 'all' || branchFilter !== ALL || stateFilter !== ALL || cityFilter !== ALL || brandFilter !== ALL;
+    categoryFilter !== 'all' ||
+    branchFilter !== ALL ||
+    stateFilter !== ALL ||
+    cityFilter !== ALL ||
+    brandFilter !== ALL ||
+    permitOnly;
   function clearFilters() {
     setCategoryFilter('all');
     setBranchFilter(ALL);
     setStateFilter(ALL);
     setCityFilter(ALL);
     setBrandFilter(ALL);
+    setPermitOnly(false);
+  }
+
+  // "Go to list" on the Permit expiring tile: jump straight to the guards it's counting.
+  // guardsWithPermitExpiringSoon() only ever returns nepal-category guards with status
+  // 'pool' or 'deployed' (dismissed guards are excluded there), so land on whichever of
+  // those two tabs actually has matches, preferring Deployed since that's where a permit
+  // renewal is usually most urgent to action.
+  function goToPermitExpiringList() {
+    setCategoryFilter('nepal');
+    setBranchFilter(ALL);
+    setStateFilter(ALL);
+    setCityFilter(ALL);
+    setBrandFilter(ALL);
+    setPermitOnly(true);
+    const hasDeployed = permitSoon.some((g) => g.status === 'deployed');
+    const hasPool = permitSoon.some((g) => g.status === 'pool');
+    setTab(hasDeployed ? 'Deployed Guards' : hasPool ? 'Guard Pool' : 'Deployed Guards');
   }
 
   function flash(message: string) {
@@ -217,6 +242,11 @@ export default function GuardBankPage() {
             value={String(permitSoon.length)}
             sub="Nepal category"
             accent={permitSoon.length > 0 ? VIZ.status.warning : undefined}
+            action={{
+              label: 'Go to list',
+              onClick: goToPermitExpiringList,
+              disabled: permitSoon.length === 0,
+            }}
           />
           <StatCard
             label="Turnover rate (12mo)"
@@ -356,6 +386,7 @@ export default function GuardBankPage() {
                     <th className="px-4 py-2.5">Employee ID</th>
                     <th className="px-4 py-2.5">Category</th>
                     <th className="px-4 py-2.5">Location</th>
+                    <th className="px-4 py-2.5">Permit expiry</th>
                     <th className="px-4 py-2.5">Registered</th>
                     <th className="px-4 py-2.5" />
                   </tr>
@@ -369,6 +400,18 @@ export default function GuardBankPage() {
                         <CategoryPill category={g.category} />
                       </td>
                       <td className="px-4 py-2.5 text-slate-500">{[g.city, g.state].filter(Boolean).join(', ') || '-'}</td>
+                      <td className="px-4 py-2.5">
+                        {g.category === 'nepal' && g.permitExpiryDate ? (
+                          <span
+                            className={clsx('text-xs', isPermitSoon(g) ? 'font-semibold' : 'text-slate-500')}
+                            style={isPermitSoon(g) ? { color: VIZ.status.warning } : undefined}
+                          >
+                            {formatDate(g.permitExpiryDate)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-300">-</span>
+                        )}
+                      </td>
                       <td className="px-4 py-2.5 text-slate-400">{formatDate(new Date(g.createdAt).toISOString())}</td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
                         <button
