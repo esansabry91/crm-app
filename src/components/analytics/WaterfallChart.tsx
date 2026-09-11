@@ -40,38 +40,38 @@ function colorFor(row: ChartRow): string {
 }
 
 /**
- * Renders the value label above one bar. Reads amount/kind/display straight off the props
- * Recharts hands us for THIS bar (spread from its own data entry, alongside that same entry's
- * x/y/width) rather than looking the row up via an `index` into our own `rows` array — the two
- * don't reliably line up (Recharts drops/renumbers entries internally when a bar's value is
- * exactly 0, e.g. an empty "Start of Month" bar, which silently shifted every later label onto
- * the wrong bar). Reading a bar's own fields off its own props can't be misaligned like that.
+ * Renders the value label above one bar. Recharts (v3) drops zero-dimension bars — like an empty
+ * "Start of Month" bar — out of the array it builds for LabelList *before* assigning `index`, so
+ * `index` ends up counting position within that filtered array, not position in our own `rows`.
+ * `value` doesn't have that problem: LabelList looks it up per-entry via dataKey (see the
+ * dataKey="name" below) from that SAME entry's own data, so it's always correctly paired with
+ * that entry's x/y/width no matter how entries upstream got filtered or renumbered. Matching on
+ * the bar's name instead of trusting `index` is what actually keeps text and bar in sync.
  */
 function BarTopLabel({
   x,
   y,
   width,
-  amount,
-  kind,
-  display,
+  value,
+  rows,
   formatValue,
 }: {
   x?: number;
   y?: number;
   width?: number;
-  amount?: number;
-  kind?: 'total' | 'delta';
-  display?: number;
+  value?: string;
+  rows: ChartRow[];
   formatValue: (v: number) => string;
 }) {
-  if (x == null || y == null || width == null || amount == null || kind == null) return null;
-  if (!display) return null;
+  if (x == null || y == null || width == null || value == null) return null;
+  const row = rows.find((r) => r.name === value);
+  if (!row || row.display === 0) return null;
   const text =
-    kind === 'total'
-      ? formatValue(amount)
-      : amount >= 0
-        ? `+${formatValue(amount)}`
-        : `-${formatValue(Math.abs(amount))}`;
+    row.kind === 'total'
+      ? formatValue(row.amount)
+      : row.amount >= 0
+        ? `+${formatValue(row.amount)}`
+        : `-${formatValue(Math.abs(row.amount))}`;
   return (
     <text x={x + width / 2} y={y - 6} textAnchor="middle" fontSize={10.5} fill={VIZ.ink.secondary}>
       {text}
@@ -146,7 +146,10 @@ export default function WaterfallChart({
           {rows.map((row, i) => (
             <Cell key={row.name + i} fill={colorFor(row)} />
           ))}
-          <LabelList content={(props: object) => <BarTopLabel {...props} formatValue={formatValue} />} />
+          <LabelList
+            dataKey="name"
+            content={(props: object) => <BarTopLabel {...props} rows={rows} formatValue={formatValue} />}
+          />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
