@@ -536,20 +536,20 @@
           <h2>Assign a temporary guard</h2>
           <p class="sub">Cover an empty slot left by a guard on leave/absent/MC when nobody else in the roster is available &mdash; logs the temp guard's name and rate so you can pay them</p>
           <div class="fieldrow">
-            <div style="flex:1;"><label class="small">Unfilled slot to cover</label><select id="tempSlotSelect"></select></div>
+            <div style="flex:1;"><label class="small">Unfilled slot to cover <span style="color:var(--critical);">*</span></label><select id="tempSlotSelect"></select></div>
           </div>
           <div class="fieldrow">
-            <div style="flex:1;"><label class="small">Temporary guard's name</label><input type="text" id="tempGuardName" placeholder="e.g. Zul (relief)"></div>
-            <div style="flex:1;"><label class="small">Rate for this shift (RM)</label><input type="number" id="tempGuardRate" min="0" step="0.01" placeholder="0.00"></div>
+            <div style="flex:1;"><label class="small">Temporary guard's name <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardName" placeholder="e.g. Zul (relief)"></div>
+            <div style="flex:1;"><label class="small">Rate for this shift (RM) <span style="color:var(--critical);">*</span></label><input type="number" id="tempGuardRate" min="0" step="0.01" placeholder="0.00"></div>
           </div>
           <div class="fieldrow">
-            <div style="flex:1;"><label class="small">MyKad number</label><input type="text" id="tempGuardMykad" placeholder="901231-14-5678" maxlength="14"></div>
-            <div style="flex:1;"><label class="small">Age</label><input type="number" id="tempGuardAge" min="16" max="80" step="1"></div>
-            <div style="flex:1;"><label class="small">Phone number</label><input type="text" id="tempGuardPhone" placeholder="e.g. 012-3456789"></div>
+            <div style="flex:1;"><label class="small">MyKad number <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardMykad" placeholder="901231-14-5678" maxlength="14"></div>
+            <div style="flex:1;"><label class="small">Age <span style="color:var(--critical);">*</span></label><input type="number" id="tempGuardAge" min="16" max="80" step="1"></div>
+            <div style="flex:1;"><label class="small">Phone number <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardPhone" placeholder="e.g. 012-3456789"></div>
           </div>
           <div class="fieldrow">
-            <div style="flex:1;"><label class="small">State</label><input type="text" id="tempGuardState" placeholder="e.g. Selangor"></div>
-            <div style="flex:1;"><label class="small">City</label><input type="text" id="tempGuardCity" placeholder="e.g. Petaling Jaya"></div>
+            <div style="flex:1;"><label class="small">State <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardState" placeholder="e.g. Selangor"></div>
+            <div style="flex:1;"><label class="small">City <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardCity" placeholder="e.g. Petaling Jaya"></div>
           </div>
           <button class="btn primary sm" id="assignTempBtn">Assign temporary guard</button>
           <p class="empty" id="tempSlotEmpty" hidden>No unfilled slots this month &mdash; nothing needs a temporary guard right now.</p>
@@ -1447,6 +1447,26 @@
     return /^\d{6}-\d{2}-\d{4}$/.test(formatted || "");
   }
 
+  // Auto-inserts a dash as a phone number is typed — after the 3rd digit for a mobile number
+  // (01X-XXXXXXX/XXXXXXXX) or the 2nd digit for a landline (0X-XXXXXXXX), matching how Malaysian
+  // numbers are actually written (e.g. "012-3456789"). Strips anything that isn't a digit first,
+  // so pasting an already-dashed number still works. Used by both the "Add guard" modal and
+  // "Assign a temporary guard"'s Phone number field.
+  function formatPhoneInput(raw){
+    const digits = (raw || "").replace(/\D/g, "").slice(0, 11);
+    if(!digits) return "";
+    const prefixLen = digits.slice(0, 2) === "01" ? 3 : 2;
+    if(digits.length <= prefixLen) return digits;
+    return digits.slice(0, prefixLen) + "-" + digits.slice(prefixLen);
+  }
+  // Loose on purpose — Malaysian numbers vary between 9 and 11 digits depending on area/mobile
+  // prefix — but still requires the auto-formatter's dash to actually be present, so a handful of
+  // stray digits can't slip through.
+  function isValidPhone(formatted){
+    const digits = (formatted || "").replace(/\D/g, "");
+    return digits.length >= 9 && digits.length <= 11 && digits[0] === "0" && (formatted || "").includes("-");
+  }
+
   function openPromptModal(opts){
     const root = $("#modalRoot");
     root.innerHTML = `
@@ -1605,6 +1625,8 @@
         </div>`;
       const mykadInput = $("#newGuardMykad");
       mykadInput.addEventListener("input", () => { mykadInput.value = formatMykadInput(mykadInput.value); });
+      const phoneInput = $("#newGuardPhone");
+      phoneInput.addEventListener("input", () => { phoneInput.value = formatPhoneInput(phoneInput.value); });
     }
   }
 
@@ -1704,7 +1726,7 @@
         const mykadNumber = $("#newGuardMykad").value.trim();
         const phoneNumber = $("#newGuardPhone").value.trim();
         if(!isValidMykad(mykadNumber)){ showErr("Enter a valid 12-digit MyKad number (e.g. 901231-14-5678)."); return; }
-        if(!phoneNumber){ showErr("Phone number is required."); return; }
+        if(!isValidPhone(phoneNumber)){ showErr("Enter a valid phone number (e.g. 012-3456789)."); return; }
         guard.mykadNumber = mykadNumber;
         guard.phoneNumber = phoneNumber;
       }
@@ -4396,10 +4418,13 @@
     render();
   });
 
+  $("#tempGuardMykad").addEventListener("input", () => { $("#tempGuardMykad").value = formatMykadInput($("#tempGuardMykad").value); });
+  $("#tempGuardPhone").addEventListener("input", () => { $("#tempGuardPhone").value = formatPhoneInput($("#tempGuardPhone").value); });
   $("#assignTempBtn").addEventListener("click", () => {
     const key = $("#tempSlotSelect").value;
     const name = $("#tempGuardName").value.trim();
-    const rate = Number($("#tempGuardRate").value);
+    const rateRaw = $("#tempGuardRate").value;
+    const rate = Number(rateRaw);
     const mykadNumber = $("#tempGuardMykad").value.trim();
     const ageRaw = $("#tempGuardAge").value;
     const age = Number(ageRaw);
@@ -4408,10 +4433,12 @@
     const cityVal = $("#tempGuardCity").value.trim();
     if(!key){ showToast("Pick an unfilled slot first.", true); return; }
     if(!name){ showToast("Enter the temporary guard's name.", true); return; }
-    if(!(rate >= 0)){ showToast("Enter a valid rate.", true); return; }
+    // Number("") is 0, not NaN — checking the raw string first is what actually makes this
+    // required instead of silently defaulting an untouched field to RM 0.00.
+    if(rateRaw.trim() === "" || !Number.isFinite(rate) || rate < 0){ showToast("Enter a valid rate.", true); return; }
     if(!isValidMykad(mykadNumber)){ showToast("Enter a valid 12-digit MyKad number (e.g. 901231-14-5678).", true); return; }
     if(ageRaw.trim() === "" || !Number.isFinite(age) || age <= 0){ showToast("Enter a valid age.", true); return; }
-    if(!phoneNumber){ showToast("Enter the temporary guard's phone number.", true); return; }
+    if(!isValidPhone(phoneNumber)){ showToast("Enter a valid phone number (e.g. 012-3456789).", true); return; }
     if(!stateVal){ showToast("Enter the temporary guard's state.", true); return; }
     if(!cityVal){ showToast("Enter the temporary guard's city.", true); return; }
     const ms = currentMonthState();

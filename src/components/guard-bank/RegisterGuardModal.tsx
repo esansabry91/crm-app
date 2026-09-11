@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { registerGuard } from '../../services/guards';
+import { formatMykadInput, formatPhoneInput, isValidMykad, isValidPhone } from '../../utils/format';
 
 /**
  * Guard Pool's own "+ Register" entry point — mirrors the fields Duty Roster's "Add guard"
@@ -46,8 +47,6 @@ export default function RegisterGuardModal({
 
   if (!open) return null;
 
-  const isValidMykad = (v: string) => /^\d{6}-\d{2}-\d{4}$/.test(v) || /^\d{12}$/.test(v);
-
   async function submit() {
     const empId = employeeId.trim();
     const fullName = name.trim();
@@ -64,7 +63,7 @@ export default function RegisterGuardModal({
       if (!permitExpiryDate) return setError('Permit expiry date is required.');
     } else {
       if (!isValidMykad(mykadNumber.trim())) return setError('Enter a valid 12-digit MyKad number (e.g. 901231-14-5678).');
-      if (!phoneNumber.trim()) return setError('Phone number is required.');
+      if (!isValidPhone(phoneNumber.trim())) return setError('Enter a valid phone number (e.g. 012-3456789).');
     }
 
     setSaving(true);
@@ -133,11 +132,22 @@ export default function RegisterGuardModal({
             <>
               <div>
                 <label className="text-xs font-medium text-slate-600 block mb-1">MyKad number</label>
-                <input className="input" value={mykadNumber} onChange={(e) => setMykadNumber(e.target.value)} placeholder="901231-14-5678" />
+                <input
+                  className="input"
+                  value={mykadNumber}
+                  onChange={(e) => setMykadNumber(formatMykadInput(e.target.value))}
+                  placeholder="901231-14-5678"
+                  maxLength={14}
+                />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-600 block mb-1">Phone number</label>
-                <input className="input" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
+                <input
+                  className="input"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(formatPhoneInput(e.target.value))}
+                  placeholder="e.g. 012-3456789"
+                />
               </div>
             </>
           )}

@@ -3,6 +3,8 @@ import clsx from 'clsx';
 import StatCard from '../components/analytics/StatCard';
 import RegisterGuardModal from '../components/guard-bank/RegisterGuardModal';
 import AssignGuardModal from '../components/guard-bank/AssignGuardModal';
+import GuardDetailsModal from '../components/guard-bank/GuardDetailsModal';
+import BufferGuardDetailsModal from '../components/guard-bank/BufferGuardDetailsModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useBranches } from '../hooks/useBranches';
 import { useGuards, useBufferGuards, useSitesForPicker } from '../hooks/useGuards';
@@ -57,6 +59,8 @@ export default function GuardBankPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [assignGuard, setAssignGuard] = useState<Guard | null>(null);
+  const [viewGuard, setViewGuard] = useState<Guard | null>(null);
+  const [viewBuffer, setViewBuffer] = useState<BufferGuard | null>(null);
   const [editingBufferId, setEditingBufferId] = useState<string | null>(null);
   const [editPhone, setEditPhone] = useState('');
   const [backfilling, setBackfilling] = useState(false);
@@ -366,7 +370,13 @@ export default function GuardBankPage() {
                       </td>
                       <td className="px-4 py-2.5 text-slate-500">{[g.city, g.state].filter(Boolean).join(', ') || '-'}</td>
                       <td className="px-4 py-2.5 text-slate-400">{formatDate(new Date(g.createdAt).toISOString())}</td>
-                      <td className="px-4 py-2.5 text-right">
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => setViewGuard(g)}
+                          className="px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-md"
+                        >
+                          View
+                        </button>
                         <button
                           onClick={() => setAssignGuard(g)}
                           className="px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-md"
@@ -397,6 +407,7 @@ export default function GuardBankPage() {
                     <th className="px-4 py-2.5">Branch</th>
                     <th className="px-4 py-2.5">Brand</th>
                     <th className="px-4 py-2.5">Permit expiry</th>
+                    <th className="px-4 py-2.5" />
                   </tr>
                 </thead>
                 <tbody>
@@ -425,6 +436,14 @@ export default function GuardBankPage() {
                           <span className="text-xs text-slate-300">-</span>
                         )}
                       </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <button
+                          onClick={() => setViewGuard(g)}
+                          className="px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-md"
+                        >
+                          View
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -447,6 +466,7 @@ export default function GuardBankPage() {
                     <th className="px-4 py-2.5">Brand</th>
                     <th className="px-4 py-2.5">Reason</th>
                     <th className="px-4 py-2.5">Dismissed</th>
+                    <th className="px-4 py-2.5" />
                   </tr>
                 </thead>
                 <tbody>
@@ -465,6 +485,14 @@ export default function GuardBankPage() {
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-slate-400">{g.dismissedAt ? formatDateTime(g.dismissedAt) : '-'}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <button
+                          onClick={() => setViewGuard(g)}
+                          className="px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-md"
+                        >
+                          View
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -489,6 +517,7 @@ export default function GuardBankPage() {
                   <th className="px-4 py-2.5">Last site</th>
                   <th className="px-4 py-2.5">Last used at</th>
                   <th className="px-4 py-2.5">Times used</th>
+                  <th className="px-4 py-2.5" />
                 </tr>
               </thead>
               <tbody>
@@ -537,6 +566,14 @@ export default function GuardBankPage() {
                       <td className="px-4 py-2.5 text-slate-500">{bg.lastSiteName || '-'}</td>
                       <td className="px-4 py-2.5 text-slate-400">{formatDateTime(bg.lastUsedAt)}</td>
                       <td className="px-4 py-2.5 text-slate-500 tabular-nums">{bg.timesUsed}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <button
+                          onClick={() => setViewBuffer(bg)}
+                          className="px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-md"
+                        >
+                          View
+                        </button>
+                      </td>
                     </tr>
                   ))}
               </tbody>
@@ -553,6 +590,8 @@ export default function GuardBankPage() {
         onClose={() => setAssignGuard(null)}
         onAssigned={flash}
       />
+      <GuardDetailsModal guard={viewGuard} onClose={() => setViewGuard(null)} />
+      <BufferGuardDetailsModal bufferGuard={viewBuffer} onClose={() => setViewBuffer(null)} />
     </div>
   );
 }
