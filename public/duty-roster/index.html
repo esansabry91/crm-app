@@ -498,6 +498,7 @@
                 <option value="">Choose replacement…</option>
                 <option value="temp">Temporary guard</option>
                 <option value="restday">Current guard on rest day</option>
+                <option value="support" id="leaveReplacementSupportOpt">Support guard (from another site)</option>
               </select>
             </div>
             <div style="flex:1;" id="leaveCoverGuardWrap" hidden>
@@ -505,6 +506,23 @@
               <select id="leaveCoverGuard"></select>
             </div>
           </div>
+          <!-- Admin + Branch Manager only (see canAssignSupportGuard()) — mirrors the "Assign a
+               support guard" panel in every way except it's triggered from THIS side (the guard
+               going on leave) instead of from the destination site's own unfilled-slot list, and
+               it also writes the "Support (Other Site)" safeguard leave entry at his home site
+               automatically (see syncHomeSiteSupportLeave()) instead of relying on someone to
+               remember to do it by hand. -->
+          <div class="fieldrow" id="leaveSupportRow" hidden>
+            <div style="flex:1;">
+              <label class="small">From site (same branch)</label>
+              <select id="leaveSupportOriginSite"></select>
+            </div>
+            <div style="flex:1;">
+              <label class="small">Guard</label>
+              <select id="leaveSupportGuardSelect"></select>
+            </div>
+          </div>
+          <p class="empty" id="leaveSupportNoOtherSites" hidden>No other sites in this branch yet &mdash; nothing to borrow a guard from.</p>
           <p class="empty" id="leaveReplacementNote" style="margin:0 0 10px;" hidden></p>
           <button class="btn primary sm" id="addLeaveBtn">Add leave</button>
           <table class="simple" style="margin-top:12px;">
@@ -2438,6 +2456,13 @@
     if(reasonSel && !reasonSel.options.length){
       reasonSel.innerHTML = LEAVE_REASONS.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
     }
+    const supportOpt = $("#leaveReplacementSupportOpt");
+    if(supportOpt){
+      const allowed = canAssignSupportGuard();
+      supportOpt.hidden = !allowed;
+      supportOpt.disabled = !allowed;
+      if(!allowed && $("#leaveReplacementMode").value === "support") $("#leaveReplacementMode").value = "";
+    }
     updateLeaveReplacementUI();
   }
   // Finds the (shiftId, slot) a guard is assigned to on a given date, generating that date's
@@ -2481,16 +2506,18 @@
   // guard/date/mode is currently selected — shown only when that guard actually has a shift to
   // cover on that date; otherwise there's nothing to replace. Called on every render() (via
   // renderLeaveGuardSelect) and on guard/date/mode change (see the listeners near addLeaveBtn).
-  function updateLeaveReplacementUI(){
+  async function updateLeaveReplacementUI(){
     const guardId = $("#leaveGuard").value;
     const dateStr = $("#leaveDate").value;
     const row = $("#leaveReplacementRow");
     const note = $("#leaveReplacementNote");
     const coverWrap = $("#leaveCoverGuardWrap");
     const coverSel = $("#leaveCoverGuard");
+    const supportRow = $("#leaveSupportRow");
     if(!guardId || !dateStr){
       row.hidden = true;
       coverWrap.hidden = true;
+      supportRow.hidden = true;
       note.hidden = true;
       return;
     }
@@ -2498,6 +2525,7 @@
     if(!slotInfo){
       row.hidden = true;
       coverWrap.hidden = true;
+      supportRow.hidden = true;
       note.hidden = false;
       note.textContent = `${guardName(guardId)} isn't scheduled to work on ${dateStr} — no replacement needed.`;
       return;
@@ -2505,6 +2533,7 @@
     row.hidden = false;
     const mode = $("#leaveReplacementMode").value;
     if(mode === "restday"){
+      supportRow.hidden = true;
       const resting = restingGuardsOn(dateStr, guardId, slotInfo.day, slotInfo.ms);
       coverWrap.hidden = false;
       const prev = coverSel.value;
@@ -2516,10 +2545,19 @@
         : `No guards are currently resting on ${dateStr} — choose Temporary guard instead.`;
     } else if(mode === "temp"){
       coverWrap.hidden = true;
+      supportRow.hidden = true;
       note.hidden = false;
       note.textContent = `${slotInfo.shiftLabel}, Slot ${slotInfo.slot+1} on ${dateStr} will stay open — assign a temporary guard for it below.`;
+    } else if(mode === "support" && canAssignSupportGuard()){
+      coverWrap.hidden = true;
+      supportRow.hidden = false;
+      note.hidden = false;
+      note.textContent = `Covering ${slotInfo.shiftLabel}, Slot ${slotInfo.slot+1} on ${dateStr} with a guard borrowed from another site — his own home site is marked automatically.`;
+      fillLeaveSupportSites();
+      await fillLeaveSupportGuardSelect(dateStr);
     } else {
       coverWrap.hidden = true;
+      supportRow.hidden = true;
       note.hidden = false;
       note.textContent = `${guardName(guardId)} is scheduled for ${slotInfo.shiftLabel}, Slot ${slotInfo.slot+1} on ${dateStr} — choose how it's covered.`;
     }
@@ -2624,6 +2662,11 @@
   // change the slot or origin site, instead of re-running the availability check every time.
   let supportGuardSelectKey = null;
 
+  // Same idea as supportGuardSelectKey above, but for the "Support guard (from another site)"
+  // replacement mode inside "Mark a guard on leave" — kept separate since the two pickers can
+  // both be live (in different panels) without stepping on each other's in-flight fetch.
+  let leaveSupportGuardSelectKey = null;
+
   // Cross-site, read-only: runs the ORIGIN site's own scheduling logic for one specific date to
   // find out who's genuinely free there — not already assigned a shift (auto-picked or
   // overridden) and not already on leave for some other reason — so "Assign a support guard"
@@ -2714,6 +2757,91 @@
     $("#assignSupportBtn").disabled = false;
   }
 
+  // Populates #leaveSupportOriginSite with the other sites in this branch — same source and
+  // logic as otherBranchSites(), reused here since this is the SAME cross-site borrowing
+  // mechanism, just triggered from the guard-going-on-leave side instead of the
+  // destination-site's-unfilled-slot side (see "Assign a support guard" above).
+  function fillLeaveSupportSites(){
+    const sel = $("#leaveSupportOriginSite");
+    if(!sel) return;
+    const sites = otherBranchSites();
+    const prev = sel.value;
+    $("#leaveSupportNoOtherSites").hidden = sites.length > 0;
+    sel.innerHTML = sites.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join("");
+    if(prev && sites.some(s => s.id === prev)) sel.value = prev;
+  }
+
+  // Mirrors fillSupportGuardSelect() above exactly (same computeFreeGuardsAt() availability
+  // check, same debounce-by-key pattern) but populates #leaveSupportGuardSelect for the
+  // "Mark a guard on leave" panel's own "Support guard" replacement mode instead.
+  async function fillLeaveSupportGuardSelect(dateStr){
+    const sel = $("#leaveSupportGuardSelect");
+    if(!sel) return;
+    const originId = $("#leaveSupportOriginSite").value;
+    if(!originId || !dateStr){
+      leaveSupportGuardSelectKey = null;
+      sel.innerHTML = "";
+      sel.disabled = true;
+      return;
+    }
+    const key = originId + "|" + dateStr;
+    if(key === leaveSupportGuardSelectKey) return;
+    leaveSupportGuardSelectKey = key;
+
+    const prev = sel.value;
+    sel.disabled = true;
+    sel.innerHTML = `<option value="">Checking availability…</option>`;
+
+    const freeGuards = await computeFreeGuardsAt(originId, dateStr);
+    if(leaveSupportGuardSelectKey !== key) return; // origin/date changed again while this was in flight
+
+    sel.disabled = false;
+    if(!freeGuards.length){
+      sel.innerHTML = `<option value="">No guards free that day</option>`;
+      return;
+    }
+    sel.innerHTML = freeGuards.map(g => `<option value="${g.id}">${escapeHtml(g.name)}${g.employeeId ? " ("+escapeHtml(g.employeeId)+")" : ""}</option>`).join("");
+    if(prev && freeGuards.some(g => g.id === prev)) sel.value = prev;
+  }
+
+  // Cross-site, best-effort write directly into a guard's OWN home site's month doc — adds (or,
+  // on add=false, removes) a "Support (Other Site)" leave entry there so his home roster never
+  // tries to schedule him while he's covering a shift elsewhere. This is exactly the step the
+  // "Assign a support guard" panel's own success toast still asks an admin to remember to do by
+  // hand; doing it here automatically is the whole point of offering "Support guard" as a
+  // replacement mode inside "Mark a guard on leave" instead of only as a separate panel. Never
+  // awaited by its caller in a way that blocks the actual assignment — if this write fails
+  // (offline, permissions, home site since archived), the support assignment itself still
+  // stands; the home site just needs the safeguard entry added by hand as before.
+  async function syncHomeSiteSupportLeave(homeSiteId, homeGuardId, dateStr, add){
+    if(!dbHandle || !homeSiteId || !homeGuardId || !dateStr) return;
+    try{
+      const monthKeyStr = dateStr.slice(0,7);
+      const ref = dbHandle.doc("sites/"+homeSiteId).collection("months").doc(monthKeyStr);
+      const snap = await ref.get();
+      const ms = snap.exists ? deepClone(snap.data()) : emptyMonthState(monthKeyStr);
+      if(!ms.leaves) ms.leaves = {};
+      const entries = leaveEntriesFor(ms, dateStr);
+      const idx = entries.findIndex(e => e.id === homeGuardId);
+      if(add){
+        if(idx >= 0) entries[idx].reason = "Support (Other Site)";
+        else entries.push({ id: homeGuardId, reason: "Support (Other Site)" });
+        ms.leaves[dateStr] = entries;
+      } else if(idx >= 0 && entries[idx].reason === "Support (Other Site)" && !entries[idx].replacementKey){
+        // Only remove an entry this same mechanism would plausibly have created — never touch
+        // one that's since picked up its own replacement details (a real leave layered on top).
+        entries.splice(idx, 1);
+        ms.leaves[dateStr] = entries;
+      } else {
+        return;
+      }
+      ms.updatedAt = nowIso();
+      await ref.set(ms);
+    }catch(e){
+      // Best-effort — see doc comment above.
+    }
+  }
+
   function renderSupportGuardPanel(result){
     const panel = $("#supportGuardPanel");
     if(!panel) return;
@@ -2781,9 +2909,16 @@
           danger: true,
           onConfirm: () => {
             if(ms.overrides[key] === supportId) delete ms.overrides[key];
+            const homeSiteId = sg[supportId] && sg[supportId].homeSiteId;
+            const homeGuardId = sg[supportId] && sg[supportId].homeGuardId;
             delete sg[supportId];
             addLog(`Removed support guard ${name}.`);
             persistMonth();
+            if(homeSiteId && homeGuardId){
+              // Best-effort — undoes the safeguard leave entry that was auto-written at his
+              // home site when this support assignment was created.
+              syncHomeSiteSupportLeave(homeSiteId, homeGuardId, key.split("|")[0], false);
+            }
             showToast(`Removed ${name}.`);
             render();
           }
@@ -2854,6 +2989,11 @@
     if(e.replacementMode === "restday" && e.replacementGuardId) {
       return ` <span class="pill info">covered by ${escapeHtml(guardName(e.replacementGuardId))}</span>`;
     }
+    if(e.replacementMode === "support" && e.replacementGuardId) {
+      const g = guardById(e.replacementGuardId);
+      const fromSite = g && g.homeSiteName ? ` from ${escapeHtml(g.homeSiteName)}` : "";
+      return ` <span class="pill info">support guard: ${escapeHtml(guardName(e.replacementGuardId))}${fromSite}</span>`;
+    }
     return "";
   }
   function renderLeaveTable(){
@@ -2878,6 +3018,14 @@
           if(!e.replacementKey) return;
           const expected = e.replacementMode === "temp" ? RESERVED_FOR_TEMP : e.replacementGuardId;
           if(ms.overrides[e.replacementKey] === expected) delete ms.overrides[e.replacementKey];
+          if(e.replacementMode === "support" && e.replacementGuardId){
+            const sg = ms.supportGuards && ms.supportGuards[e.replacementGuardId];
+            if(sg && sg.homeSiteId && sg.homeGuardId){
+              // Best-effort — undoes the safeguard leave entry syncHomeSiteSupportLeave()
+              // wrote at his own home site when this support assignment was created.
+              syncHomeSiteSupportLeave(sg.homeSiteId, sg.homeGuardId, d, false);
+            }
+          }
         });
         delete ms.leaves[d];
         addLog(`Cleared leave entries for ${d}.`);
@@ -3180,8 +3328,12 @@
   $("#leaveGuard").addEventListener("change", updateLeaveReplacementUI);
   $("#leaveDate").addEventListener("change", updateLeaveReplacementUI);
   $("#leaveReplacementMode").addEventListener("change", updateLeaveReplacementUI);
+  $("#leaveSupportOriginSite").addEventListener("change", () => {
+    leaveSupportGuardSelectKey = null; // force a refetch since the origin site itself changed
+    fillLeaveSupportGuardSelect($("#leaveDate").value);
+  });
 
-  $("#addLeaveBtn").addEventListener("click", () => {
+  $("#addLeaveBtn").addEventListener("click", async () => {
     const guardId = $("#leaveGuard").value;
     const dateStr = $("#leaveDate").value;
     const reason = ($("#leaveReason") && $("#leaveReason").value) || "Leave";
@@ -3194,16 +3346,40 @@
     // up in time — can never write a replacement for the wrong shift.
     const slotInfo = findGuardSlotOnDate(guardId, dateStr);
     let replacementMode = null, replacementGuardId = null, replacementKey = null, logSuffix = "";
+    // Set only for the "support" mode — who to write the safeguard leave entry for, at their
+    // own home site, once this button's own write below has gone through.
+    let supportHomeSiteId = null, supportHomeGuardId = null;
     if(slotInfo){
       const mode = $("#leaveReplacementMode").value;
       if(!mode){
-        showToast("Choose a replacement — temporary guard or current guard on rest day.", true);
+        showToast("Choose a replacement — temporary guard, current guard on rest day, or support guard.", true);
         return;
       }
       replacementKey = dateStr + "|" + slotInfo.shiftId + "|" + slotInfo.slot;
       if(mode === "temp"){
         replacementMode = "temp";
         logSuffix = ` — ${slotInfo.shiftLabel}, Slot ${slotInfo.slot+1} held open for a temporary guard`;
+      } else if(mode === "support"){
+        if(!canAssignSupportGuard()) return;
+        const originId = $("#leaveSupportOriginSite").value;
+        const originGuardId = $("#leaveSupportGuardSelect").value;
+        if(!originId){ showToast("Pick which site to borrow a guard from.", true); return; }
+        if(!originGuardId){ showToast("Pick which guard is covering this shift.", true); return; }
+        const originSite = state.sites.find(s => s.id === originId);
+        const originConfig = state.configsCache[originId];
+        const originGuard = originConfig && originConfig.guards.find(g => g.id === originGuardId);
+        if(!originSite || !originGuard){ showToast("Couldn't find that guard — try again.", true); return; }
+        const sg = monthSupportGuards(ms);
+        const supportId = newId("sup");
+        sg[supportId] = {
+          homeSiteId: originId, homeSiteName: originSite.name, homeGuardId: originGuard.id,
+          name: originGuard.name, employeeId: originGuard.employeeId || "", createdAt: nowIso()
+        };
+        replacementMode = "support";
+        replacementGuardId = supportId;
+        supportHomeSiteId = originId;
+        supportHomeGuardId = originGuard.id;
+        logSuffix = ` — ${slotInfo.shiftLabel}, Slot ${slotInfo.slot+1} covered by ${originGuard.name} (support from ${originSite.name})`;
       } else {
         const coverId = $("#leaveCoverGuard").value;
         if(!coverId){
@@ -3240,7 +3416,15 @@
     addLog(`Marked ${guardName(guardId)} ${leavePhrase(reason)} for ${dateStr}.${logSuffix}`);
     if(key === state.currentMonth) persistMonth();
     else persistMonthByKey(state.currentSiteId, key);
-    showToast(`Marked ${guardName(guardId)} ${leavePhrase(reason)} for ${dateStr}.`);
+
+    if(supportHomeSiteId && supportHomeGuardId){
+      // Best-effort and doesn't block this UI on it — see syncHomeSiteSupportLeave()'s own doc
+      // comment for why a failure here never undoes the assignment that was just made above.
+      syncHomeSiteSupportLeave(supportHomeSiteId, supportHomeGuardId, dateStr, true);
+      showToast(`Marked ${guardName(guardId)} ${leavePhrase(reason)} for ${dateStr}. His home site was marked automatically too.`);
+    } else {
+      showToast(`Marked ${guardName(guardId)} ${leavePhrase(reason)} for ${dateStr}.`);
+    }
     $("#leaveReplacementMode").value = "";
     render();
   });
@@ -3296,7 +3480,10 @@
     const label = shiftLabelForKey(date, shiftId);
     addLog(`Assigned ${originGuard.name} (support from ${originSite.name}) to ${label}, Slot ${Number(slot)+1} on ${date}.`);
     persistMonth();
-    showToast(`Assigned ${originGuard.name} to cover ${date}. Remember to also mark him "Support (Other Site)" at ${originSite.name}.`);
+    // Best-effort — same helper the "Support guard" replacement mode in "Mark a guard on leave"
+    // uses, so this panel no longer relies on an admin remembering to do this step by hand.
+    syncHomeSiteSupportLeave(originId, originGuard.id, date, true);
+    showToast(`Assigned ${originGuard.name} to cover ${date}. His home site (${originSite.name}) was marked automatically.`);
     render();
   });
 
