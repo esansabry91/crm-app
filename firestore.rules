@@ -313,9 +313,13 @@ service cloud.firestore {
     // Temporary/one-off guards recorded purely for future contact — synced from Duty Roster's
     // "temp guard" slot entries (monthTempGuards in index.html: a one-off name+rate typed into a
     // shift, not tied to any roster guard id). Deliberately has NO linkage to /guards or /sites
-    // — same access as /guards (everyone except Payroll), simply a contact list.
+    // — same read/create/update access as /guards (everyone except Payroll), simply a contact
+    // list. Deleting a row is permanent (no "dismissed" state to fall back to, unlike /guards),
+    // so — unlike everything else here — that's admin-only, matching removeBufferGuard()'s
+    // Remove button in GuardBankPage.tsx being admin-gated client-side too.
     match /bufferGuards/{id} {
-      allow read, write: if isActiveUser() && !isPayroll();
+      allow read, create, update: if isActiveUser() && !isPayroll();
+      allow delete: if isAdmin();
     }
   }
 }

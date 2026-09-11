@@ -642,13 +642,15 @@ export default function GuardBankPage() {
                         >
                           View
                         </button>
-                        <button
-                          onClick={() => removeBuffer(bg)}
-                          disabled={removingBufferId === bg.id}
-                          className="px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-60 rounded-md"
-                        >
-                          {removingBufferId === bg.id ? 'Removing…' : 'Remove'}
-                        </button>
+                        {profile?.role === 'admin' && (
+                          <button
+                            onClick={() => removeBuffer(bg)}
+                            disabled={removingBufferId === bg.id}
+                            className="px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-60 rounded-md"
+                          >
+                            {removingBufferId === bg.id ? 'Removing…' : 'Remove'}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
