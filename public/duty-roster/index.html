@@ -609,9 +609,6 @@
     <div class="panel">
       <h2>Summary report</h2>
       <p class="sub" id="summaryReportSub">Per-guard totals for the month shown on the Roster tab</p>
-      <button class="btn primary sm" id="exportTimeAttendanceBtn" type="button" style="margin-bottom:10px;">Export to Excel (TimeAttendance format)</button>
-      <button class="btn sm" id="refreshCombinedBtn" type="button" style="margin-bottom:10px;">Refresh combined hours</button>
-      <p class="empty" id="combinedHoursNote" style="margin:0 0 10px;">"Combined" totals a guard's own man-hours here plus any hours he picked up as a support guard at other sites this month &mdash; for reference only, it never changes this site's own Man-hours column or its exports. Click "Refresh combined hours" to (re)load it.</p>
       <div class="tablewrap" style="overflow-x:auto;">
         <table class="simple">
           <thead><tr>
@@ -628,9 +625,36 @@
             <th>Absent</th>
             <th>Leave</th>
             <th>Unpaid leave</th>
-            <th>Combined (incl. support elsewhere)</th>
           </tr></thead>
           <tbody id="summaryReportBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Combined hours (incl. support elsewhere)</h2>
+      <p class="sub" id="combinedReportSub">Each of this site's own guards, with support-guard shifts at other branch sites folded in</p>
+      <button class="btn primary sm" id="exportTimeAttendanceBtn" type="button" style="margin-bottom:10px;">Export to Excel (TimeAttendance format)</button>
+      <button class="btn sm" id="refreshCombinedBtn" type="button" style="margin-bottom:10px;">Refresh combined hours</button>
+      <p class="empty" id="combinedHoursNote" style="margin:0 0 10px;">Every column here is this site's own numbers (worked days, OT, leave, etc.) plus the same guard's shifts as a support guard at other branch sites this month &mdash; this is the figure the Excel export above uses, and it never changes the plain Summary report above. Click "Refresh combined hours" to (re)load it.</p>
+      <div class="tablewrap" style="overflow-x:auto;">
+        <table class="simple">
+          <thead><tr>
+            <th>Employee ID</th>
+            <th>Guard</th>
+            <th>Man-hours</th>
+            <th>Normal worked days</th>
+            <th>Worked rest days</th>
+            <th>Worked public holidays</th>
+            <th>Normal OT (hrs)</th>
+            <th>Rest-day OT (hrs)</th>
+            <th>Public holiday OT (hrs)</th>
+            <th>MC</th>
+            <th>Absent</th>
+            <th>Leave</th>
+            <th>Unpaid leave</th>
+          </tr></thead>
+          <tbody id="combinedReportBody"></tbody>
         </table>
       </div>
     </div>
@@ -829,8 +853,9 @@
     // — see "Assign a support guard" in Adjustments. Referenced from monthState.overrides the
     // same way (see guardById()'s support-guard fallback) and tallied into THIS site's own
     // manHours totals (he really worked here), but never written into the home site's own
-    // month doc at all — see computeIncomingSupportHours() for how the home site instead reads
-    // this back, live, to show his combined total without touching its own official numbers.
+    // month doc at all — see computeIncomingSupportBreakdown() for how the home site instead
+    // reads this back, live, to show his combined total without touching its own official
+    // numbers.
     return { month:key, overrides:{}, leaves:{}, log:[], tempGuards:{}, supportGuards:{}, updatedAt: nowIso() };
   }
   // Defensive accessors: months/configs saved before these fields existed won't have them.
@@ -1026,8 +1051,8 @@
     canEdit: true,          // false for payroll — drives the read-only lockdown
     payrollBranchFilterValue: "", // currently selected branch in the payroll-only branch filter dropdown ("" = all)
     branchOptions: [],     // branch names from the CRM's own branch list, for the "assign to branch" picker
-    // "siteId::monthKey" -> {homeGuardId: hours}. Populated on demand by the "Refresh combined
-    // hours" button (computeIncomingSupportHours()) — see the Summary Report's Combined column.
+    // "siteId::monthKey" -> {homeGuardId: breakdown}. Populated on demand by the "Refresh
+    // combined hours" button (computeIncomingSupportBreakdown()) — see the Combined hours panel.
     combinedHoursCache: {}
   };
   function currentConfig(){
@@ -1418,6 +1443,7 @@
     renderFairness(lastResult);
     renderConflicts(lastResult);
     renderSummaryReport(lastResult);
+    renderCombinedReport(lastResult);
     renderGuardsTable();
     renderSiteRequirement();
     renderSiteStateSelect();
@@ -1785,8 +1811,9 @@
     return rows;
   }
 
-  // `incoming`, when passed, is a {homeGuardId: hours} map from computeIncomingSupportHours()
-  // (see the "Refresh combined hours" button) — omit it (or pass null) to leave the Combined
+  // `incoming`, when passed, is a {homeGuardId: breakdown} map from
+  // computeIncomingSupportBreakdown() (see the "Refresh combined hours" button) — only
+  // `.manHours` off each entry is used here — omit it (or pass null) to leave the Combined
   // column blank, e.g. when it's never been refreshed for this site/month.
   function summaryReportExportRows(y, m, config, monthState, result, incoming){
     const summary = computeGuardSummary(y, m, config, monthState, result);
@@ -1817,7 +1844,7 @@
       let combinedCell = "";
       if(incoming){
         combinedKnown = true;
-        const combined = n(s.manHours) + n(incoming[g.id]);
+        const combined = n(s.manHours) + n(incoming[g.id] && incoming[g.id].manHours);
         totals.combined += combined;
         combinedCell = combined;
       }
@@ -1890,8 +1917,16 @@
   // tool doesn't track clock-in/out timing at all — they're only here so the template's column
   // count/positions stay intact for the importer. Temp/relief guards are left out since they
   // have no Employee Code to put in column A.
-  function timeAttendanceExportRows(y, m, config, monthState, result){
-    const summary = computeGuardSummary(y, m, config, monthState, result);
+  // Same shape as before, but every guard's row now uses his COMBINED totals (this site's own
+  // numbers plus whatever he picked up as a support guard at other branch sites this month —
+  // see computeIncomingSupportBreakdown()) instead of just his numbers here. This file is now
+  // meant to be the single, complete source for his pay this month, so — unlike the old
+  // version — it no longer adds an extra row for a guard borrowed IN from another site: his
+  // combined total (support hours included) is exported once, from his own home site. Only
+  // this site's own permanent guards get a row here; a borrowed-in guard's row belongs on his
+  // own home site's export instead.
+  function timeAttendanceExportRows(y, m, config, monthState, result, combinedMap){
+    const homeSummary = computeGuardSummary(y, m, config, monthState, result);
     const guards = config.guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
     const n = v => v || 0;
 
@@ -1922,32 +1957,16 @@
       "Lateness Count", "Lateness Time", "Early Out Count", "Early Out Time"];
 
     const rows = guards.map(g => {
-      const s = summary[g.id] || {};
+      const s = emptyGuardBreakdown();
+      addGuardBreakdown(s, homeSummary[g.id]);
+      addGuardBreakdown(s, combinedMap && combinedMap[g.id]);
       return [g.employeeId || "", g.name, NORMAL_WORK_DAYS, n(s.normalDays), n(s.absent),
         n(s.leave), n(s.unpaidLeave), n(s.restDaysWorked), n(s.holidayDaysWorked),
         n(s.normalOTHours), n(s.restOTHours), n(s.holidayOTHours),
         "", "", "", ""]; // Lateness/Early Out — not tracked by this tool, left blank
     });
 
-    // Support guards — real guards borrowed from another site for a shift here — DO get a row,
-    // unlike temp/relief guards above (they have a real Employee Code to put in column A). This
-    // assumes your payroll importer sums separate uploads that share the same Employee Code
-    // (one row from his home site's own file, one row from here) rather than only keeping the
-    // last one it sees — worth confirming with whoever runs your payroll import. If that
-    // assumption doesn't hold, drop this block and pay support shifts by hand instead, using
-    // the Combined column on the Summary Report to know the extra amount owed.
-    const supportGuardsMap = monthSupportGuards(monthState);
-    const supportRows = Object.keys(supportGuardsMap).map(id => {
-      const entry = supportGuardsMap[id] || {};
-      if(!entry.employeeId) return null; // no Employee Code on file for this guard — can't import a row for them
-      const s = summary[id] || {};
-      return [entry.employeeId, entry.name || "", NORMAL_WORK_DAYS, n(s.normalDays), n(s.absent),
-        n(s.leave), n(s.unpaidLeave), n(s.restDaysWorked), n(s.holidayDaysWorked),
-        n(s.normalOTHours), n(s.restOTHours), n(s.holidayOTHours),
-        "", "", "", ""];
-    }).filter(Boolean);
-
-    return [descRow, typeRow, headerRow, ...rows, ...supportRows];
+    return [descRow, typeRow, headerRow, ...rows];
   }
 
   function exportCurrentMonthToExcel(){
@@ -1978,18 +1997,37 @@
   // Standalone export — its own .xlsx with just the one "TimeAttendance" sheet, kept separate
   // from the main roster export above (button lives on the Summary Report tab) since this file
   // goes straight into the payroll system's importer rather than being a roster record.
-  function exportTimeAttendanceToExcel(){
+  // Now lives on the Combined hours panel (see the HTML above) rather than the plain Summary
+  // report, and exports COMBINED totals — see timeAttendanceExportRows()'s own comment for why.
+  // If "Refresh combined hours" hasn't been clicked yet for this site/month, this fetches it
+  // itself first (same cross-site read as that button) so the export is never silently missing
+  // support-elsewhere hours just because nobody clicked Refresh first; the freshly-loaded data
+  // is cached and also reflected in the on-screen panel right after.
+  async function exportTimeAttendanceToExcel(){
     if(typeof XLSX === "undefined"){
       showToast("Couldn't load the Excel export tool — check your internet connection and try again.", true);
       return;
     }
+    const btn = $("#exportTimeAttendanceBtn");
+    const originalLabel = btn ? btn.textContent : "";
+    const siteId = state.currentSiteId;
+    const monthKeyStr = state.currentMonth;
+    let combinedMap = currentCombinedHours();
+    if(!combinedMap){
+      if(btn){ btn.disabled = true; btn.textContent = "Loading combined hours…"; }
+      combinedMap = await computeIncomingSupportBreakdown(siteId, monthKeyStr);
+      state.combinedHoursCache[combinedHoursCacheKey(siteId, monthKeyStr)] = combinedMap;
+      if(lastResult) renderCombinedReport(lastResult);
+      if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
+    }
+
     const { y, m } = parseYM(state.currentMonth);
     const config = currentConfig();
     const monthState = currentMonthState();
     const result = generateMonth(y, m, config, monthState);
 
     const wb = XLSX.utils.book_new();
-    const taSheet = XLSX.utils.aoa_to_sheet(timeAttendanceExportRows(y, m, config, monthState, result));
+    const taSheet = XLSX.utils.aoa_to_sheet(timeAttendanceExportRows(y, m, config, monthState, result, combinedMap));
     // Column widths matching format_for_apps.xlsx (Excel "characters" units).
     taSheet["!cols"] = [
       {wch:13.5}, {wch:39.33}, {wch:12.16}, {wch:12}, {wch:10.16}, {wch:15.5}, {wch:15},
@@ -2105,6 +2143,31 @@
     return summary;
   }
 
+  // Zero-valued starting point for combining two computeGuardSummary()-shaped breakdowns
+  // together (see addGuardBreakdown() and computeIncomingSupportBreakdown() below) — every
+  // field computeGuardSummary() ever sets, at zero.
+  function emptyGuardBreakdown(){
+    return { manHours:0, normalDays:0, restDaysWorked:0, holidayDaysWorked:0,
+      normalOTHours:0, restOTHours:0, holidayOTHours:0, mc:0, absent:0, leave:0, unpaidLeave:0 };
+  }
+  // Adds `src` (a computeGuardSummary()-shaped breakdown, or null/undefined) field-by-field into
+  // `target` in place. Used to fold a guard's support-elsewhere shifts into his home totals for
+  // the Combined hours panel/export.
+  function addGuardBreakdown(target, src){
+    if(!src) return;
+    target.manHours += src.manHours || 0;
+    target.normalDays += src.normalDays || 0;
+    target.restDaysWorked += src.restDaysWorked || 0;
+    target.holidayDaysWorked += src.holidayDaysWorked || 0;
+    target.normalOTHours += src.normalOTHours || 0;
+    target.restOTHours += src.restOTHours || 0;
+    target.holidayOTHours += src.holidayOTHours || 0;
+    target.mc += src.mc || 0;
+    target.absent += src.absent || 0;
+    target.leave += src.leave || 0;
+    target.unpaidLeave += src.unpaidLeave || 0;
+  }
+
   function renderSummaryReport(result){
     const {y,m} = parseYM(state.currentMonth);
     const config = currentConfig();
@@ -2115,7 +2178,6 @@
     const tempIds = Object.keys(tempGuards);
     const supportGuards = monthSupportGuards(monthState);
     const supportIds = Object.keys(supportGuards);
-    const incoming = currentCombinedHours(); // {homeGuardId: hours} or null if never refreshed
     const body = $("#summaryReportBody");
     if(!body) return;
 
@@ -2126,9 +2188,8 @@
     const totals = {
       manHours:0, normalDays:0, restDaysWorked:0, holidayDaysWorked:0,
       normalOTHours:0, restOTHours:0, holidayOTHours:0,
-      mc:0, absent:0, leave:0, unpaidLeave:0, combined:0
+      mc:0, absent:0, leave:0, unpaidLeave:0
     };
-    let combinedKnown = false;
 
     const permanentRows = guards.map(g => {
       const s = summary[g.id] || {};
@@ -2143,17 +2204,6 @@
       totals.absent += n(s.absent);
       totals.leave += n(s.leave);
       totals.unpaidLeave += n(s.unpaidLeave);
-      // Combined = this site's own man-hours (unchanged, official figure) + whatever the same
-      // guard picked up as a support guard elsewhere this month, purely for reference — see
-      // computeIncomingSupportHours()'s comment. Shows "—" until "Refresh combined hours" has
-      // been clicked at least once for this site/month.
-      let combinedCell = dash;
-      if(incoming){
-        combinedKnown = true;
-        const combined = n(s.manHours) + n(incoming[g.id]);
-        totals.combined += combined;
-        combinedCell = `<td class="mono">${h(combined)}</td>`;
-      }
       return `<tr>
         <td class="mono">${escapeHtml(g.employeeId || "—")}</td>
         <td>${escapeHtml(g.name)}</td>
@@ -2168,7 +2218,6 @@
         <td class="mono">${n(s.absent)}</td>
         <td class="mono">${n(s.leave)}</td>
         <td class="mono">${n(s.unpaidLeave)}</td>
-        ${combinedCell}
       </tr>`;
     });
 
@@ -2177,7 +2226,7 @@
     // their man-hours still feed into the grand total below so the overall figure is complete.
     let tempSection = "";
     if(tempIds.length){
-      tempSection += `<tr><td colspan="14" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Temporary guards this month</td></tr>`;
+      tempSection += `<tr><td colspan="13" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Temporary guards this month</td></tr>`;
       tempSection += tempIds.map(id => {
         const s = summary[id] || {};
         const name = (tempGuards[id] || {}).name || "(unknown)";
@@ -2186,7 +2235,7 @@
           <td class="mono">—</td>
           <td>${escapeHtml(name)} <span style="color:var(--muted, #64748b);font-size:12px;">(Temp)</span></td>
           <td class="mono">${h(s.manHours)}</td>
-          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
+          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
         </tr>`;
       }).join("");
     }
@@ -2197,7 +2246,7 @@
     // into their home site's own numbers — see emptyMonthState's supportGuards comment.
     let supportSection = "";
     if(supportIds.length){
-      supportSection += `<tr><td colspan="14" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Support guards this month</td></tr>`;
+      supportSection += `<tr><td colspan="13" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Support guards this month</td></tr>`;
       supportSection += supportIds.map(id => {
         const s = summary[id] || {};
         const entry = supportGuards[id] || {};
@@ -2207,7 +2256,7 @@
           <td class="mono">${escapeHtml(entry.employeeId || "—")}</td>
           <td>${escapeHtml(name)} <span style="color:var(--muted, #64748b);font-size:12px;">(Support — ${escapeHtml(entry.homeSiteName || "?")})</span></td>
           <td class="mono">${h(s.manHours)}</td>
-          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
+          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
         </tr>`;
       }).join("");
     }
@@ -2226,12 +2275,11 @@
       <td class="mono"><strong>${n(totals.absent)}</strong></td>
       <td class="mono"><strong>${n(totals.leave)}</strong></td>
       <td class="mono"><strong>${n(totals.unpaidLeave)}</strong></td>
-      <td class="mono"><strong>${combinedKnown ? h(totals.combined) : "—"}</strong></td>
     </tr>` : "";
 
     body.innerHTML = (guards.length || tempIds.length || supportIds.length)
       ? permanentRows.join("") + tempSection + supportSection + totalsRow
-      : `<tr><td colspan="14" class="empty">Add guards to see the summary report.</td></tr>`;
+      : `<tr><td colspan="13" class="empty">Add guards to see the summary report.</td></tr>`;
 
     const holidayCount = configHolidays(config).filter(d => d.slice(0,7) === state.currentMonth).length;
     const sub = $("#summaryReportSub");
@@ -2241,6 +2289,79 @@
             ? `${holidayCount} public holiday${holidayCount===1?"":"s"} marked this month.`
             : `No public holidays marked this month — add them in Guards & Shifts if this month has any.`);
     }
+  }
+
+  // The "Combined hours" panel — a SEPARATE table from the plain Summary report above, showing
+  // only this site's own permanent guards (never guards borrowed in from elsewhere — a borrowed
+  // guard's combined total belongs on HIS OWN home site's version of this panel, not here), each
+  // with his own numbers here plus whatever he picked up as a support guard at other branch
+  // sites this month, folded in column-by-column via addGuardBreakdown(). This is also what
+  // feeds the "Export to Excel (TimeAttendance format)" button, which now lives on this panel
+  // instead of the plain Summary report — see exportTimeAttendanceToExcel().
+  function renderCombinedReport(result){
+    const {y,m} = parseYM(state.currentMonth);
+    const config = currentConfig();
+    const monthState = currentMonthState();
+    const summary = computeGuardSummary(y, m, config, monthState, result);
+    const guards = config.guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
+    const incoming = currentCombinedHours(); // {homeGuardId: breakdown} or null if never refreshed
+    const body = $("#combinedReportBody");
+    if(!body) return;
+
+    const n = v => v || 0;
+    const h = v => n(v).toFixed(1);
+
+    if(!incoming){
+      body.innerHTML = `<tr><td colspan="13" class="empty">Click "Refresh combined hours" to load this.</td></tr>`;
+      return;
+    }
+
+    if(!guards.length){
+      body.innerHTML = `<tr><td colspan="13" class="empty">Add guards to see combined hours.</td></tr>`;
+      return;
+    }
+
+    const totals = emptyGuardBreakdown();
+
+    const rows = guards.map(g => {
+      const combined = emptyGuardBreakdown();
+      addGuardBreakdown(combined, summary[g.id]);
+      addGuardBreakdown(combined, incoming[g.id]);
+      addGuardBreakdown(totals, combined);
+      return `<tr>
+        <td class="mono">${escapeHtml(g.employeeId || "—")}</td>
+        <td>${escapeHtml(g.name)}</td>
+        <td class="mono">${h(combined.manHours)}</td>
+        <td class="mono">${n(combined.normalDays)}</td>
+        <td class="mono">${n(combined.restDaysWorked)}</td>
+        <td class="mono">${n(combined.holidayDaysWorked)}</td>
+        <td class="mono">${h(combined.normalOTHours)}</td>
+        <td class="mono">${h(combined.restOTHours)}</td>
+        <td class="mono">${h(combined.holidayOTHours)}</td>
+        <td class="mono">${n(combined.mc)}</td>
+        <td class="mono">${n(combined.absent)}</td>
+        <td class="mono">${n(combined.leave)}</td>
+        <td class="mono">${n(combined.unpaidLeave)}</td>
+      </tr>`;
+    });
+
+    const totalsRow = `<tr style="border-top:2px solid var(--border-strong,#94a3b8);">
+      <td></td>
+      <td><strong>Total — all guards</strong></td>
+      <td class="mono"><strong>${h(totals.manHours)}</strong></td>
+      <td class="mono"><strong>${n(totals.normalDays)}</strong></td>
+      <td class="mono"><strong>${n(totals.restDaysWorked)}</strong></td>
+      <td class="mono"><strong>${n(totals.holidayDaysWorked)}</strong></td>
+      <td class="mono"><strong>${h(totals.normalOTHours)}</strong></td>
+      <td class="mono"><strong>${h(totals.restOTHours)}</strong></td>
+      <td class="mono"><strong>${h(totals.holidayOTHours)}</strong></td>
+      <td class="mono"><strong>${n(totals.mc)}</strong></td>
+      <td class="mono"><strong>${n(totals.absent)}</strong></td>
+      <td class="mono"><strong>${n(totals.leave)}</strong></td>
+      <td class="mono"><strong>${n(totals.unpaidLeave)}</strong></td>
+    </tr>`;
+
+    body.innerHTML = rows.join("") + totalsRow;
   }
   function normalHoursLabel(config){ return Number(config.site.normalHoursPerDay) || 8; }
 
@@ -3019,16 +3140,22 @@
     return state.combinedHoursCache[combinedHoursCacheKey(state.currentSiteId, state.currentMonth)] || null;
   }
 
-  // Cross-site, read-only: for the given site/month, sums up every hour ITS OWN guards picked
-  // up as a support guard at OTHER sites in the same branch — read live off those sites' own
-  // month docs (a one-off .get() per sibling site, not a live subscription — kept to an
+  // Cross-site, read-only: for the given site/month, finds every shift ITS OWN guards worked as
+  // a support guard at OTHER sites in the same branch this month, and returns each one's FULL
+  // breakdown (worked days, OT by category, leave, etc.) earned there — not just raw hours — by
+  // briefly re-running that sibling site's own generateMonth()/computeGuardSummary() under the
+  // same temporary state-swap pattern as computeFreeGuardsAt() above (generateMonth()'s own
+  // helpers — guardById()/activeGuardsOn() — read state.currentSiteId/currentMonth/monthsCache
+  // internally, so a foreign config/monthState passed in as plain arguments isn't enough on its
+  // own). Each sibling's swap+restore stays fully synchronous (no `await` in between), so it's
+  // safe to run all siblings in parallel via Promise.all — only one sibling's swap is ever live
+  // at a given instant. A one-off .get() per sibling site, not a live subscription — kept to an
   // explicit "Refresh combined hours" click rather than every render(), since render() fires
-  // very often and this is a cross-site read). Nothing this returns is ever written back into
-  // this site's own month doc or folded into its manHours/OT/leave totals or its exports to the
-  // payroll TimeAttendance format — purely a display-only "combined" figure. See
-  // emptyMonthState's supportGuards comment and the Summary Report's Combined column note.
-  async function computeIncomingSupportHours(siteId, monthKeyStr){
-    const out = {}; // homeGuardId -> hours
+  // very often and this is a cross-site read. Nothing this returns is ever written back into
+  // this site's own month doc or folded into its own manHours/OT/leave totals — it purely feeds
+  // the separate "Combined hours" panel/export. See emptyMonthState's supportGuards comment.
+  async function computeIncomingSupportBreakdown(siteId, monthKeyStr){
+    const out = {}; // homeGuardId -> breakdown (see emptyGuardBreakdown())
     if(!dbHandle) return out;
     const here = state.sites.find(s => s.id === siteId);
     if(!here || here.branch == null) return out;
@@ -3039,20 +3166,40 @@
       let msData = null;
       try{
         const snap = await dbHandle.doc("sites/"+sib.id).collection("months").doc(monthKeyStr).get();
-        msData = snap.exists ? snap.data() : null;
+        msData = snap.exists ? deepClone(snap.data()) : null;
       }catch(e){ return; }
       if(!msData || !msData.supportGuards) return;
-      Object.keys(msData.supportGuards).forEach(supportId => {
+      const relevant = Object.keys(msData.supportGuards).filter(supportId => {
         const entry = msData.supportGuards[supportId];
-        if(!entry || entry.homeSiteId !== siteId) return;
-        const overrideKey = Object.keys(msData.overrides || {}).find(k => msData.overrides[k] === supportId);
-        if(!overrideKey) return;
-        const [date, shiftId] = overrideKey.split("|");
-        const defs = computeShiftDefsForDay(sibConfig.site, dowMon(date));
-        const st = defs.find(d => d.id === shiftId);
-        if(!st) return;
-        out[entry.homeGuardId] = (out[entry.homeGuardId] || 0) + st.hours;
+        return entry && entry.homeSiteId === siteId;
       });
+      if(!relevant.length) return;
+
+      // Swap global state to the SIBLING site/month so generateMonth()'s internal helpers
+      // resolve against the right guards/roster — synchronous only (no `await` before the
+      // `finally` restores it), matching computeFreeGuardsAt()'s own comment above.
+      const savedSiteId = state.currentSiteId;
+      const savedMonth = state.currentMonth;
+      const cacheKey = monthCacheKey(sib.id, monthKeyStr);
+      const savedCacheEntry = state.monthsCache[cacheKey];
+      state.currentSiteId = sib.id;
+      state.currentMonth = monthKeyStr;
+      state.monthsCache[cacheKey] = msData;
+      try{
+        const {y, m} = parseYM(monthKeyStr);
+        const result = generateMonth(y, m, sibConfig, msData);
+        const summary = computeGuardSummary(y, m, sibConfig, msData, result);
+        relevant.forEach(supportId => {
+          const entry = msData.supportGuards[supportId];
+          if(!out[entry.homeGuardId]) out[entry.homeGuardId] = emptyGuardBreakdown();
+          addGuardBreakdown(out[entry.homeGuardId], summary[supportId]);
+        });
+      } finally {
+        state.currentSiteId = savedSiteId;
+        state.currentMonth = savedMonth;
+        if(savedCacheEntry === undefined) delete state.monthsCache[cacheKey];
+        else state.monthsCache[cacheKey] = savedCacheEntry;
+      }
     }));
     return out;
   }
@@ -3592,7 +3739,7 @@
   });
 
   // Cross-site read, so it's kept to an explicit click rather than firing on every render() —
-  // see computeIncomingSupportHours()'s own comment for why.
+  // see computeIncomingSupportBreakdown()'s own comment for why.
   $("#refreshCombinedBtn").addEventListener("click", async () => {
     const btn = $("#refreshCombinedBtn");
     const originalLabel = btn.textContent;
@@ -3600,11 +3747,11 @@
     btn.textContent = "Refreshing…";
     const siteId = state.currentSiteId;
     const monthKeyStr = state.currentMonth;
-    const hoursMap = await computeIncomingSupportHours(siteId, monthKeyStr);
-    state.combinedHoursCache[combinedHoursCacheKey(siteId, monthKeyStr)] = hoursMap;
+    const breakdownMap = await computeIncomingSupportBreakdown(siteId, monthKeyStr);
+    state.combinedHoursCache[combinedHoursCacheKey(siteId, monthKeyStr)] = breakdownMap;
     btn.disabled = false;
     btn.textContent = originalLabel;
-    if(lastResult) renderSummaryReport(lastResult);
+    if(lastResult) renderCombinedReport(lastResult);
     showToast("Combined hours refreshed.");
   });
 
