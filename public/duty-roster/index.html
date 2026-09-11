@@ -634,7 +634,7 @@
     <div class="panel">
       <h2>Combined hours (incl. support elsewhere)</h2>
       <p class="sub" id="combinedReportSub">Each of this site's own guards, with support-guard shifts at other branch sites folded in</p>
-      <button class="btn primary sm" id="exportTimeAttendanceBtn" type="button" style="margin-bottom:10px;">Export to Excel (TimeAttendance format)</button>
+      <button class="btn primary sm" id="exportTimeAttendanceBtn" type="button" style="margin-bottom:10px;" disabled>Export to Excel (TimeAttendance format)</button>
       <button class="btn sm" id="refreshCombinedBtn" type="button" style="margin-bottom:10px;">Refresh combined hours</button>
       <p class="empty" id="combinedHoursNote" style="margin:0 0 10px;">Every column here is this site's own numbers (worked days, OT, leave, etc.) plus the same guard's shifts as a support guard at other branch sites this month &mdash; this is the figure the Excel export above uses, and it never changes the plain Summary report above. Click "Refresh combined hours" to (re)load it.</p>
       <div class="tablewrap" style="overflow-x:auto;">
@@ -2007,26 +2007,19 @@
   // goes straight into the payroll system's importer rather than being a roster record.
   // Now lives on the Combined hours panel (see the HTML above) rather than the plain Summary
   // report, and exports COMBINED totals — see timeAttendanceExportRows()'s own comment for why.
-  // If "Refresh combined hours" hasn't been clicked yet for this site/month, this fetches it
-  // itself first (same cross-site read as that button) so the export is never silently missing
-  // support-elsewhere hours just because nobody clicked Refresh first; the freshly-loaded data
-  // is cached and also reflected in the on-screen panel right after.
+  // The button itself stays disabled until "Refresh combined hours" has been clicked for this
+  // site/month (see renderCombinedReport()) and goes back to disabled the moment the roster
+  // changes (see invalidateCombinedHoursCache()), so this never silently exports a stale or
+  // missing combined figure — the check below is just a defensive backstop, not the normal path.
   async function exportTimeAttendanceToExcel(){
     if(typeof XLSX === "undefined"){
       showToast("Couldn't load the Excel export tool — check your internet connection and try again.", true);
       return;
     }
-    const btn = $("#exportTimeAttendanceBtn");
-    const originalLabel = btn ? btn.textContent : "";
-    const siteId = state.currentSiteId;
-    const monthKeyStr = state.currentMonth;
-    let combinedMap = currentCombinedHours();
+    const combinedMap = currentCombinedHours();
     if(!combinedMap){
-      if(btn){ btn.disabled = true; btn.textContent = "Loading combined hours…"; }
-      combinedMap = await computeIncomingSupportBreakdown(siteId, monthKeyStr);
-      state.combinedHoursCache[combinedHoursCacheKey(siteId, monthKeyStr)] = combinedMap;
-      if(lastResult) renderCombinedReport(lastResult);
-      if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
+      showToast('Click "Refresh combined hours" first.', true);
+      return;
     }
 
     const { y, m } = parseYM(state.currentMonth);
@@ -2315,6 +2308,11 @@
     const incoming = currentCombinedHours(); // {homeGuardId: breakdown} or null if never refreshed
     const body = $("#combinedReportBody");
     if(!body) return;
+
+    // Export stays disabled until "Refresh combined hours" has been clicked for THIS site/month
+    // — and goes back to disabled the moment anything changes, via invalidateCombinedHoursCache().
+    const exportBtn = $("#exportTimeAttendanceBtn");
+    if(exportBtn) exportBtn.disabled = !incoming;
 
     const n = v => v || 0;
     const h = v => n(v).toFixed(1);
@@ -3050,6 +3048,10 @@
       }
       ms.updatedAt = nowIso();
       await ref.set(ms);
+      // Writes straight to Firestore rather than through persistMonthByKey() (this may not even
+      // be the currently-viewed site), so it needs its own invalidation — this is exactly the
+      // kind of cross-site change a cached Combined figure elsewhere wouldn't otherwise know about.
+      invalidateCombinedHoursCache();
     }catch(e){
       // Best-effort — see doc comment above.
     }
@@ -3146,6 +3148,18 @@
   // fetched automatically; see the button's own handler for why).
   function currentCombinedHours(){
     return state.combinedHoursCache[combinedHoursCacheKey(state.currentSiteId, state.currentMonth)] || null;
+  }
+  // Wipes every cached "Refresh combined hours" result — called whenever the duty roster
+  // changes in a way that could make a previously-loaded Combined figure stale (a local edit
+  // saved via persistMonth()/persistSiteConfig(), or new data landing from another user's
+  // edit via the month snapshot listener below). This is what keeps the "Export to Excel
+  // (TimeAttendance format)" button disabled again after a change, forcing a fresh "Refresh
+  // combined hours" click before exporting — see renderCombinedReport() and
+  // exportTimeAttendanceToExcel(). Clearing the whole cache rather than just the current
+  // site/month is deliberate: an edit made while viewing one site (e.g. assigning a support
+  // guard sourced from another site) can change ANOTHER site's combined figure too.
+  function invalidateCombinedHoursCache(){
+    state.combinedHoursCache = {};
   }
 
   // Cross-site, read-only: for the given site/month, finds every shift ITS OWN guards worked as
@@ -4051,6 +4065,7 @@
   function persistSiteConfig(siteId){
     const cfg = state.configsCache[siteId];
     if(!cfg) return;
+    invalidateCombinedHoursCache();
     cfg.updatedAt = nowIso();
     if(!dbHandle || suppressPersist) return;
     dbHandle.doc("sites/"+siteId).set(cfg).catch(()=>{});
@@ -4059,6 +4074,7 @@
   function persistMonthByKey(siteId, key){
     const ms = state.monthsCache[monthCacheKey(siteId, key)];
     if(!ms) return;
+    invalidateCombinedHoursCache();
     ms.updatedAt = nowIso();
     if(!dbHandle || suppressPersist) return;
     dbHandle.doc("sites/"+siteId).collection("months").doc(key).set(ms).catch(()=>{});
@@ -4072,6 +4088,7 @@
         suppressPersist = true;
         state.monthsCache[cacheKey] = deepClone(snap.data());
         suppressPersist = false;
+        invalidateCombinedHoursCache();
         if(siteId === state.currentSiteId && key === state.currentMonth) render();
       }
     }, () => {});
