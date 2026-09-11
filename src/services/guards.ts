@@ -245,6 +245,18 @@ export function guardsWithPermitExpiringSoon(guards: Guard[], withinDays = 60, a
   });
 }
 
+/**
+ * Updates a Nepal-category guard's work permit expiry date after a renewal — the one field on a
+ * Guard Bank record that's expected to change after registration (everything else is corrected
+ * by re-registering/dismissing+re-adding). Used by the "Update" control on the Permit expiry
+ * date row in GuardDetailsModal; feeds the same guardsWithPermitExpiringSoon() check the Permit
+ * expiring tile and its "Go to list" shortcut use, so a renewal here clears the guard from that
+ * tile immediately.
+ */
+export async function updateGuardPermitExpiry(id: string, permitExpiryDate: string): Promise<void> {
+  await updateDoc(doc(db, 'guards', id), { permitExpiryDate, updatedAt: Date.now() });
+}
+
 /** Manual contact-detail edit for a Buffer Guard row (the only edit Guard Bank offers there). */
 export async function updateBufferGuardContact(
   id: string,

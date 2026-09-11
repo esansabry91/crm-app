@@ -61,7 +61,7 @@ export default function GuardBankPage() {
   const [registerOpen, setRegisterOpen] = useState(false);
   const [registerBufferOpen, setRegisterBufferOpen] = useState(false);
   const [assignGuard, setAssignGuard] = useState<Guard | null>(null);
-  const [viewGuard, setViewGuard] = useState<Guard | null>(null);
+  const [viewGuardId, setViewGuardId] = useState<string | null>(null);
   const [viewBuffer, setViewBuffer] = useState<BufferGuard | null>(null);
   const [editingBufferId, setEditingBufferId] = useState<string | null>(null);
   const [editPhone, setEditPhone] = useState('');
@@ -80,6 +80,7 @@ export default function GuardBankPage() {
     () => guards.filter((g) => g.status === 'dismissed').sort((a, b) => (b.dismissedAt || 0) - (a.dismissedAt || 0)),
     [guards]
   );
+  const viewGuard = useMemo(() => (viewGuardId ? guards.find((g) => g.id === viewGuardId) ?? null : null), [viewGuardId, guards]);
   const permitSoon = useMemo(() => guardsWithPermitExpiringSoon(guards), [guards]);
   const turnover = useMemo(() => computeGuardTurnover(guards), [guards]);
 
@@ -425,7 +426,7 @@ export default function GuardBankPage() {
                       <td className="px-4 py-2.5 text-slate-400">{formatDate(new Date(g.createdAt).toISOString())}</td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
                         <button
-                          onClick={() => setViewGuard(g)}
+                          onClick={() => setViewGuardId(g.id)}
                           className="px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-md"
                         >
                           View
@@ -491,7 +492,7 @@ export default function GuardBankPage() {
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         <button
-                          onClick={() => setViewGuard(g)}
+                          onClick={() => setViewGuardId(g.id)}
                           className="px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-md"
                         >
                           View
@@ -540,7 +541,7 @@ export default function GuardBankPage() {
                       <td className="px-4 py-2.5 text-slate-400">{g.dismissedAt ? formatDateTime(g.dismissedAt) : '-'}</td>
                       <td className="px-4 py-2.5 text-right">
                         <button
-                          onClick={() => setViewGuard(g)}
+                          onClick={() => setViewGuardId(g.id)}
                           className="px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-md"
                         >
                           View
@@ -648,7 +649,7 @@ export default function GuardBankPage() {
         onClose={() => setAssignGuard(null)}
         onAssigned={flash}
       />
-      <GuardDetailsModal guard={viewGuard} onClose={() => setViewGuard(null)} />
+      <GuardDetailsModal guard={viewGuard} onClose={() => setViewGuardId(null)} onUpdated={flash} />
       <BufferGuardDetailsModal bufferGuard={viewBuffer} onClose={() => setViewBuffer(null)} />
     </div>
   );

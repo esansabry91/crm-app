@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import type { Guard } from '../../types';
+import { updateGuardPermitExpiry } from '../../services/guards';
 import { formatDate, formatDateTime } from '../../utils/format';
 
 /**
@@ -8,11 +10,63 @@ import { formatDate, formatDateTime } from '../../utils/format';
  * columns. The one field NOT shown here is `position` — that's tied to a specific deployed
  * site's own rate configuration (see ratePositionNames() in public/duty-roster/index.html) and
  * was never part of what Guard Bank tracks, so there's nothing to show even once deployed.
+ *
+ * The one field that IS editable here is Permit expiry date, via the small "Update" control
+ * beside it — everything else on a Guard Bank record only ever changes through Duty
+ * Roster/Assign/Dismiss actions, but a permit renewal has nowhere else to be recorded. The
+ * `guard` prop is resolved live from GuardBankPage's `guards` list (see viewGuard there), so a
+ * save here is reflected immediately without needing to close and reopen this modal.
  */
-export default function GuardDetailsModal({ guard, onClose }: { guard: Guard | null; onClose: () => void }) {
+export default function GuardDetailsModal({
+  guard,
+  onClose,
+  onUpdated,
+}: {
+  guard: Guard | null;
+  onClose: () => void;
+  onUpdated?: (message: string) => void;
+}) {
+  const [editingPermit, setEditingPermit] = useState(false);
+  const [permitDraft, setPermitDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [permitError, setPermitError] = useState<string | null>(null);
+
+  // Reset the edit control whenever the modal switches to a different guard (or closes) — it's
+  // one persistent component instance reused across every "View" click, not remounted per guard.
+  useEffect(() => {
+    setEditingPermit(false);
+    setPermitDraft('');
+    setPermitError(null);
+  }, [guard?.id]);
+
   if (!guard) return null;
 
-  const rows: { label: string; value: string }[] = [
+  function startEditPermit() {
+    setPermitDraft(guard!.permitExpiryDate || '');
+    setPermitError(null);
+    setEditingPermit(true);
+  }
+
+  async function savePermit() {
+    if (!guard) return;
+    if (!permitDraft) {
+      setPermitError('Pick the new expiry date.');
+      return;
+    }
+    setSaving(true);
+    setPermitError(null);
+    try {
+      await updateGuardPermitExpiry(guard.id, permitDraft);
+      onUpdated?.(`Updated ${guard.name}'s permit expiry to ${formatDate(permitDraft)}.`);
+      setEditingPermit(false);
+    } catch (err) {
+      setPermitError(err instanceof Error ? err.message : 'Could not update the permit expiry date.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const topRows: { label: string; value: string }[] = [
     { label: 'Full name', value: guard.name },
     { label: 'Employee ID', value: guard.employeeId },
     { label: 'Category', value: guard.category === 'nepal' ? 'Nepal' : 'Local' },
@@ -22,21 +76,20 @@ export default function GuardDetailsModal({ guard, onClose }: { guard: Guard | n
   ];
 
   if (guard.category === 'nepal') {
-    rows.push(
-      { label: 'Passport number', value: guard.passportNumber || '-' },
-      { label: 'Permit expiry date', value: guard.permitExpiryDate ? formatDate(guard.permitExpiryDate) : '-' }
-    );
+    topRows.push({ label: 'Passport number', value: guard.passportNumber || '-' });
   } else {
-    rows.push({ label: 'MyKad number', value: guard.mykadNumber || '-' }, { label: 'Phone number', value: guard.phoneNumber || '-' });
+    topRows.push({ label: 'MyKad number', value: guard.mykadNumber || '-' }, { label: 'Phone number', value: guard.phoneNumber || '-' });
   }
 
-  rows.push({
-    label: 'Status',
-    value: guard.status === 'pool' ? 'Guard Pool (unassigned)' : guard.status === 'deployed' ? 'Deployed' : 'Dismissed',
-  });
+  const bottomRows: { label: string; value: string }[] = [
+    {
+      label: 'Status',
+      value: guard.status === 'pool' ? 'Guard Pool (unassigned)' : guard.status === 'deployed' ? 'Deployed' : 'Dismissed',
+    },
+  ];
 
   if (guard.status !== 'pool') {
-    rows.push(
+    bottomRows.push(
       { label: 'Site', value: guard.siteName || '-' },
       { label: 'Branch', value: guard.branch || 'Unassigned' },
       { label: 'Brand', value: guard.brandName || '-' }
@@ -44,13 +97,13 @@ export default function GuardDetailsModal({ guard, onClose }: { guard: Guard | n
   }
 
   if (guard.status === 'dismissed') {
-    rows.push(
+    bottomRows.push(
       { label: 'Dismissal reason', value: guard.dismissalReason || 'Unspecified' },
       { label: 'Dismissed on', value: guard.dismissedAt ? formatDateTime(guard.dismissedAt) : '-' }
     );
   }
 
-  rows.push({ label: 'Registered', value: formatDateTime(guard.createdAt) }, { label: 'Last updated', value: formatDateTime(guard.updatedAt) });
+  bottomRows.push({ label: 'Registered', value: formatDateTime(guard.createdAt) }, { label: 'Last updated', value: formatDateTime(guard.updatedAt) });
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -58,7 +111,60 @@ export default function GuardDetailsModal({ guard, onClose }: { guard: Guard | n
         <h2 className="text-base font-semibold text-slate-900">{guard.name}</h2>
         <p className="text-sm text-slate-500 mt-0.5">Full Guard Bank record</p>
         <dl className="mt-4 divide-y divide-slate-50">
-          {rows.map((r) => (
+          {topRows.map((r) => (
+            <div key={r.label} className="flex items-start justify-between gap-4 py-1.5 text-sm">
+              <dt className="text-slate-500 shrink-0">{r.label}</dt>
+              <dd className="text-slate-800 font-medium text-right">{r.value}</dd>
+            </div>
+          ))}
+
+          {guard.category === 'nepal' && (
+            <div className="flex items-start justify-between gap-4 py-1.5 text-sm">
+              <dt className="text-slate-500 shrink-0 pt-1">Permit expiry date</dt>
+              <dd className="text-slate-800 text-right">
+                {editingPermit ? (
+                  <div className="flex items-center gap-2 justify-end flex-wrap">
+                    <input
+                      type="date"
+                      className="input w-40 py-1"
+                      value={permitDraft}
+                      onChange={(e) => setPermitDraft(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={savePermit}
+                      disabled={saving}
+                      className="text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-60"
+                    >
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingPermit(false)}
+                      disabled={saving}
+                      className="text-xs font-medium text-slate-400 hover:text-slate-600 disabled:opacity-60"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 justify-end">
+                    <span className="font-medium">{guard.permitExpiryDate ? formatDate(guard.permitExpiryDate) : '-'}</span>
+                    <button
+                      type="button"
+                      onClick={startEditPermit}
+                      className="text-xs font-medium text-blue-600 hover:text-blue-700 underline underline-offset-2"
+                    >
+                      Update
+                    </button>
+                  </div>
+                )}
+                {editingPermit && permitError && <p className="text-xs text-rose-600 mt-1">{permitError}</p>}
+              </dd>
+            </div>
+          )}
+
+          {bottomRows.map((r) => (
             <div key={r.label} className="flex items-start justify-between gap-4 py-1.5 text-sm">
               <dt className="text-slate-500 shrink-0">{r.label}</dt>
               <dd className="text-slate-800 font-medium text-right">{r.value}</dd>
