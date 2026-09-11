@@ -137,8 +137,14 @@ export default function WaterfallChart({
           {rows.map((row, i) => (
             <Cell key={row.name + i} fill={colorFor(row)} />
           ))}
+          {/* dataKey is "name" (always a non-empty string), not "amount" — Recharts' LabelList
+              builds its own positional array from this field's values, and a numeric dataKey
+              whose value is legitimately 0 (the "Start of Month" bar when the period opens with
+              an empty pipeline) gets treated as "no data point" and dropped from that array,
+              shifting every later bar's label onto the WRONG bar (label text one slot behind its
+              rectangle). "name" is never falsy, so every bar keeps its own label slot. */}
           <LabelList
-            dataKey="amount"
+            dataKey="name"
             content={(props: object) => <BarTopLabel {...props} rows={rows} formatValue={formatValue} />}
           />
         </Bar>
