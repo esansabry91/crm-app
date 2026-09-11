@@ -2889,8 +2889,11 @@
   // stored on the entry so generateMonth()'s own rest-hour check at the home site (see its
   // lastShiftEnd-seeding near the top of this file) knows exactly when he's actually free again,
   // rather than just "sometime that day" — this is what makes the check precise instead of only
-  // blocking the same calendar date.
-  async function syncHomeSiteSupportLeave(homeSiteId, homeGuardId, dateStr, add, supportShiftEndMs){
+  // blocking the same calendar date. destSiteId/destSiteName (also only meaningful when
+  // add=true) record WHICH site he actually went to support, purely for display — see
+  // leaveSupportDestinationPill() — so "Mark a guard on leave" shows more than just the bare
+  // "Support (Other Site)" reason at a glance.
+  async function syncHomeSiteSupportLeave(homeSiteId, homeGuardId, dateStr, add, supportShiftEndMs, destSiteId, destSiteName){
     if(!dbHandle || !homeSiteId || !homeGuardId || !dateStr) return;
     try{
       const monthKeyStr = dateStr.slice(0,7);
@@ -2903,6 +2906,8 @@
       if(add){
         const fields = { id: homeGuardId, reason: "Support (Other Site)" };
         if(typeof supportShiftEndMs === "number") fields.supportShiftEndMs = supportShiftEndMs;
+        if(destSiteId) fields.supportToSiteId = destSiteId;
+        if(destSiteName) fields.supportToSiteName = destSiteName;
         if(idx >= 0) Object.assign(entries[idx], fields);
         else entries.push(fields);
         ms.leaves[dateStr] = entries;
@@ -3075,6 +3080,13 @@
     }
     return "";
   }
+  // For the safeguard leave entry written at a guard's OWN home site when he's sent to cover a
+  // shift elsewhere (see syncHomeSiteSupportLeave()) — shows WHICH site he actually went to,
+  // instead of leaving the bare "Support (Other Site)" reason pill with no destination at all.
+  function leaveSupportDestinationPill(e){
+    if(e.supportToSiteName) return ` <span class="pill info">&rarr; ${escapeHtml(e.supportToSiteName)}</span>`;
+    return "";
+  }
   function renderLeaveTable(){
     const ms = currentMonthState();
     const dates = Object.keys(ms.leaves).filter(d => ms.leaves[d] && ms.leaves[d].length).sort();
@@ -3082,7 +3094,7 @@
     $("#leaveTableBody").innerHTML = dates.map(dateStr => `
       <tr>
         <td class="mono">${dateStr}</td>
-        <td>${leaveEntriesFor(ms, dateStr).map(e=>`${escapeHtml(guardName(e.id))} <span class="pill warn">${escapeHtml(e.reason||"Leave")}</span>${leaveReplacementPill(e)}`).join(", ")}</td>
+        <td>${leaveEntriesFor(ms, dateStr).map(e=>`${escapeHtml(guardName(e.id))} <span class="pill warn">${escapeHtml(e.reason||"Leave")}</span>${leaveReplacementPill(e)}${leaveSupportDestinationPill(e)}`).join(", ")}</td>
         <td><button class="btn sm danger" data-clear-leave="${dateStr}">Clear</button></td>
       </tr>
     `).join("");
@@ -3507,7 +3519,7 @@
     if(supportHomeSiteId && supportHomeGuardId){
       // Best-effort and doesn't block this UI on it — see syncHomeSiteSupportLeave()'s own doc
       // comment for why a failure here never undoes the assignment that was just made above.
-      syncHomeSiteSupportLeave(supportHomeSiteId, supportHomeGuardId, dateStr, true, supportShiftEndMs);
+      syncHomeSiteSupportLeave(supportHomeSiteId, supportHomeGuardId, dateStr, true, supportShiftEndMs, state.currentSiteId, currentConfig().name);
       showToast(`Marked ${guardName(guardId)} ${leavePhrase(reason)} for ${dateStr}. His home site was marked automatically too.`);
     } else {
       showToast(`Marked ${guardName(guardId)} ${leavePhrase(reason)} for ${dateStr}.`);
@@ -3574,7 +3586,7 @@
     const destShiftDefsForEnd = computeShiftDefsForDay(currentConfig().site, dowMon(date));
     const destShiftForEnd = destShiftDefsForEnd.find(sd => sd.id === shiftId);
     const supportShiftEndMs = destShiftForEnd ? shiftStartEnd(date, destShiftForEnd).end.getTime() : null;
-    syncHomeSiteSupportLeave(originId, originGuard.id, date, true, supportShiftEndMs);
+    syncHomeSiteSupportLeave(originId, originGuard.id, date, true, supportShiftEndMs, state.currentSiteId, currentConfig().name);
     showToast(`Assigned ${originGuard.name} to cover ${date}. His home site (${originSite.name}) was marked automatically.`);
     render();
   });
