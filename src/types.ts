@@ -153,6 +153,78 @@ export interface Tender {
   updatedAt: number;
 }
 
+/**
+ * Where a Guard Bank guard currently stands. Set automatically by the sync points described in
+ * firestore.rules above the `guards` collection — never edited directly from either UI.
+ * 'pool' = registered, no site yet. 'deployed' = assigned to a siteId/branch (kept in sync with
+ * that site's own guards[] array inside public/duty-roster/index.html). 'dismissed' = terminated/
+ * resigned/runaway, set ONLY from Duty Roster's "Dismiss" action.
+ */
+export type GuardStatus = 'pool' | 'deployed' | 'dismissed';
+
+/** Reason chosen from Duty Roster's "Dismiss" dropdown — required whenever a guard's status
+ *  becomes 'dismissed'. */
+export type DismissalReason = 'Terminated' | 'Resigned' | 'Runaway';
+
+/**
+ * A firm-wide guard registry entry (top-level `guards` Firestore collection) — see the Guard
+ * Bank page (src/pages/GuardBankPage.tsx) and the doc comment above the `guards` collection in
+ * firestore.rules for the full sync-points story with public/duty-roster/index.html's own
+ * per-site `guards[]` arrays. Field set mirrors the guard object Duty Roster's "Add guard" modal
+ * builds (see openAddGuardModal() in index.html) plus Guard Bank's own status/assignment fields.
+ */
+export interface Guard {
+  id: string;
+  name: string;
+  employeeId: string;
+  category: 'local' | 'nepal';
+  age?: number;
+  state?: string;
+  city?: string;
+  position?: string;
+  /** Nepal-category only. */
+  passportNumber?: string;
+  /** Nepal-category only — read by the "permit expiring within 2 months" stat tile. */
+  permitExpiryDate?: string;
+  /** Local-category only. */
+  mykadNumber?: string;
+  phoneNumber?: string;
+  status: GuardStatus;
+  /** Set once status is 'deployed'. */
+  siteId?: string;
+  siteName?: string;
+  branch?: string | null;
+  /** Set once status is 'dismissed'; cleared again if Duty Roster reactivates the guard. */
+  dismissalReason?: DismissalReason;
+  dismissedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * A one-off temporary guard used ad-hoc in Duty Roster (a "temp guard" slot entry — see
+ * monthTempGuards() in index.html), recorded here purely for future contact. Deliberately has NO
+ * linkage to `guards`/`sites` — see the doc comment above the `bufferGuards` collection in
+ * firestore.rules. Deduped by name + MyKad number: reusing the same temp guard again just bumps
+ * timesUsed/lastUsedAt instead of creating a duplicate row.
+ */
+export interface BufferGuard {
+  id: string;
+  name: string;
+  rate: number;
+  mykadNumber?: string;
+  age?: number;
+  phoneNumber?: string;
+  state?: string;
+  city?: string;
+  /** Site/branch this buffer guard was most recently used at — contact context only. */
+  lastSiteName?: string;
+  lastBranch?: string | null;
+  firstUsedAt: number;
+  lastUsedAt: number;
+  timesUsed: number;
+}
+
 /** One entry in a tender's audit trail, used to reconstruct the pipeline-value trend over time. */
 export interface TenderHistoryEntry {
   id: string;

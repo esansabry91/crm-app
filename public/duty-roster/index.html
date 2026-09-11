@@ -1512,6 +1512,34 @@
     $("#modalCancel").addEventListener("click", closeModal);
     $("#modalVeil").addEventListener("click", e => { if(e.target.id === "modalVeil") closeModal(); });
   }
+  function openDismissGuardModal(guard, onConfirm){
+    const root = $("#modalRoot");
+    root.innerHTML = `
+      <div class="modalveil" id="modalVeil">
+        <div class="modalcard">
+          <h3>Dismiss guard</h3>
+          <p class="msg">Dismiss ${escapeHtml(guard.name)}? Pick a reason — this also moves them to the Dismissed tab in Guard Bank.</p>
+          <label class="small" style="display:block;margin-top:8px;">Reason</label>
+          <select id="modalDismissReason">
+            <option value="Terminated">Terminated</option>
+            <option value="Resigned">Resigned</option>
+            <option value="Runaway">Runaway</option>
+          </select>
+          <div class="modalbtns">
+            <button class="btn sm" id="modalCancel" type="button">Cancel</button>
+            <button class="btn sm danger" id="modalOk" type="button">Dismiss</button>
+          </div>
+        </div>
+      </div>`;
+    const submit = () => {
+      const reason = $("#modalDismissReason").value;
+      closeModal();
+      onConfirm(reason);
+    };
+    $("#modalOk").addEventListener("click", submit);
+    $("#modalCancel").addEventListener("click", closeModal);
+    $("#modalVeil").addEventListener("click", e => { if(e.target.id === "modalVeil") closeModal(); });
+  }
   function openConfirmModal(opts){
     const root = $("#modalRoot");
     root.innerHTML = `
@@ -1686,6 +1714,7 @@
       closeModal();
       addLog(`Added guard ${name}${employeeId ? ` (ID ${employeeId})` : ""}.`);
       persistConfig(); persistMonth();
+      syncGuardBankOnAdd(guard);
       showToast(`Added guard ${name}.`);
       render();
     }
@@ -2987,7 +3016,7 @@
         <td><span class="pill ${inactive?'inactive':'active'}">${statusLabel}</span></td>
         <td style="white-space:nowrap;">
           <button class="btn sm" data-view-guard="${g.id}">View</button>
-          <button class="btn sm" data-toggle-guard="${g.id}">${inactive?'Reactivate':'Deactivate'}</button>
+          <button class="btn sm" data-toggle-guard="${g.id}">${inactive?'Reactivate':'Dismiss'}</button>
           <button class="btn sm danger" data-remove-guard="${g.id}">Remove</button>
         </td>
       </tr>`;
@@ -2998,13 +3027,28 @@
     $$("[data-toggle-guard]").forEach(btn => {
       btn.addEventListener("click", () => {
         const g = guardById(btn.getAttribute("data-toggle-guard"));
-        g.active = g.active === false ? true : false;
-        if(g.active) g.inactiveFrom = null;
-        currentConfig().isSample = false;
-        addLog(`${g.active ? "Reactivated" : "Deactivated"} guard ${g.name}.`);
-        persistConfig();
-        showToast(g.active ? `Reactivated ${g.name}.` : `Deactivated ${g.name}.`);
-        render();
+        if(!g) return;
+        const inactive = g.active === false;
+        if(inactive){
+          g.active = true;
+          g.inactiveFrom = null;
+          currentConfig().isSample = false;
+          addLog(`Reactivated guard ${g.name}.`);
+          persistConfig();
+          syncGuardBankOnReactivate(g);
+          showToast(`Reactivated ${g.name}.`);
+          render();
+        } else {
+          openDismissGuardModal(g, (reason) => {
+            g.active = false;
+            currentConfig().isSample = false;
+            addLog(`Dismissed guard ${g.name} (${reason}).`);
+            persistConfig();
+            syncGuardBankOnDismiss(g, reason);
+            showToast(`Dismissed ${g.name}.`);
+            render();
+          });
+        }
       });
     });
     $$("[data-remove-guard]").forEach(btn => {
@@ -4386,6 +4430,7 @@
     $("#tempGuardState").value = "";
     $("#tempGuardCity").value = "";
     persistMonth();
+    syncBufferGuardOnAssign(tg[tempId], state.currentSiteId);
     showToast(`Assigned ${name} to cover ${date}.`);
     render();
   });
@@ -4778,6 +4823,121 @@
     ms.updatedAt = nowIso();
     if(!dbHandle || suppressPersist) return;
     dbHandle.doc("sites/"+siteId).collection("months").doc(key).set(ms).catch(()=>{});
+  }
+
+  /* ---------------- Guard Bank sync (best-effort, never blocks a Duty Roster edit) ----------------
+   * This console owns the day-to-day guard roster (per-site sites/{id}.guards[] and
+   * sites/{id}.months/{key}.tempGuards{}); the top-level guards/bufferGuards collections mirror
+   * that into a firm-wide view for the Guard Bank page (src/pages/GuardBankPage.tsx). Sync only
+   * ever flows OUT of here — Guard Bank's own "Assign to site" writes straight into
+   * sites/{id}.guards[] itself (see assignGuardToSite() in src/services/guards.ts), so the two
+   * sides never fight over the same write. Every function below swallows its own errors: a Guard
+   * Bank sync failure must never block or roll back the roster edit that triggered it. */
+  function guardBankMatchByEmployeeId(employeeId){
+    if(!dbHandle || !employeeId) return Promise.resolve(null);
+    return dbHandle.collection("guards").where("employeeId", "==", employeeId).limit(1).get()
+      .then(snap => snap.empty ? null : snap.docs[0])
+      .catch(() => null);
+  }
+  function guardBankIdentityFields(g){
+    const out = {
+      name: g.name, employeeId: g.employeeId || "", category: g.category || "local",
+      age: g.age != null ? g.age : null, state: g.state || null, city: g.city || null
+    };
+    if(g.category === "nepal"){
+      out.passportNumber = g.passportNumber || null;
+      out.permitExpiryDate = g.permitExpiryDate || null;
+      out.mykadNumber = null; out.phoneNumber = null;
+    } else {
+      out.mykadNumber = g.mykadNumber || null;
+      out.phoneNumber = g.phoneNumber || null;
+      out.passportNumber = null; out.permitExpiryDate = null;
+    }
+    return out;
+  }
+  // Fires whenever "+ Add guard" adds someone — matches-or-creates them in Guard Bank as Deployed
+  // to this site ("whenever guard being added directly in duty roster, if the details already
+  // existed in the guard bank, it still can be proceed to add, but then that particular guard
+  // will be automatically sync and moved to deployed").
+  function syncGuardBankOnAdd(g){
+    if(!dbHandle || !g.employeeId) return;
+    const site = state.sites.find(s => s.id === state.currentSiteId) || {};
+    const now = Date.now();
+    guardBankMatchByEmployeeId(g.employeeId).then(existingDoc => {
+      const payload = Object.assign(guardBankIdentityFields(g), {
+        status: "deployed", siteId: state.currentSiteId, siteName: site.name || null,
+        branch: site.branch || null, dismissalReason: null, dismissedAt: null, updatedAt: now
+      });
+      if(existingDoc){
+        existingDoc.ref.set(payload, {merge:true}).catch(()=>{});
+      } else {
+        payload.createdAt = now;
+        dbHandle.collection("guards").add(payload).catch(()=>{});
+      }
+    });
+  }
+  // Fires from the Dismiss modal — the ONLY place a guard's Guard Bank status ever becomes
+  // "dismissed" (Guard Bank itself has no dismiss action of its own).
+  function syncGuardBankOnDismiss(g, reason){
+    if(!dbHandle || !g.employeeId) return;
+    const now = Date.now();
+    guardBankMatchByEmployeeId(g.employeeId).then(existingDoc => {
+      if(existingDoc){
+        existingDoc.ref.set({ status:"dismissed", dismissalReason: reason, dismissedAt: now, updatedAt: now }, {merge:true}).catch(()=>{});
+      } else {
+        // Guard predates Guard Bank — create the record now so the dismissal still shows up
+        // there instead of silently going untracked.
+        const site = state.sites.find(s => s.id === state.currentSiteId) || {};
+        const payload = Object.assign(guardBankIdentityFields(g), {
+          status: "dismissed", siteId: state.currentSiteId, siteName: site.name || null,
+          branch: site.branch || null, dismissalReason: reason, dismissedAt: now,
+          createdAt: now, updatedAt: now
+        });
+        dbHandle.collection("guards").add(payload).catch(()=>{});
+      }
+    });
+  }
+  // Fires from "Reactivate" — mirrors the guard back to Deployed at this site.
+  function syncGuardBankOnReactivate(g){
+    if(!dbHandle || !g.employeeId) return;
+    const now = Date.now();
+    guardBankMatchByEmployeeId(g.employeeId).then(existingDoc => {
+      if(!existingDoc) return;
+      const site = state.sites.find(s => s.id === state.currentSiteId) || {};
+      existingDoc.ref.set({
+        status:"deployed", siteId: state.currentSiteId, siteName: site.name || null,
+        branch: site.branch || null, dismissalReason: null, dismissedAt: null, updatedAt: now
+      }, {merge:true}).catch(()=>{});
+    });
+  }
+  // Fires whenever a temp/relief guard is assigned to cover a slot — recorded in bufferGuards
+  // purely for future contact, deduped by name+MyKad, with NO linkage back to guards/sites.
+  function syncBufferGuardOnAssign(entry, siteId){
+    if(!dbHandle || !entry || !entry.name) return;
+    const site = state.sites.find(s => s.id === siteId) || {};
+    const now = Date.now();
+    dbHandle.collection("bufferGuards")
+      .where("name", "==", entry.name)
+      .where("mykadNumber", "==", entry.mykadNumber || null)
+      .limit(1).get()
+      .then(snap => {
+        const patch = {
+          rate: entry.rate != null ? entry.rate : null, phoneNumber: entry.phoneNumber || null,
+          mykadNumber: entry.mykadNumber || null, age: entry.age != null ? entry.age : null,
+          state: entry.state || null, city: entry.city || null,
+          lastSiteName: site.name || null, lastBranch: site.branch || null, lastUsedAt: now
+        };
+        if(!snap.empty){
+          const ref = snap.docs[0].ref;
+          const prevUsed = (snap.docs[0].data() || {}).timesUsed || 0;
+          ref.set(Object.assign({}, patch, { timesUsed: prevUsed + 1 }), {merge:true}).catch(()=>{});
+        } else {
+          dbHandle.collection("bufferGuards").add(Object.assign({ name: entry.name }, patch, {
+            firstUsedAt: now, timesUsed: 1
+          })).catch(()=>{});
+        }
+      })
+      .catch(()=>{});
   }
 
   function subscribeMonth(siteId, key){

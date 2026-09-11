@@ -288,5 +288,34 @@ service cloud.firestore {
       allow update: if isActiveUser() && canReachQuote(resource.data) && canReachQuote(request.resource.data);
       allow delete: if isActiveUser() && canReachQuote(resource.data);
     }
+
+    // ---- Guard Bank (src/pages/GuardBankPage.tsx) ----
+    // A firm-wide guard registry, independent of any one Duty Roster site — a guard here moves
+    // through status "pool" (registered, not yet assigned anywhere) -> "deployed" (assigned to a
+    // siteId/branch) -> "dismissed" (terminated/resigned/runaway). Kept in sync with
+    // public/duty-roster/index.html's own per-site guards[] arrays rather than replacing them:
+    // adding a guard there creates-or-updates the matching doc here as "deployed" (matched by
+    // employeeId), and dismissing a guard there (see the "Dismiss" action, formerly
+    // "Deactivate") is the ONLY thing that ever sets a doc here to "dismissed" — Guard Bank
+    // itself has no dismiss action of its own, only Register (-> pool) and Assign to site
+    // (-> deployed, which also writes into that site's guards[] array).
+    //
+    // Every signed-in, active user except Payroll can read and write — Payroll's Duty Roster
+    // access is already view/export-only (see isPayroll()'s own doc comment above), and this
+    // carries the same intent forward. No branch-scoping: a pool guard has no branch yet, and
+    // once deployed their branch is already visible/enforced through the linked /sites doc, so
+    // Guard Bank stays a single firm-wide list for anyone who can see it at all.
+    match /guards/{guardId} {
+      allow read, write: if isActiveUser() && !isPayroll();
+    }
+
+    // ---- Buffer Guards (src/pages/GuardBankPage.tsx's "Buffer Guards" sub-tab) ----
+    // Temporary/one-off guards recorded purely for future contact — synced from Duty Roster's
+    // "temp guard" slot entries (monthTempGuards in index.html: a one-off name+rate typed into a
+    // shift, not tied to any roster guard id). Deliberately has NO linkage to /guards or /sites
+    // — same access as /guards (everyone except Payroll), simply a contact list.
+    match /bufferGuards/{id} {
+      allow read, write: if isActiveUser() && !isPayroll();
+    }
   }
 }

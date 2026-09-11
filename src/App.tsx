@@ -8,6 +8,7 @@ import AnalysisPage from './pages/AnalysisPage';
 import ActiveProjectsPage from './pages/ActiveProjectsPage';
 import PastProjectsPage from './pages/PastProjectsPage';
 import DutyRosterPage from './pages/DutyRosterPage';
+import GuardBankPage from './pages/GuardBankPage';
 import QuotationCalculatorPage from './pages/QuotationCalculatorPage';
 import AdminPage from './pages/AdminPage';
 import NewTenderWatcher from './components/notifications/NewTenderWatcher';
@@ -90,6 +91,16 @@ export default function App() {
               <ProtectedRoute>
                 <AppLayout>
                   <DutyRosterPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/guard-bank"
+            element={
+              <ProtectedRoute hidePayrollOnly>
+                <AppLayout>
+                  <GuardBankPage />
                 </AppLayout>
               </ProtectedRoute>
             }

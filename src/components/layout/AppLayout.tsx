@@ -42,6 +42,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               <NavLink to="/duty-roster" className={navItemClass}>
                 <span aria-hidden>🗓️</span> Duty Roster
               </NavLink>
+              <NavLink to="/guard-bank" className={navItemClass}>
+                <span aria-hidden>🛡️</span> Guard Bank
+              </NavLink>
               <NavLink to="/past-projects" className={navItemClass}>
                 <span aria-hidden>📦</span> Past Projects
               </NavLink>
@@ -50,7 +53,17 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </NavLink>
             </>
           )}
-          {(profile?.role === 'dutyStaff' || profile?.role === 'payroll') && (
+          {profile?.role === 'dutyStaff' && (
+            <>
+              <NavLink to="/duty-roster" className={navItemClass}>
+                <span aria-hidden>🗓️</span> Duty Roster
+              </NavLink>
+              <NavLink to="/guard-bank" className={navItemClass}>
+                <span aria-hidden>🛡️</span> Guard Bank
+              </NavLink>
+            </>
+          )}
+          {profile?.role === 'payroll' && (
             <NavLink to="/duty-roster" className={navItemClass}>
               <span aria-hidden>🗓️</span> Duty Roster
             </NavLink>

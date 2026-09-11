@@ -1,0 +1,172 @@
+import {
+  addDoc,
+  arrayUnion,
+  collection,
+  doc,
+  getDocs,
+  limit,
+  query,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
+import { db } from '../firebase';
+import type { Guard } from '../types';
+
+/**
+ * The shared "identity" fields Guard Bank and Duty Roster both need for a guard — everything
+ * except Guard Bank's own status/assignment/dismissal bookkeeping. Mirrors the guard object
+ * openAddGuardModal() builds in public/duty-roster/index.html, minus the site-only `position`
+ * field (a pool guard has no site yet to hold a position on).
+ */
+export interface GuardIdentityInput {
+  name: string;
+  employeeId: string;
+  category: 'local' | 'nepal';
+  age?: number;
+  state?: string;
+  city?: string;
+  passportNumber?: string;
+  permitExpiryDate?: string;
+  mykadNumber?: string;
+  phoneNumber?: string;
+}
+
+export interface SitePickerOption {
+  id: string;
+  name: string;
+  branch: string | null;
+}
+
+function guardsCollection() {
+  return collection(db, 'guards');
+}
+
+/** True if a guard with this employeeId already exists anywhere in Guard Bank (any status). */
+async function findByEmployeeId(employeeId: string) {
+  const snap = await getDocs(query(guardsCollection(), where('employeeId', '==', employeeId), limit(1)));
+  return snap.empty ? null : { id: snap.docs[0].id, ...(snap.docs[0].data() as Omit<Guard, 'id'>) };
+}
+
+/**
+ * Registers a brand-new guard directly into the Guard Pool (status 'pool', no site). This is
+ * Guard Bank's own entry point — separate from Duty Roster's "+ Add guard", which registers (or
+ * matches) a guard AND deploys them to a site in one step. Throws if the employeeId is already
+ * in use anywhere in Guard Bank, so the two entry points never silently create duplicate guards.
+ */
+export async function registerGuard(input: GuardIdentityInput): Promise<string> {
+  const existing = await findByEmployeeId(input.employeeId);
+  if (existing) {
+    throw new Error(
+      `Employee ID ${input.employeeId} is already registered (${existing.name}, currently ${existing.status}).`
+    );
+  }
+  const now = Date.now();
+  const ref = await addDoc(guardsCollection(), {
+    name: input.name,
+    employeeId: input.employeeId,
+    category: input.category,
+    age: input.age ?? null,
+    state: input.state ?? null,
+    city: input.city ?? null,
+    passportNumber: input.passportNumber ?? null,
+    permitExpiryDate: input.permitExpiryDate ?? null,
+    mykadNumber: input.mykadNumber ?? null,
+    phoneNumber: input.phoneNumber ?? null,
+    status: 'pool',
+    siteId: null,
+    siteName: null,
+    branch: null,
+    dismissalReason: null,
+    dismissedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return ref.id;
+}
+
+/**
+ * Assigns a Guard Pool guard to a client site/branch — moves them to 'deployed' in Guard Bank
+ * AND pushes a matching guard row into that site's own roster (public/duty-roster/index.html's
+ * `sites/{siteId}.guards[]`), so they show up there immediately without anyone re-entering their
+ * details a second time. The reverse direction (Duty Roster -> Guard Bank) is handled entirely
+ * inside index.html itself — see the doc comment above the `guards` collection in firestore.rules.
+ */
+export async function assignGuardToSite(guard: Guard, site: SitePickerOption): Promise<void> {
+  const rosterGuard: Record<string, unknown> = {
+    id: `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+    name: guard.name,
+    employeeId: guard.employeeId,
+    active: true,
+    inactiveFrom: null,
+    category: guard.category,
+    age: guard.age ?? null,
+    state: guard.state ?? null,
+    city: guard.city ?? null,
+  };
+  if (guard.category === 'nepal') {
+    rosterGuard.passportNumber = guard.passportNumber ?? '';
+    rosterGuard.permitExpiryDate = guard.permitExpiryDate ?? '';
+  } else {
+    rosterGuard.mykadNumber = guard.mykadNumber ?? '';
+    rosterGuard.phoneNumber = guard.phoneNumber ?? '';
+  }
+
+  await updateDoc(doc(db, 'sites', site.id), {
+    guards: arrayUnion(rosterGuard),
+    isSample: false,
+    updatedAt: new Date().toISOString(),
+  });
+
+  await updateDoc(doc(db, 'guards', guard.id), {
+    status: 'deployed',
+    siteId: site.id,
+    siteName: site.name,
+    branch: site.branch,
+    dismissalReason: null,
+    dismissedAt: null,
+    updatedAt: Date.now(),
+  });
+}
+
+/**
+ * Trailing-12-month turnover: (guards dismissed in the last 12 months) / (average active
+ * headcount over that same window) * 100 — the formula confirmed for this feature. Guard Bank
+ * has no historical headcount snapshots, so "active at a past moment" is approximated from each
+ * guard's own createdAt/dismissedAt: a guard counts as active at the period's start if they
+ * existed before it began and either aren't dismissed or were dismissed after it began. Average
+ * headcount is the mean of the start-of-period and end-of-period (today) counts, the standard
+ * approximation when only two headcount points are available.
+ */
+export function computeGuardTurnover(guards: Guard[], asOf: number = Date.now()) {
+  const periodStart = asOf - 365 * 24 * 60 * 60 * 1000;
+  const activeNow = guards.filter((g) => g.status === 'deployed').length;
+  const activeAtStart = guards.filter(
+    (g) =>
+      g.createdAt <= periodStart &&
+      (g.status !== 'dismissed' || (g.dismissedAt != null && g.dismissedAt > periodStart))
+  ).length;
+  const dismissedLast12mo = guards.filter(
+    (g) => g.status === 'dismissed' && g.dismissedAt != null && g.dismissedAt > periodStart
+  ).length;
+  const avgHeadcount = (activeNow + activeAtStart) / 2;
+  const rate = avgHeadcount > 0 ? (dismissedLast12mo / avgHeadcount) * 100 : 0;
+  return { rate, dismissedLast12mo, avgHeadcount, activeNow, activeAtStart };
+}
+
+/** Guards (Nepal category, not dismissed) whose work permit expires within the given window. */
+export function guardsWithPermitExpiringSoon(guards: Guard[], withinDays = 60, asOf: number = Date.now()) {
+  const cutoff = asOf + withinDays * 24 * 60 * 60 * 1000;
+  return guards.filter((g) => {
+    if (g.status === 'dismissed' || g.category !== 'nepal' || !g.permitExpiryDate) return false;
+    const expiry = new Date(`${g.permitExpiryDate}T12:00:00`).getTime();
+    return Number.isFinite(expiry) && expiry <= cutoff;
+  });
+}
+
+/** Manual contact-detail edit for a Buffer Guard row (the only edit Guard Bank offers there). */
+export async function updateBufferGuardContact(
+  id: string,
+  patch: Partial<{ phoneNumber: string; state: string; city: string }>
+): Promise<void> {
+  await updateDoc(doc(db, 'bufferGuards', id), patch);
+}

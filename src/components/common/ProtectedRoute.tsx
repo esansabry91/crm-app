@@ -6,6 +6,7 @@ export default function ProtectedRoute({
   children,
   adminOnly = false,
   hideFromStaff = false,
+  hidePayrollOnly = false,
 }: {
   children: ReactNode;
   adminOnly?: boolean;
@@ -15,6 +16,13 @@ export default function ProtectedRoute({
    * "Payroll" accounts are Duty-Roster-only in the same way, so they're gated by this too.
    */
   hideFromStaff?: boolean;
+  /**
+   * Narrower than hideFromStaff: blocks ONLY Payroll, leaving dutyStaff (and every other role)
+   * through. Used by Guard Bank, which every role can reach except Payroll — Payroll's Duty
+   * Roster access is strictly view/export (see the Role doc comments in types.ts), and Guard
+   * Bank carries the same read/write-affecting data, so it stays out of reach the same way.
+   */
+  hidePayrollOnly?: boolean;
 }) {
   const { firebaseUser, profile, loading } = useAuth();
 
@@ -50,6 +58,10 @@ export default function ProtectedRoute({
   }
 
   if (hideFromStaff && (profile?.role === 'dutyStaff' || profile?.role === 'payroll')) {
+    return <Navigate to="/duty-roster" replace />;
+  }
+
+  if (hidePayrollOnly && profile?.role === 'payroll') {
     return <Navigate to="/duty-roster" replace />;
   }
 
