@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import clsx from 'clsx';
 import StatCard from '../components/analytics/StatCard';
 import RegisterGuardModal from '../components/guard-bank/RegisterGuardModal';
+import RegisterBufferGuardModal from '../components/guard-bank/RegisterBufferGuardModal';
 import AssignGuardModal from '../components/guard-bank/AssignGuardModal';
 import GuardDetailsModal from '../components/guard-bank/GuardDetailsModal';
 import BufferGuardDetailsModal from '../components/guard-bank/BufferGuardDetailsModal';
@@ -58,6 +59,7 @@ export default function GuardBankPage() {
   const [tab, setTab] = useState<Tab>('Guard Pool');
   const [toast, setToast] = useState<string | null>(null);
   const [registerOpen, setRegisterOpen] = useState(false);
+  const [registerBufferOpen, setRegisterBufferOpen] = useState(false);
   const [assignGuard, setAssignGuard] = useState<Guard | null>(null);
   const [viewGuard, setViewGuard] = useState<Guard | null>(null);
   const [viewBuffer, setViewBuffer] = useState<BufferGuard | null>(null);
@@ -228,6 +230,14 @@ export default function GuardBankPage() {
                 className="px-3.5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
               >
                 + Register guard
+              </button>
+            )}
+            {tab === 'Buffer Guards' && (
+              <button
+                onClick={() => setRegisterBufferOpen(true)}
+                className="px-3.5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+              >
+                + Register buffer guard
               </button>
             )}
           </div>
@@ -545,7 +555,7 @@ export default function GuardBankPage() {
         ) : filteredBuffer.length === 0 ? (
           <p className="text-sm text-slate-400">
             {bufferGuards.length === 0
-              ? "No buffer guards yet — they're recorded automatically whenever Duty Roster assigns a temporary guard to cover a shift."
+              ? 'No buffer guards yet. Add one via "+ Register buffer guard" above, or they\'re recorded automatically whenever Duty Roster assigns a temporary guard to cover a shift.'
               : 'No buffer guards match these filters.'}
           </p>
         ) : (
@@ -626,6 +636,11 @@ export default function GuardBankPage() {
       </div>
 
       <RegisterGuardModal open={registerOpen} onClose={() => setRegisterOpen(false)} onRegistered={flash} />
+      <RegisterBufferGuardModal
+        open={registerBufferOpen}
+        onClose={() => setRegisterBufferOpen(false)}
+        onRegistered={flash}
+      />
       <AssignGuardModal
         open={!!assignGuard}
         guard={assignGuard}

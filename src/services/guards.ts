@@ -11,7 +11,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { Guard } from '../types';
+import type { BufferGuard, Guard } from '../types';
 
 /**
  * The shared "identity" fields Guard Bank and Duty Roster both need for a guard — everything
@@ -43,6 +43,10 @@ export interface SitePickerOption {
 
 function guardsCollection() {
   return collection(db, 'guards');
+}
+
+function bufferGuardsCollection() {
+  return collection(db, 'bufferGuards');
 }
 
 /** True if a guard with this employeeId already exists anywhere in Guard Bank (any status). */
@@ -104,6 +108,57 @@ export async function registerGuard(input: GuardIdentityInput): Promise<string> 
     dismissedAt: null,
     createdAt: now,
     updatedAt: now,
+  });
+  return ref.id;
+}
+
+/** Fields Guard Bank's own "+ Register buffer guard" entry point collects. */
+export interface BufferGuardIdentityInput {
+  name: string;
+  rate: number;
+  mykadNumber?: string;
+  age?: number;
+  phoneNumber?: string;
+  state?: string;
+  city?: string;
+}
+
+/**
+ * Guard Bank's own manual entry point for Buffer Guards — separate from Duty Roster's temp-guard
+ * assignment flow (syncBufferGuardOnAssign() in public/duty-roster/index.html), which creates or
+ * updates a bufferGuards record automatically whenever a relief guard actually covers a shift.
+ * Mirrors what registerGuard() does for the Guard Pool: lets an admin add someone to the roster
+ * up front, before they've ever covered a shift. Throws if a buffer guard with the same
+ * name+MyKad already exists — the exact dedupe key syncBufferGuardOnAssign() uses — so the two
+ * entry points never end up creating two records for the same person. A guard registered this
+ * way starts at timesUsed: 0; that only climbs once Duty Roster actually assigns them.
+ */
+export async function registerBufferGuard(input: BufferGuardIdentityInput): Promise<string> {
+  const name = input.name;
+  const mykadNumber = input.mykadNumber ?? null;
+  const existingSnap = await getDocs(
+    query(bufferGuardsCollection(), where('name', '==', name), where('mykadNumber', '==', mykadNumber), limit(1))
+  );
+  if (!existingSnap.empty) {
+    const existing = existingSnap.docs[0].data() as Omit<BufferGuard, 'id'>;
+    throw new Error(
+      `${name} is already on the Buffer Guards list (used ${existing.timesUsed} time${existing.timesUsed === 1 ? '' : 's'}).`
+    );
+  }
+  const now = Date.now();
+  const ref = await addDoc(bufferGuardsCollection(), {
+    name,
+    rate: input.rate,
+    mykadNumber,
+    age: input.age ?? null,
+    phoneNumber: input.phoneNumber ?? null,
+    state: input.state ?? null,
+    city: input.city ?? null,
+    lastSiteName: null,
+    lastBranch: null,
+    firstUsedAt: now,
+    lastUsedAt: now,
+    timesUsed: 0,
   });
   return ref.id;
 }
