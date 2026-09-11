@@ -854,8 +854,9 @@
     // same way (see guardById()'s support-guard fallback) and tallied into THIS site's own
     // manHours totals (he really worked here), but never written into the home site's own
     // month doc at all — see computeIncomingSupportDates() for how the home site instead reads
-    // this back, live, to show his combined total (correctly re-classified against his own home
-    // quota/holidays — see combinedGuardBreakdown()) without touching its own official numbers.
+    // this back, live, to show his combined total (his support days always counted as rest-day
+    // or holiday work, regardless of his home quota — see combinedGuardBreakdown()) without
+    // touching its own official numbers.
     return { month:key, overrides:{}, leaves:{}, log:[], tempGuards:{}, supportGuards:{}, updatedAt: nowIso() };
   }
   // Defensive accessors: months/configs saved before these fields existed won't have them.
@@ -1928,10 +1929,11 @@
   // count/positions stay intact for the importer. Temp/relief guards are left out since they
   // have no Employee Code to put in column A.
   // Same shape as before, but every guard's row now uses his COMBINED totals via
-  // combinedGuardBreakdown() — his own home-worked days merged chronologically with whatever he
-  // picked up as a support guard at other branch sites this month (see
-  // computeIncomingSupportDates()), sharing one 26-day quota and his home site's own holiday
-  // calendar, instead of just his numbers here. This file is now meant to be the single,
+  // combinedGuardBreakdown() — his own home totals plus whatever he picked up as a support guard
+  // at other branch sites this month (see computeIncomingSupportDates()), with every support day
+  // counted as rest-day or holiday work regardless of his home 26-day quota (see
+  // combinedGuardBreakdown()'s own doc comment for why), instead of just his numbers here. This
+  // file is now meant to be the single,
   // complete source for his pay this month, so — unlike the old version — it no longer adds an
   // extra row for a guard borrowed IN from another site: his combined total (support hours
   // included) is exported once, from his own home site. Only this site's own permanent guards
@@ -1968,7 +1970,7 @@
       "Lateness Count", "Lateness Time", "Early Out Count", "Early Out Time"];
 
     const rows = guards.map(g => {
-      const s = combinedGuardBreakdown(config, result, g.id, homeSummary[g.id], combinedMap && combinedMap[g.id]);
+      const s = combinedGuardBreakdown(config, homeSummary[g.id], combinedMap && combinedMap[g.id]);
       return [g.employeeId || "", g.name, NORMAL_WORK_DAYS, n(s.normalDays), n(s.absent),
         n(s.leave), n(s.unpaidLeave), n(s.restDaysWorked), n(s.holidayDaysWorked),
         n(s.normalOTHours), n(s.restOTHours), n(s.holidayOTHours),
@@ -2087,8 +2089,10 @@
   // normal / rest-day / public-holiday and adds it to `s` in place — normalDays/restDaysWorked/
   // holidayDaysWorked/normalOTHours/restOTHours/holidayOTHours/manHours. `s._nonHolidayWorked` is
   // a running counter only, not part of the report (see computeGuardSummary()'s initEntry()).
-  // Pulled out of computeGuardSummary()'s own day loop below so combinedGuardBreakdown() can
-  // apply this exact same rule to a merged list of home + support-elsewhere work days too.
+  // Pulled out of computeGuardSummary()'s own day loop purely so the classification rule lives
+  // in one place — combinedGuardBreakdown() below does NOT reuse it for support-elsewhere days
+  // (see accumulateSupportDay() and combinedGuardBreakdown()'s own doc comment for why: those
+  // days are never subject to this 26-day quota at all).
   function accumulateWorkedDay(s, hours, isHoliday, normalThreshold){
     s.manHours += hours;
     if(isHoliday){
@@ -2182,8 +2186,10 @@
 
   // Every day guard `guardId` actually worked at THIS site this month, as {dateStr, hours} pairs
   // (one entry per shift he was assigned — not yet classified normal/rest/holiday). Used by
-  // combinedGuardBreakdown() below, which merges this with a guard's support-elsewhere shifts
-  // (from computeIncomingSupportDates()) before classifying either kind.
+  // computeIncomingSupportDates() to gather a support guard's raw worked days at the SIBLING
+  // (destination) site he covered a shift at — combinedGuardBreakdown() below no longer needs
+  // this for the home side of things, since it now takes the guard's home totals straight from
+  // computeGuardSummary()'s own result instead of re-deriving them from a day list.
   function guardWorkedDayList(config, result, guardId){
     const list = [];
     result.days.forEach(day => {
@@ -2199,34 +2205,60 @@
     return list;
   }
 
-  // A guard's Combined breakdown for the "Combined hours" panel/export: his leave-based fields
-  // (mc/absent/leave/unpaidLeave, from `homeSummaryEntry`) are unaffected by where he worked, so
-  // they're taken as-is. manHours/normalDays/restDaysWorked/holidayDaysWorked/OT are instead
-  // recomputed from scratch by merging his own home-worked days with his support-elsewhere-
-  // worked days (`supportDates`, from computeIncomingSupportDates()) into ONE chronological list
-  // and re-classifying every entry — home and support alike — against a SINGLE shared 26-day
-  // quota and his HOME site's own holiday calendar. This matters because a day he went to
-  // support another site was, by construction, a day "Assign a support guard"/"Support guard"
-  // only offered him for because he was free at home that day — meaning at home it was already
-  // either a rest day (he'd already used his 26 normal days, or the rotation simply didn't need
-  // him) or a public holiday, not a fresh "first day of work" the way the destination site's own
-  // independent schedule would otherwise treat it. Classifying it independently at each site
-  // (the old approach) let a support shift slip through as plain, non-OT "normal" work far more
-  // often than it should have.
-  function combinedGuardBreakdown(config, result, guardId, homeSummaryEntry, supportDates){
+  // Classifies ONE support-elsewhere worked-day entry into holiday-worked (if it falls on the
+  // HOME site's own public holiday) or rest-day-worked (every other case) — never "normal", and
+  // never subject to the 26-day quota accumulateWorkedDay() enforces for a guard's own home
+  // shifts. See combinedGuardBreakdown()'s doc comment for why a support day is always one or
+  // the other: the destination could only ever have offered this guard the shift because
+  // "Assign a support guard" saw him as free at home that day — i.e. already a rest day (or a
+  // public holiday) there — whatever his home 26-day counter happened to read at the time.
+  function accumulateSupportDay(s, hours, isHoliday){
+    s.manHours += hours;
+    if(isHoliday){
+      s.holidayDaysWorked++;
+      s.holidayOTHours += hours;
+    } else {
+      s.restDaysWorked++;
+      s.restOTHours += hours;
+    }
+  }
+
+  // A guard's Combined breakdown for the "Combined hours" panel/export. His home-site totals
+  // (mc/absent/leave/unpaidLeave, manHours/normalDays/restDaysWorked/holidayDaysWorked/OT) are
+  // taken straight from `homeSummaryEntry` — computeGuardSummary()'s own, already-correct
+  // classification of his home shifts — completely unchanged. Then each support-elsewhere day
+  // (`supportDates`, raw {dateStr,hours} pairs from computeIncomingSupportDates()) is added on
+  // top via accumulateSupportDay(), always as rest-day-worked or holiday-worked, never "normal"
+  // and never competing with his home shifts for a slot in the 26-day quota.
+  //
+  // This is deliberately NOT a merged-and-reclassified-together day list (an earlier version of
+  // this function did that, sharing one 26-day counter across home + support days) — a support
+  // day doesn't need to "use up" quota alongside his home shifts to earn rest-day pay, because it
+  // was never eligible to be "normal" in the first place: "Assign a support guard" only ever
+  // offers a guard who's free at home that exact day (computeFreeGuardsAt() — not already working
+  // a shift there, not on leave), so every day he's sent to support elsewhere was already a day
+  // off (or a public holiday) at home BY CONSTRUCTION, no matter how many normal days he'd
+  // already worked at home so far that month. Classifying it against a shared quota (or
+  // independently at the destination, the original bug this whole feature started from) could
+  // both under- and over-count how many of his home working days had been "used up" — this
+  // sidesteps that entirely by treating every support day as rest/holiday work, unconditionally.
+  function combinedGuardBreakdown(config, homeSummaryEntry, supportDates){
     const combined = emptyGuardBreakdown();
     const hs = homeSummaryEntry || {};
+    combined.manHours = hs.manHours || 0;
+    combined.normalDays = hs.normalDays || 0;
+    combined.restDaysWorked = hs.restDaysWorked || 0;
+    combined.holidayDaysWorked = hs.holidayDaysWorked || 0;
+    combined.normalOTHours = hs.normalOTHours || 0;
+    combined.restOTHours = hs.restOTHours || 0;
+    combined.holidayOTHours = hs.holidayOTHours || 0;
     combined.mc = hs.mc || 0;
     combined.absent = hs.absent || 0;
     combined.leave = hs.leave || 0;
     combined.unpaidLeave = hs.unpaidLeave || 0;
 
     const holidays = new Set(configHolidays(config));
-    const normalThreshold = Number(config.site.normalHoursPerDay) || 8;
-    const homeWorked = guardWorkedDayList(config, result, guardId);
-    const merged = homeWorked.concat(supportDates || [])
-      .sort((a, b) => a.dateStr < b.dateStr ? -1 : a.dateStr > b.dateStr ? 1 : 0);
-    merged.forEach(entry => accumulateWorkedDay(combined, entry.hours, holidays.has(entry.dateStr), normalThreshold));
+    (supportDates || []).forEach(entry => accumulateSupportDay(combined, entry.hours, holidays.has(entry.dateStr)));
     return combined;
   }
 
@@ -2356,10 +2388,10 @@
   // The "Combined hours" panel — a SEPARATE table from the plain Summary report above, showing
   // only this site's own permanent guards (never guards borrowed in from elsewhere — a borrowed
   // guard's combined total belongs on HIS OWN home site's version of this panel, not here), each
-  // reclassified via combinedGuardBreakdown() — his own home-worked days merged chronologically
-  // with whatever he picked up as a support guard at other branch sites this month, sharing one
-  // 26-day quota and his home site's own holiday calendar. This is also what feeds the "Export
-  // to Excel (TimeAttendance format)" button, which now lives on this panel instead of the plain
+  // topped up via combinedGuardBreakdown() — his own home totals plus whatever he picked up as a
+  // support guard at other branch sites this month, every support day counted as rest-day or
+  // holiday work regardless of his home 26-day quota. This is also what feeds the "Export to
+  // Excel (TimeAttendance format)" button, which now lives on this panel instead of the plain
   // Summary report — see exportTimeAttendanceToExcel().
   function renderCombinedReport(result){
     const {y,m} = parseYM(state.currentMonth);
@@ -2392,7 +2424,7 @@
     const totals = emptyGuardBreakdown();
 
     const rows = guards.map(g => {
-      const combined = combinedGuardBreakdown(config, result, g.id, summary[g.id], incoming[g.id]);
+      const combined = combinedGuardBreakdown(config, summary[g.id], incoming[g.id]);
       addGuardBreakdown(totals, combined);
       return `<tr>
         <td class="mono">${escapeHtml(g.employeeId || "—")}</td>
@@ -3226,12 +3258,12 @@
   // a support guard at OTHER sites in the same branch this month, and returns each one's RAW
   // {dateStr, hours} entries — deliberately NOT classified into normal/rest/holiday here. That
   // classification now happens later, back at the home site, in combinedGuardBreakdown() — which
-  // merges these dates with the guard's own home-worked days into one chronological list before
-  // classifying anything, so a support shift shares the SAME 26-day quota as his home shifts and
-  // is checked against his HOME site's holiday calendar, rather than being treated as a fresh,
-  // independent "first day of work" at the destination the way the old version did (that let a
-  // support shift slip through as plain "normal" work even when it should have been rest-day or
-  // holiday work — see the "Mark a guard on leave" design discussion this replaced).
+  // always counts every one of these dates as rest-day-worked or holiday-worked (see its own doc
+  // comment for why), never "normal" and never checked against his home 26-day quota, rather than
+  // being treated as a fresh, independent "first day of work" at the destination the way the old
+  // version did (that let a support shift slip through as plain "normal" work even when it should
+  // have been rest-day or holiday work — see the "Mark a guard on leave" design discussion this
+  // replaced).
   //
   // Gathering the dates themselves still means briefly re-running that sibling site's own
   // generateMonth() under the same temporary state-swap pattern as computeFreeGuardsAt() above
