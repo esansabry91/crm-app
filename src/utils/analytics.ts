@@ -593,6 +593,12 @@ export function pipelineBridgePeriods(entries: TenderHistoryEntry[], view: Bridg
  * shrinking end value meaningful to read: whether it shrank because deals were Won (good) or Lost
  * / never replaced by new intake (not good) is visible in which bars moved, not just the final
  * number.
+ *
+ * A tender that's moved to Won/Lost and then moved back to an open stage again — all within the
+ * SAME period (e.g. while testing, or an accidental drag reverted) — nets to zero instead of
+ * inflating both the New Tenders bucket (on the way back in) and the Won/Lost bucket (on the way
+ * out): see closedThisPeriod below. A reopen of something closed in an EARLIER period still counts
+ * as new to *this* period, since it genuinely wasn't part of this period's starting open pool.
  */
 export function pipelineValueBridge(
   entries: TenderHistoryEntry[],
@@ -615,6 +621,10 @@ export function pipelineValueBridge(
   let lostValue = 0;
   let removedValue = 0;
   let adjustValue = 0;
+  // Tenders closed (Won/Lost) earlier in THIS period, keyed by tenderId. When one of them moves
+  // back to an open stage before the period ends, we reverse its bucket entry here instead of
+  // also booking the reopen as a "new" tender — see the doc comment above.
+  const closedThisPeriod = new Map<string, { bucket: 'won' | 'lost'; amount: number }>();
 
   for (; i < sorted.length && sorted[i].timestamp < periodEnd; i++) {
     const e = sorted[i];
@@ -635,10 +645,26 @@ export function pipelineValueBridge(
       if (nowOpen) newValue += e.value; // created directly as Won/Lost never touched the open pool
     } else if (e.type === 'stage_change') {
       if (prevOpen && !nowOpen) {
-        if (e.stage === 'Won') wonValue -= prevValue;
-        else if (e.stage === 'Lost') lostValue -= prevValue;
+        if (e.stage === 'Won') {
+          wonValue -= prevValue;
+          closedThisPeriod.set(e.tenderId, { bucket: 'won', amount: prevValue });
+        } else if (e.stage === 'Lost') {
+          lostValue -= prevValue;
+          closedThisPeriod.set(e.tenderId, { bucket: 'lost', amount: prevValue });
+        }
       } else if (!prevOpen && nowOpen) {
-        newValue += e.value; // reopened from a closed stage back into the pipeline
+        const closedEntry = closedThisPeriod.get(e.tenderId);
+        if (closedEntry) {
+          // Same tender closed and reopened within this one period — cancel the earlier bucket
+          // entry instead of double counting. A value that genuinely changed while it sat closed
+          // (rare, but possible via a manual correction) still shows up as a real adjustment.
+          if (closedEntry.bucket === 'won') wonValue += closedEntry.amount;
+          else lostValue += closedEntry.amount;
+          if (e.value !== closedEntry.amount) adjustValue += e.value - closedEntry.amount;
+          closedThisPeriod.delete(e.tenderId);
+        } else {
+          newValue += e.value; // reopened from a stage closed in an EARLIER period — genuinely new to this period's open pool
+        }
       } else if (prevOpen && nowOpen && prevValue !== e.value) {
         adjustValue += e.value - prevValue;
       }
