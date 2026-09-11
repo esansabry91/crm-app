@@ -550,6 +550,10 @@
             <div style="flex:1;"><label class="small">Age</label><input type="number" id="tempGuardAge" min="16" max="80" step="1"></div>
             <div style="flex:1;"><label class="small">Phone number</label><input type="text" id="tempGuardPhone" placeholder="e.g. 012-3456789"></div>
           </div>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">State</label><input type="text" id="tempGuardState" placeholder="e.g. Selangor"></div>
+            <div style="flex:1;"><label class="small">City</label><input type="text" id="tempGuardCity" placeholder="e.g. Petaling Jaya"></div>
+          </div>
           <button class="btn primary sm" id="assignTempBtn">Assign temporary guard</button>
           <p class="empty" id="tempSlotEmpty" hidden>No unfilled slots this month &mdash; nothing needs a temporary guard right now.</p>
           <table class="simple" style="margin-top:12px;">
@@ -1532,11 +1536,12 @@
   }
 
   // Category-specific fields for the "Add guard" popup below — Local guards give MyKad + phone,
-  // Nepal guards give passport + permit expiry, both end with Age. Employee ID and Full name are
-  // asked up front regardless of category (Employee ID stays optional, matching how it always
-  // has been; everything else here is required — see this feature's own design notes on why only
-  // Full name and Employee ID ever show in the guard roster table itself, with the rest tucked
-  // behind that row's "View" button — see openGuardDetailsModal()).
+  // Nepal guards give passport + permit expiry, both followed by the generic State/City/Age
+  // fields. Employee ID and Full name are asked up front regardless of category — Employee ID is
+  // required here (unlike the handful of legacy guards added before this feature, which can still
+  // show "—" for it) — and every field on this form is required, see this feature's own design
+  // notes on why only Full name and Employee ID ever show in the guard roster table itself, with
+  // the rest tucked behind that row's "View" button — see openGuardDetailsModal()).
   function renderAddGuardCategoryFields(category){
     const host = $("#newGuardCategoryFields");
     if(!host) return;
@@ -1581,7 +1586,7 @@
             </select>
           </div>
           <div style="margin-bottom:10px;">
-            <label class="small">Employee ID (optional)</label>
+            <label class="small">Employee ID</label>
             <input type="text" id="newGuardEmpId" placeholder="e.g. EMP-1023">
           </div>
           <div style="margin-bottom:10px;">
@@ -1589,6 +1594,14 @@
             <input type="text" id="newGuardName" placeholder="e.g. Ahmad Faiz">
           </div>
           <div id="newGuardCategoryFields"></div>
+          <div style="margin-bottom:10px;">
+            <label class="small">State</label>
+            <input type="text" id="newGuardState" placeholder="e.g. Selangor">
+          </div>
+          <div style="margin-bottom:10px;">
+            <label class="small">City</label>
+            <input type="text" id="newGuardCity" placeholder="e.g. Petaling Jaya">
+          </div>
           <div style="margin-bottom:10px;">
             <label class="small">Age</label>
             <input type="number" id="newGuardAge" min="16" max="80" step="1">
@@ -1616,12 +1629,17 @@
     function submit(){
       const employeeId = $("#newGuardEmpId").value.trim();
       const name = $("#newGuardName").value.trim();
+      const stateVal = $("#newGuardState").value.trim();
+      const cityVal = $("#newGuardCity").value.trim();
       const ageRaw = $("#newGuardAge").value;
       const age = Number(ageRaw);
+      if(!employeeId){ showErr("Employee ID is required."); return; }
       if(!name){ showErr("Full name is required."); return; }
+      if(!stateVal){ showErr("State is required."); return; }
+      if(!cityVal){ showErr("City is required."); return; }
       if(ageRaw.trim() === "" || !Number.isFinite(age) || age <= 0){ showErr("Enter a valid age."); return; }
 
-      const guard = { id:newId("g"), name, employeeId, active:true, inactiveFrom:null, category, age };
+      const guard = { id:newId("g"), name, employeeId, active:true, inactiveFrom:null, category, age, state: stateVal, city: cityVal };
       if(category === "nepal"){
         const passportNumber = $("#newGuardPassport").value.trim();
         const permitExpiryDate = $("#newGuardPermitExpiry").value;
@@ -1673,6 +1691,8 @@
       rows.push(["MyKad number", g.mykadNumber || "Not set"]);
       rows.push(["Phone number", g.phoneNumber || "Not set"]);
     }
+    rows.push(["State", g.state || "Not set"]);
+    rows.push(["City", g.city || "Not set"]);
     rows.push(["Age", g.age != null ? g.age : "Not set"]);
     rows.push(["Status", g.active === false ? "Inactive" : "Active"]);
 
@@ -3152,6 +3172,8 @@
       ["MyKad number", t.mykadNumber || "Not set"],
       ["Age", t.age != null ? t.age : "Not set"],
       ["Phone number", t.phoneNumber || "Not set"],
+      ["State", t.state || "Not set"],
+      ["City", t.city || "Not set"],
       ["Rate (RM)", (Number(t.rate) || 0).toFixed(2)],
     ];
     const root = $("#modalRoot");
@@ -4215,16 +4237,20 @@
     const ageRaw = $("#tempGuardAge").value;
     const age = Number(ageRaw);
     const phoneNumber = $("#tempGuardPhone").value.trim();
+    const stateVal = $("#tempGuardState").value.trim();
+    const cityVal = $("#tempGuardCity").value.trim();
     if(!key){ showToast("Pick an unfilled slot first.", true); return; }
     if(!name){ showToast("Enter the temporary guard's name.", true); return; }
     if(!(rate >= 0)){ showToast("Enter a valid rate.", true); return; }
     if(!isValidMykad(mykadNumber)){ showToast("Enter a valid 12-digit MyKad number (e.g. 901231-14-5678).", true); return; }
     if(ageRaw.trim() === "" || !Number.isFinite(age) || age <= 0){ showToast("Enter a valid age.", true); return; }
     if(!phoneNumber){ showToast("Enter the temporary guard's phone number.", true); return; }
+    if(!stateVal){ showToast("Enter the temporary guard's state.", true); return; }
+    if(!cityVal){ showToast("Enter the temporary guard's city.", true); return; }
     const ms = currentMonthState();
     const tg = monthTempGuards(ms);
     const tempId = newId("temp");
-    tg[tempId] = { name, rate, mykadNumber, age, phoneNumber, createdAt: nowIso() };
+    tg[tempId] = { name, rate, mykadNumber, age, phoneNumber, state: stateVal, city: cityVal, createdAt: nowIso() };
     ms.overrides[key] = tempId;
     const [date, shiftId, slot] = key.split("|");
     const label = shiftLabelForKey(date, shiftId);
@@ -4234,6 +4260,8 @@
     $("#tempGuardMykad").value = "";
     $("#tempGuardAge").value = "";
     $("#tempGuardPhone").value = "";
+    $("#tempGuardState").value = "";
+    $("#tempGuardCity").value = "";
     persistMonth();
     showToast(`Assigned ${name} to cover ${date}.`);
     render();

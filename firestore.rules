@@ -107,11 +107,11 @@ service cloud.firestore {
       }
 
       // Non-owners can additionally update JUST the Active Project detail fields (location,
-      // contact person, guards deployed, tender doc number, close-out status) on a Won tender
-      // they can see in Active Projects — branch-mates in its activeBranch, or anyone in HQ —
-      // mirroring the read rule above. affectedKeys().hasOnly([...]) is what keeps this narrow:
-      // any write that also touches stage, value, ownerUid, department, etc. falls through and
-      // is rejected unless the caller is the owner or an admin.
+      // state, city, postcode, contact person, guards deployed, tender doc number, close-out
+      // status) on a Won tender they can see in Active Projects — branch-mates in its
+      // activeBranch, or anyone in HQ — mirroring the read rule above. affectedKeys().hasOnly([...])
+      // is what keeps this narrow: any write that also touches stage, value, ownerUid,
+      // department, etc. falls through and is rejected unless the caller is the owner or an admin.
       allow update: if isActiveUser()
         && (
           isAdmin()
@@ -122,7 +122,7 @@ service cloud.firestore {
             resource.data.stage == 'Won'
             && (resource.data.activeBranch == myDepartment() || myDepartment() == 'HQ')
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['location', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'closedOut', 'closedOutAt', 'updatedAt'])
+                 .hasOnly(['location', 'state', 'city', 'postcode', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'closedOut', 'closedOutAt', 'updatedAt'])
           )
           // Accepting a pending reassignment (see Tender.pendingReassignment and
           // acceptReassignment() in services/tenders.ts) — only the Branch Manager (not

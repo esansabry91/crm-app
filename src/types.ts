@@ -116,10 +116,13 @@ export interface Tender {
    * Operational detail fields for an Active Project — only meaningful once stage is Won.
    * Editable by the tender's admin/owner AND by anyone else who can see it in Active Projects
    * (branch-mates in the same `activeBranch`, plus HQ) — see the widened update rule in
-   * firestore.rules, which allows exactly these four fields (not the rest of the tender) to be
+   * firestore.rules, which allows exactly these seven fields (not the rest of the tender) to be
    * changed by non-owners.
    */
   location?: string; // worksite / site address
+  state?: string; // worksite state (e.g. Selangor, Johor)
+  city?: string; // worksite city/town
+  postcode?: string; // worksite postcode
   contactPerson?: string; // on-site or client contact (free text: name, phone, email, etc.)
   guardsDeployed?: number; // number of security guards currently deployed
   tenderDocNumber?: string; // official tender submission document number/ID

@@ -323,6 +323,9 @@ export async function updateActiveProjectDetails(
   tenderId: string,
   patch: Partial<{
     location: string;
+    state: string;
+    city: string;
+    postcode: string;
     contactPerson: string;
     guardsDeployed: number;
     tenderDocNumber: string;

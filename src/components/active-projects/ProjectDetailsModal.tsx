@@ -19,13 +19,19 @@ interface Props {
 /**
  * Lets anyone who can see a project in Active Projects (its branch-mates, HQ, or admin — the
  * same audience Firestore's read rule allows) fill in the operational details that aren't part
- * of the sales record: worksite location, an on-site/client contact, how many guards are
- * currently deployed, and the tender document reference number. Deliberately separate from
- * TenderFormModal — that one edits the sales record and is locked to the owner/admin; this one
- * edits only these four fields, which the Firestore rules allow more people to touch.
+ * of the sales record: worksite location (state, city, postcode included), an on-site/client
+ * contact, how many guards are currently deployed, and the tender document reference number.
+ * Deliberately separate from TenderFormModal — that one edits the sales record and is locked to
+ * the owner/admin; this one edits only these seven fields, which the Firestore rules allow more
+ * people to touch. Every field here is required before Save will submit — see handleSave — except
+ * Security Guards Deployed once it's roster-driven (see the liveGuardCount prop doc comment),
+ * since it's then a read-only display rather than something anyone types into.
  */
 export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCount }: Props) {
   const [location, setLocation] = useState('');
+  const [stateName, setStateName] = useState('');
+  const [city, setCity] = useState('');
+  const [postcode, setPostcode] = useState('');
   const [contactPerson, setContactPerson] = useState('');
   const [guardsDeployed, setGuardsDeployed] = useState('');
   const [tenderDocNumber, setTenderDocNumber] = useState('');
@@ -35,6 +41,9 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   useEffect(() => {
     if (!open || !tender) return;
     setLocation(tender.location || '');
+    setStateName(tender.state || '');
+    setCity(tender.city || '');
+    setPostcode(tender.postcode || '');
     setContactPerson(tender.contactPerson || '');
     setGuardsDeployed(tender.guardsDeployed != null ? String(tender.guardsDeployed) : '');
     setTenderDocNumber(tender.tenderDocNumber || '');
@@ -47,13 +56,26 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     e.preventDefault();
     setError(null);
 
+    // Every field on this form is required before it can be saved.
+    if (!location.trim()) { setError('Location is required.'); return; }
+    if (!stateName.trim()) { setError('State is required.'); return; }
+    if (!city.trim()) { setError('City is required.'); return; }
+    if (!postcode.trim()) { setError('Postcode is required.'); return; }
+    if (!contactPerson.trim()) { setError('Contact Person is required.'); return; }
+    if (!tenderDocNumber.trim()) { setError('Tender Document No. is required.'); return; }
+
     // Never overwrite a roster-driven count from this manual field — see the liveGuardCount
-    // prop doc comment above.
+    // prop doc comment above. When there's no live site, this is a plain required field like
+    // everything else here rather than something that can be left blank.
     let guards: number | undefined;
-    if (liveGuardCount == null && guardsDeployed.trim() !== '') {
+    if (liveGuardCount == null) {
+      if (guardsDeployed.trim() === '') {
+        setError('Security Guards Deployed is required.');
+        return;
+      }
       guards = Number(guardsDeployed);
       if (!Number.isFinite(guards) || guards < 0) {
-        setError('Enter a valid number of guards, or leave it blank.');
+        setError('Enter a valid number of guards.');
         return;
       }
     }
@@ -62,6 +84,9 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     try {
       await updateActiveProjectDetails(tender.id, {
         location: location.trim(),
+        state: stateName.trim(),
+        city: city.trim(),
+        postcode: postcode.trim(),
         contactPerson: contactPerson.trim(),
         tenderDocNumber: tenderDocNumber.trim(),
         ...(guards !== undefined ? { guardsDeployed: guards } : {}),
@@ -95,6 +120,33 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
               onChange={(e) => setLocation(e.target.value)}
               className="input"
               placeholder="e.g. Menara ABC, Jalan Ampang, KL"
+            />
+          </Field>
+
+          <Field label="State">
+            <input
+              value={stateName}
+              onChange={(e) => setStateName(e.target.value)}
+              className="input"
+              placeholder="e.g. Selangor"
+            />
+          </Field>
+
+          <Field label="City">
+            <input
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              className="input"
+              placeholder="e.g. Petaling Jaya"
+            />
+          </Field>
+
+          <Field label="Postcode">
+            <input
+              value={postcode}
+              onChange={(e) => setPostcode(e.target.value)}
+              className="input"
+              placeholder="e.g. 50450"
             />
           </Field>
 
