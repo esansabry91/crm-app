@@ -66,17 +66,15 @@ export async function isDeveloperAccount(explicitRole?: Role | null): Promise<bo
 /**
  * What every record-creation function (createTender/registerGuard/registerBufferGuard, and the
  * Duty Roster equivalents in public/duty-roster/index.html) should actually stamp isTestData
- * with — the global Testing Mode toggle OR'd with whether the creating account is itself a
- * 'developer' account. The OR matters: a developer account's own data must always come out
- * tagged as test regardless of whether someone else has flipped the shared toggle on or off,
- * and flipping that shared toggle must never affect what a developer account creates (it's
- * already always test data) — this is what keeps a developer poking at the live app from ever
- * mixing in with genuine data real staff/admin accounts create at the same time.
+ * with — purely whether the creating account is itself a 'developer' account. Deliberately NOT
+ * OR'd with the global Testing Mode toggle (getTestingModeEnabled() below) any more: that toggle
+ * is a single doc shared by everyone, so while it was part of this OR, a developer switching it
+ * on to test would also silently tag whatever a real staff/admin account happened to create at
+ * the same moment as test data — exactly the mix-up this whole mechanism exists to prevent.
+ * Being purely role-based instead makes the guarantee unconditional: a developer account's own
+ * data is always test data, and every other account's data is always genuine, regardless of
+ * what the toggle (now just a legacy/inert setting — see its own doc comment) is set to.
  */
 export async function shouldStampTestData(explicitRole?: Role | null): Promise<boolean> {
-  const [modeOn, isDeveloper] = await Promise.all([
-    getTestingModeEnabled(),
-    isDeveloperAccount(explicitRole),
-  ]);
-  return modeOn || isDeveloper;
+  return isDeveloperAccount(explicitRole);
 }

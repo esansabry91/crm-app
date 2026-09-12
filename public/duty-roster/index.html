@@ -4664,7 +4664,7 @@
     // unassigned; anyone else can only ever create a site for their own branch — mirrored
     // and enforced server-side in firestore.rules' canReachSite().
     const assignedBranch = (state.isPrivileged && !state.isPayroll) ? (branch || null) : (state.myDepartment || null);
-    const cfg = { id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false, archivedAt: null, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, isTestData: !!(state.testingModeEnabled || state.isDeveloper), createdAt: nowIso(), updatedAt: nowIso() };
+    const cfg = { id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false, archivedAt: null, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, isTestData: !!state.isDeveloper, createdAt: nowIso(), updatedAt: nowIso() };
     state.sites.push({id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false});
     state.configsCache[id] = cfg;
     if(dbHandle) dbHandle.doc("sites/"+id).set(cfg).catch(()=>{});
@@ -4957,7 +4957,7 @@
           existingDoc.ref.set(payload, {merge:true}).catch(()=>{});
         } else {
           payload.createdAt = now;
-          payload.isTestData = !!(state.testingModeEnabled || state.isDeveloper);
+          payload.isTestData = !!state.isDeveloper;
           dbHandle.collection("guards").add(payload).catch(()=>{});
         }
       });
@@ -4979,7 +4979,7 @@
             status: "dismissed", siteId: state.currentSiteId, siteName: site.name || null,
             branch: site.branch || null, brandId: brand.brandId, brandName: brand.brandName,
             dismissalReason: reason, dismissedAt: now, createdAt: now, updatedAt: now,
-            isTestData: !!(state.testingModeEnabled || state.isDeveloper)
+            isTestData: !!state.isDeveloper
           });
           dbHandle.collection("guards").add(payload).catch(()=>{});
         });
@@ -5018,7 +5018,7 @@
       } else {
         // Guard predates Guard Bank tracking -- create the pool record now so they're still
         // reachable for reassignment elsewhere instead of silently going untracked.
-        const created = Object.assign(guardBankIdentityFields(g), payload, { createdAt: now, isTestData: !!(state.testingModeEnabled || state.isDeveloper) });
+        const created = Object.assign(guardBankIdentityFields(g), payload, { createdAt: now, isTestData: !!state.isDeveloper });
         dbHandle.collection("guards").add(created).catch(()=>{});
       }
     });
@@ -5084,7 +5084,7 @@
           ref.set(Object.assign({}, patch, { timesUsed: prevUsed + 1 }), {merge:true}).catch(()=>{});
         } else {
           dbHandle.collection("bufferGuards").add(Object.assign({ name: entry.name }, patch, {
-            firstUsedAt: now, timesUsed: 1, isTestData: !!(state.testingModeEnabled || state.isDeveloper)
+            firstUsedAt: now, timesUsed: 1, isTestData: !!state.isDeveloper
           })).catch(()=>{});
         }
       })

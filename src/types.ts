@@ -22,9 +22,9 @@ export type Role = 'admin' | 'branchManager' | 'dutyStaff' | 'payroll' | 'develo
  * True for any role that should get full administrative access throughout the app — currently
  * 'admin' and 'developer'. 'developer' exists purely so the account owner can sign in as a
  * dedicated testing account with the exact same access as a real admin, while every record it
- * creates gets auto-tagged isTestData: true (see getTestingModeEnabled()/shouldStampTestData()
- * in services/settings.ts) regardless of the global Testing Mode toggle — so testing under this
- * role never gets mixed up with genuine data real staff/admin accounts create at the same time.
+ * creates gets auto-tagged isTestData: true (see shouldStampTestData() in services/settings.ts —
+ * purely role-based, not tied to any shared/global setting) — so testing under this role can
+ * never get mixed up with genuine data real staff/admin accounts create at the same time.
  * Always use this helper instead of comparing `role === 'admin'` directly, so a developer
  * account is never accidentally left out of an admin-gated check.
  */

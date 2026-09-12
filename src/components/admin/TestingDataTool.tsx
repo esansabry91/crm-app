@@ -4,7 +4,6 @@ import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenders } from '../../hooks/useTenders';
 import { useGuards, useBufferGuards } from '../../hooks/useGuards';
-import { setTestingModeEnabled, subscribeTestingModeEnabled } from '../../services/settings';
 import { getTestDataCounts, resetTestData } from '../../services/testDataReset';
 
 /** Minimal shape read straight off a Duty Roster `sites/{id}` doc — there's no shared Site type
@@ -95,16 +94,17 @@ function TestDataRow({
  * deletes everything flagged here (this tool only tags; the destructive step stays in that
  * script, run from a terminal with a real admin sign-in, same as its --all/--uid modes).
  *
- * Testing Mode (top toggle): while on, every NEW tender, Guard Bank guard, buffer guard, and
- * Duty Roster site gets automatically stamped isTestData: true at creation — see
- * createTender()/registerGuard()/registerBufferGuard() (src/services) and createSite()/
- * syncGuardBankOnAdd() and friends (public/duty-roster/index.html). No naming convention or
- * per-record checkbox to remember: as long as this is on, nothing created anywhere in the app
- * can slip through untagged. Turn it OFF the moment real, genuine data starts coming in.
+ * This whole page is itself restricted to the 'developer' role (see AdminPage.tsx) — every NEW
+ * tender, Guard Bank guard, buffer guard, and Duty Roster site a developer account creates gets
+ * automatically stamped isTestData: true at creation, unconditionally — see shouldStampTestData()
+ * in src/services/settings.ts, createTender()/registerGuard()/registerBufferGuard() (src/services)
+ * and createSite()/syncGuardBankOnAdd() and friends (public/duty-roster/index.html). "Testing
+ * Mode" below is therefore always ON for whoever can see this page — it's a fixed status
+ * indicator, not a switch; there's nothing to remember to turn on or off any more, and it never
+ * affects what a real staff/admin account creates.
  *
- * Below the toggle: every CURRENT record not yet flagged, so records made before this feature
- * existed (or made with Testing Mode accidentally left off) can still be tagged by hand, one
- * time, before go-live.
+ * Below that: every CURRENT record not yet flagged, so records made before this feature existed
+ * can still be tagged by hand, one time, before go-live.
  */
 export default function TestingDataTool() {
   const { profile } = useAuth();
@@ -112,18 +112,6 @@ export default function TestingDataTool() {
   const { guards } = useGuards();
   const { bufferGuards } = useBufferGuards();
   const { sites } = useRawSites();
-
-  const [modeEnabled, setModeEnabled] = useState(false);
-  const [modeLoading, setModeLoading] = useState(true);
-  const [modeBusy, setModeBusy] = useState(false);
-
-  useEffect(() => {
-    const unsub = subscribeTestingModeEnabled((v) => {
-      setModeEnabled(v);
-      setModeLoading(false);
-    });
-    return unsub;
-  }, []);
 
   const untaggedTenders = useMemo(() => tenders.filter((t) => !t.isTestData), [tenders]);
   const untaggedGuards = useMemo(() => guards.filter((g) => !g.isTestData), [guards]);
@@ -135,16 +123,6 @@ export default function TestingDataTool() {
     guards.filter((g) => g.isTestData).length +
     bufferGuards.filter((b) => b.isTestData).length +
     sites.filter((s) => s.isTestData).length;
-
-  async function handleToggleMode() {
-    if (!profile) return;
-    setModeBusy(true);
-    try {
-      await setTestingModeEnabled(!modeEnabled, { name: profile.name });
-    } finally {
-      setModeBusy(false);
-    }
-  }
 
   const [resetBusy, setResetBusy] = useState(false);
   const [resetMessage, setResetMessage] = useState<{ text: string; isError: boolean } | null>(null);
@@ -207,31 +185,20 @@ export default function TestingDataTool() {
           <div>
             <h3 className="text-sm font-semibold text-slate-800">Testing Mode</h3>
             <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-              While on, every new tender, Guard Bank guard, buffer guard, and Duty Roster site
-              created anywhere in the app — CRM or Duty Roster — is automatically tagged as test
-              data, with nothing to remember. Turn this OFF the moment you're done testing and
-              real data starts coming in.
+              You're signed in as a Developer account, so this is always ON for you: every
+              tender, Guard Bank guard, buffer guard, and Duty Roster site you create anywhere in
+              the app — CRM or Duty Roster — is automatically tagged as test data. This is now
+              purely a status indicator (nothing to turn on or off) — a real staff/admin
+              account's data is never affected by it.
             </p>
           </div>
-          <button
-            onClick={handleToggleMode}
-            disabled={modeLoading || modeBusy}
-            className={
-              modeEnabled
-                ? 'shrink-0 px-3.5 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-60 rounded-lg'
-                : 'shrink-0 px-3.5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-60 rounded-lg border border-slate-200'
-            }
-          >
-            {modeLoading ? 'Loading…' : modeEnabled ? 'Testing Mode: ON' : 'Testing Mode: OFF'}
-          </button>
+          <span className="shrink-0 px-3.5 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg">
+            Testing Mode: ON
+          </span>
         </div>
-        {!modeLoading && (
-          <p className="text-xs mt-3" style={{ color: modeEnabled ? '#b45309' : '#64748b' }}>
-            {modeEnabled
-              ? 'Currently ON — new records are being tagged as test data.'
-              : 'Currently OFF — new records are treated as real data.'}
-          </p>
-        )}
+        <p className="text-xs mt-3" style={{ color: '#b45309' }}>
+          Always ON for this account — every record you create here is tagged as test data.
+        </p>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
