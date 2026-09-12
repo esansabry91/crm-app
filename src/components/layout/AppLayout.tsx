@@ -111,10 +111,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
-    <div className="h-screen flex flex-col md:flex-row bg-slate-50">
-      {/* Mobile top bar — the sidebar's identity strip below md; the sidebar itself is hidden
-          entirely on mobile in favor of the slide-over drawer opened from here. */}
-      <header className="md:hidden shrink-0 flex items-center gap-3 px-4 h-14 border-b border-slate-200 bg-white">
+    <div className="h-screen flex flex-col lg:flex-row bg-slate-50">
+      {/* Mobile top bar — the sidebar's identity strip below lg (this now covers landscape
+          phones too, not just portrait, so the panel stays closeable/openable there as well);
+          the sidebar itself is hidden entirely below lg in favor of the slide-over drawer opened
+          from here. */}
+      <header className="lg:hidden shrink-0 flex items-center gap-3 px-4 h-14 border-b border-slate-200 bg-white">
         <button
           type="button"
           onClick={() => setDrawerOpen(true)}
@@ -136,7 +138,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       {/* Mobile slide-over drawer — same NavContent as the desktop sidebar, overlaid on top of
           the page instead of permanently taking up width. */}
       {drawerOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
+        <div className="lg:hidden fixed inset-0 z-50 flex">
           <div className="absolute inset-0 bg-black/40" onClick={() => setDrawerOpen(false)} aria-hidden />
           <aside className="relative w-72 max-w-[85vw] h-full bg-white flex flex-col shadow-xl">
             <button
@@ -155,8 +157,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      {/* Desktop sidebar — same content/behavior as before, just hidden below md. */}
-      <aside className="hidden md:flex w-60 shrink-0 border-r border-slate-200 bg-white flex-col">
+      {/* Desktop sidebar — same content/behavior as before, just hidden below lg. */}
+      <aside className="hidden lg:flex w-60 shrink-0 border-r border-slate-200 bg-white flex-col">
         <NavContent onNavigate={() => {}} />
       </aside>
 
