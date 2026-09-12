@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLiveGuardCountsByTender, useWonTenders } from '../hooks/useActiveProjects';
 import { useBranches } from '../hooks/useBranches';
+import { useTenderHistory } from '../hooks/useTenderHistory';
 import {
   acceptReassignment,
   backfillActiveBranch,
@@ -172,12 +173,17 @@ export default function ActiveProjectsPage() {
   const bridgeFoundIndex = bridgePeriodKey ? bridgePeriods.findIndex((p) => p.key === bridgePeriodKey) : -1;
   const bridgeIndex = bridgeFoundIndex >= 0 ? bridgeFoundIndex : bridgePeriods.length - 1;
   const currentBridgePeriod = bridgePeriods[bridgeIndex];
+  // Scoped to every Won tender this viewer can see (not just `bridgeSource`, which narrows
+  // further by the branch dropdown) so switching that dropdown never tears down and re-opens
+  // history subscriptions — see useTenderHistory's own doc comment on why this is per-tender
+  // subscriptions rather than one big collectionGroup query.
+  const { entries: wonHistoryEntries } = useTenderHistory(wonTenders);
   const bridgeBars = useMemo(
     () =>
       currentBridgePeriod
-        ? activeProjectValueBridge(bridgeSource, bridgeTimeView, currentBridgePeriod.key)
+        ? activeProjectValueBridge(bridgeSource, wonHistoryEntries, bridgeTimeView, currentBridgePeriod.key)
         : [],
-    [bridgeSource, bridgeTimeView, currentBridgePeriod]
+    [bridgeSource, wonHistoryEntries, bridgeTimeView, currentBridgePeriod]
   );
 
   // Active Projects Race ranks branches only — HQ holds no active projects of its own — and,

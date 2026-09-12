@@ -500,12 +500,19 @@ export function activeProjectBridgePeriods(tenders: Tender[], view: BridgeTimeVi
 /**
  * Builds the Active Project Value bridge for one period (month, quarter, year, or year-to-date):
  * start-of-period active value, plus contracts that newly went active during the period (by
- * `contractStart`), minus projects closed out during the period (by `closedOutAt`), equals
- * end-of-period active value.
+ * `contractStart`), plus/minus any rate changes on projects that stayed active through the
+ * period (e.g. a renewal — see renewContract() in services/tenders.ts), minus projects closed
+ * out during the period (by `closedOutAt`), equals end-of-period active value.
  *
  * `tenders` should be every Won tender in scope (active AND already closed-out — see
  * useWonTenders) so closed-out projects still contribute their exit from the period they left in;
- * usePastProjects/useActiveProjects alone would each only have half the picture.
+ * usePastProjects/useActiveProjects alone would each only have half the picture. `entries` should
+ * be their full change-history log (see useTenderHistory) — used to reconstruct what each
+ * tender's value actually WAS at a given past instant, rather than reading today's live
+ * `tenderValue` for every period the way this used to work. That distinction matters: without it,
+ * a renewal (or any other value edit) on an active project would silently rewrite every past
+ * period's Start/End totals to the post-edit value instead of showing up as its own delta in the
+ * period it actually happened in.
  *
  * Reopening a project (closeOutProject reversed) doesn't leave a trace of when it was closed —
  * that's deliberate: a reopened project is treated as having been active all along, which is the
@@ -514,39 +521,85 @@ export function activeProjectBridgePeriods(tenders: Tender[], view: BridgeTimeVi
  */
 export function activeProjectValueBridge(
   tenders: Tender[],
+  entries: TenderHistoryEntry[],
   view: BridgeTimeView,
   periodKey: string
 ): WaterfallBar[] {
   const { start: periodStart, end: periodEnd } = periodBounds(view, periodKey);
 
+  // Each tender's own history, oldest first, so valueAsOf() below can walk forward and stop at
+  // the last entry at-or-before the instant it's asked about.
+  const entriesByTender = new Map<string, TenderHistoryEntry[]>();
+  for (const e of entries) {
+    if (!entriesByTender.has(e.tenderId)) entriesByTender.set(e.tenderId, []);
+    entriesByTender.get(e.tenderId)!.push(e);
+  }
+  for (const list of entriesByTender.values()) list.sort((a, b) => a.timestamp - b.timestamp);
+
+  /** What a tender's value actually was at a given instant, per its own history log. Falls back
+   *  to its earliest known entry for an instant before any history exists (the closest available
+   *  truth), or to `fallback` (today's live tenderValue) if it has no history at all — legacy
+   *  data that predates this log entirely. */
+  function valueAsOf(tenderId: string, atMs: number, fallback: number): number {
+    const list = entriesByTender.get(tenderId);
+    if (!list || list.length === 0) return fallback;
+    let result = list[0].value;
+    for (const e of list) {
+      if (e.timestamp > atMs) break;
+      result = e.value;
+    }
+    return result;
+  }
+
   let startValue = 0;
   let enteringValue = 0;
   let exitingValue = 0;
+  let adjustValue = 0;
 
   for (const t of tenders) {
     if (t.stage !== 'Won' || !t.contractStart) continue;
     const startMs = new Date(`${t.contractStart}T12:00:00`).getTime();
     if (Number.isNaN(startMs)) continue;
     const closedMs = t.closedOutAt ?? null;
-    const value = t.tenderValue || 0;
+    const fallback = t.tenderValue || 0;
 
-    if (startMs < periodStart && (closedMs === null || closedMs >= periodStart)) {
-      startValue += value;
+    const activeAtPeriodStart = startMs < periodStart && (closedMs === null || closedMs >= periodStart);
+    const enteringThisPeriod = startMs >= periodStart && startMs < periodEnd;
+    const exitingThisPeriod = closedMs !== null && closedMs >= periodStart && closedMs < periodEnd;
+    if (!activeAtPeriodStart && !enteringThisPeriod) continue; // no part in this period's story
+
+    // The instant this tender's contribution to the period is last measured: the moment it
+    // closed out, if that happens this period, otherwise the end of the period (still active).
+    // Shared by the start/entering branch below AND exitingValue so a renewal followed by a
+    // same-period close-out (or a same-period enter-then-close) reconciles to exactly zero net
+    // contribution — the value it's removed at via Closed Out is the SAME value it was just
+    // marked up to via Value Adjustments, never the stale pre-renewal figure it started at.
+    const referenceMs = exitingThisPeriod ? closedMs! : periodEnd - 1;
+    const atReference = valueAsOf(t.id, referenceMs, fallback);
+
+    if (activeAtPeriodStart) {
+      const atStart = valueAsOf(t.id, periodStart - 1, fallback);
+      startValue += atStart;
+      if (atReference !== atStart) adjustValue += atReference - atStart;
+    } else {
+      // enteringThisPeriod
+      const atEntry = valueAsOf(t.id, startMs, fallback);
+      enteringValue += atEntry;
+      if (atReference !== atEntry) adjustValue += atReference - atEntry;
     }
-    if (startMs >= periodStart && startMs < periodEnd) {
-      enteringValue += value;
-    }
-    if (closedMs !== null && closedMs >= periodStart && closedMs < periodEnd) {
-      exitingValue += value;
+
+    if (exitingThisPeriod) {
+      exitingValue += atReference;
     }
   }
 
-  const endValue = startValue + enteringValue - exitingValue;
+  const endValue = startValue + enteringValue - exitingValue + adjustValue;
   const { start: startLabel, end: endLabel } = periodBoundaryLabels(view);
 
   const bars: WaterfallBar[] = [{ label: startLabel, amount: startValue, kind: 'total' }];
   if (enteringValue !== 0) bars.push({ label: 'New Contracts', amount: enteringValue, kind: 'delta' });
   if (exitingValue !== 0) bars.push({ label: 'Closed Out', amount: -exitingValue, kind: 'delta' });
+  if (adjustValue !== 0) bars.push({ label: 'Value Adjustments', amount: adjustValue, kind: 'delta' });
   bars.push({ label: endLabel, amount: endValue, kind: 'total' });
   return bars;
 }
