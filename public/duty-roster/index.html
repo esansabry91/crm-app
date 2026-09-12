@@ -4808,7 +4808,12 @@
     // them) — this only removes the ability to mutate the site list, not visibility into it.
     if(newBtn) newBtn.hidden = true;
     if(renameBtn) renameBtn.hidden = true;
-    if(delBtn) delBtn.hidden = true;
+    // TEMPORARY: Delete site left visible to clean up a stray "Site 1" demo site that got
+    // permanently seeded into Firestore by the migrateOrSeed() race condition fixed elsewhere in
+    // this file (see initDb()'s initialReadFailed tracking). Revert this one line back to
+    // `if(delBtn) delBtn.hidden = true;` once that cleanup is done -- New/Rename/Delete are
+    // otherwise meant to stay hidden for everyone, per the comment above.
+    if(delBtn) delBtn.hidden = false;
   }
 
   // Read-only for everyone who sees it — a site's branch is set once, automatically, by the
