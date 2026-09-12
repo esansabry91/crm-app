@@ -1,4 +1,4 @@
-import { collection, collectionGroup, doc, getDocs, query, where, writeBatch, type DocumentReference } from 'firebase/firestore';
+import { collection, collectionGroup, getDocs, query, where, writeBatch, type DocumentReference } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export interface TestDataResetResult {
