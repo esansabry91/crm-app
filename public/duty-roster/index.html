@@ -651,6 +651,9 @@
           <tbody id="summaryReportBody"></tbody>
         </table>
       </div>
+      <button class="btn primary sm" id="confirmInvoiceSummaryBtn" type="button" style="margin-top:10px;" hidden>Confirm for invoicing</button>
+      <button class="btn sm" id="unconfirmInvoiceSummaryBtn" type="button" style="margin-top:10px;" hidden>Unconfirm</button>
+      <p class="empty" id="invoiceSummaryConfirmStatus" style="margin:10px 0 0;" hidden></p>
     </div>
 
     <div class="panel">
@@ -890,6 +893,19 @@
   // recompute, and every other role keeps seeing their own live "Refresh combined hours" result
   // regardless of this flag. See canConfirmCombinedHours() and revokeConfirmationIfPresent().
   function monthConfirmed(ms){ return ms.confirmed || null; }
+  // The plain Summary Report's own "Confirm for invoicing" lock — a SEPARATE flag from Combined
+  // Hours' `confirmed` above (different panel, different purpose: this one is what Branch
+  // Collection's invoice generator reads). { byUid, byName, at, manHours, amount } once
+  // confirmed, else null. See canConfirmInvoiceSummary() and computeSummaryTotals().
+  function monthInvoiceConfirmed(ms){ return ms.invoiceConfirmed || null; }
+  // Deliberately wider than canConfirmCombinedHours(): the branch manager OR any branch staff
+  // (dutyStaff) working this site's roster can confirm the month's figures for invoicing — not
+  // just the Branch Manager — since this just locks in the numbers already shown on-screen
+  // rather than a cross-site payroll figure. Anyone who can edit at all (state.canEdit, i.e.
+  // everyone except Payroll) qualifies.
+  function canConfirmInvoiceSummary(){
+    return state.canEdit;
+  }
   // Confirming/unconfirming Combined Hours is the same cross-site-aware, branch-level action as
   // assigning a support guard (canAssignSupportGuard()) — Admin/HQ, or this site's own Branch
   // Manager; never dutyStaff/Payroll, who only ever read the result once it's set.
@@ -907,6 +923,14 @@
     if(ms && ms.confirmed){
       ms.confirmed = null;
       ms.confirmedIncoming = null;
+    }
+    // Same reasoning as the Combined Hours confirmation above, for the separate "Confirm for
+    // invoicing" lock on the plain Summary Report (see canConfirmInvoiceSummary()/
+    // monthInvoiceConfirmed()) — any edit that could change this month's man-hours or amount
+    // invalidates an already-confirmed figure, forcing Confirm again before Branch Collection's
+    // invoice generator will show it as current.
+    if(ms && ms.invoiceConfirmed){
+      ms.invoiceConfirmed = null;
     }
   }
   // Defensive accessors: months/configs saved before these fields existed won't have them.
@@ -2671,6 +2695,71 @@
     return combined;
   }
 
+  // Standalone numeric total (man-hours + RM amount across permanent, temp and support guards)
+  // used to SNAPSHOT a month's figures at the moment "Confirm for invoicing" is clicked —
+  // deliberately a separate, simpler pass than renderSummaryReport()'s own totals accumulation
+  // below (which is interleaved with building the on-screen HTML rows), rather than threading a
+  // value out of a render function. Same tolerance for this duplication as already exists
+  // between renderSummaryReport() and summaryReportExportRows() — see that function's own
+  // comment. Keep the two in sync if the underlying per-guard rate/amount logic ever changes.
+  function computeSummaryTotals(y, m, config, monthState, result){
+    const summary = computeGuardSummary(y, m, config, monthState, result);
+    const guards = config.guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
+    const tempIds = Object.keys(monthTempGuards(monthState));
+    const supportIds = activeSupportIds(monthState);
+    const n = v => v || 0;
+    let manHours = 0, amount = 0, anyMissingRate = false;
+    guards.forEach(g => {
+      const s = summary[g.id] || {};
+      manHours += n(s.manHours);
+      const rate = guardRate(g);
+      if(rate == null) anyMissingRate = true;
+      amount += rate != null ? rate * n(s.manHours) : 0;
+    });
+    [...tempIds, ...supportIds].forEach(id => {
+      const s = summary[id] || {};
+      manHours += n(s.manHours);
+      const rate = supportGuardRate();
+      if(rate == null) anyMissingRate = true;
+      amount += rate != null ? rate * n(s.manHours) : 0;
+    });
+    return {
+      manHours, amount, anyMissingRate,
+      hasAnyGuards: !!(guards.length || tempIds.length || supportIds.length)
+    };
+  }
+
+  // Shows/hides the Summary Report's "Confirm for invoicing" / "Unconfirm" buttons and status
+  // line — same shape as renderCombinedConfirmControls() above, one panel up, for the SEPARATE
+  // invoiceConfirmed flag (see monthInvoiceConfirmed()'s doc comment). Unlike Combined Hours,
+  // there's no "must Refresh first" step — the Summary Report is always live — so Confirm is
+  // only disabled when there's literally nothing to confirm yet (no guards this month).
+  function renderInvoiceSummaryConfirmControls(ms, liveTotals){
+    const confirmBtn = $("#confirmInvoiceSummaryBtn");
+    const unconfirmBtn = $("#unconfirmInvoiceSummaryBtn");
+    const statusEl = $("#invoiceSummaryConfirmStatus");
+    if(!confirmBtn || !unconfirmBtn || !statusEl) return;
+    const confirmed = monthInvoiceConfirmed(ms);
+    const canConfirm = canConfirmInvoiceSummary();
+
+    confirmBtn.hidden = !canConfirm || !!confirmed;
+    confirmBtn.disabled = !liveTotals.hasAnyGuards;
+    unconfirmBtn.hidden = !canConfirm || !confirmed;
+
+    if(confirmed){
+      statusEl.hidden = false;
+      statusEl.textContent = `Confirmed by ${confirmed.byName || "someone"} on ${formatConfirmedAt(confirmed.at)} — `
+        + `RM${(confirmed.amount||0).toFixed(2)} / ${(confirmed.manHours||0).toFixed(1)} man-hours. `
+        + `This is what Branch Collection's invoice generator uses for this site and month.`;
+    } else if(canConfirm && liveTotals.hasAnyGuards){
+      statusEl.hidden = false;
+      statusEl.textContent = `Not yet confirmed — click "Confirm for invoicing" once this month's figures are final so Branch Collection can use them.`;
+    } else {
+      statusEl.hidden = true;
+      statusEl.textContent = "";
+    }
+  }
+
   function renderSummaryReport(result){
     const {y,m} = parseYM(state.currentMonth);
     const config = currentConfig();
@@ -2862,6 +2951,12 @@
             ? `Some guards have no billing rate resolved — set one up in this project's Project Details, and give each guard a matching Position if it bills by position; their Amount is excluded from the total until then.`
             : ``);
     }
+
+    renderInvoiceSummaryConfirmControls(monthState, {
+      manHours: totals.manHours,
+      amount: totals.amount,
+      hasAnyGuards: !!(guards.length || tempIds.length || supportIds.length)
+    });
   }
 
   // The "Combined hours" panel — a SEPARATE table from the plain Summary report above, showing
@@ -4587,6 +4682,47 @@
         persistMonth();
         state.suppressConfirmRevoke = false;
         showToast("Combined hours unconfirmed.");
+        render();
+      }
+    });
+  });
+
+  $("#confirmInvoiceSummaryBtn").addEventListener("click", () => {
+    if(!canConfirmInvoiceSummary()) return;
+    if(!lastResult){ showToast("Nothing to confirm yet."); return; }
+    const {y,m} = parseYM(state.currentMonth);
+    const config = currentConfig();
+    const ms = currentMonthState();
+    const totals = computeSummaryTotals(y, m, config, ms, lastResult);
+    if(!totals.hasAnyGuards){ showToast("Add guards to this site before confirming."); return; }
+    ms.invoiceConfirmed = {
+      byUid: state.myUid || null,
+      byName: state.myName || state.myDepartment || "Branch staff",
+      at: nowIso(),
+      manHours: totals.manHours,
+      amount: totals.amount
+    };
+    state.suppressConfirmRevoke = true;
+    persistMonth();
+    state.suppressConfirmRevoke = false;
+    showToast("Summary confirmed — pushed to Branch Collection for invoicing.");
+    render();
+  });
+
+  $("#unconfirmInvoiceSummaryBtn").addEventListener("click", () => {
+    if(!canConfirmInvoiceSummary()) return;
+    openConfirmModal({
+      title: "Unconfirm invoicing summary",
+      message: "Branch Collection's invoice generator won't show a confirmed total for this site/month until you confirm it again.",
+      okLabel: "Unconfirm",
+      danger: true,
+      onConfirm: () => {
+        const ms = currentMonthState();
+        ms.invoiceConfirmed = null;
+        state.suppressConfirmRevoke = true;
+        persistMonth();
+        state.suppressConfirmRevoke = false;
+        showToast("Invoicing summary unconfirmed.");
         render();
       }
     });

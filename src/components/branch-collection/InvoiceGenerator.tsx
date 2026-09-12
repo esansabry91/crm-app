@@ -4,7 +4,14 @@ import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useSitesForBilling, updateSiteBillingRates } from '../../services/siteBilling';
-import { createInvoice, computeLineAmount, sumLineGroups, peekNextInvoiceNumber } from '../../services/invoices';
+import { useConfirmedMonthSummary } from '../../services/dutyRosterSummary';
+import {
+  createInvoice,
+  computeLineAmount,
+  sumLineGroups,
+  peekNextInvoiceNumber,
+  INVOICE_HOURS_PER_SHIFT,
+} from '../../services/invoices';
 import InvoicePrintView from './InvoicePrintView';
 import type { InvoiceLineGroup, SiteBillingRate } from '../../types';
 
@@ -90,6 +97,19 @@ export default function InvoiceGenerator() {
   const [previewNonce, setPreviewNonce] = useState(0);
 
   const billingMonth = formatBillingMonth(billingMonthValue);
+
+  // The branch manager/branch staff's confirmed Duty Roster total for this exact site+month —
+  // see useConfirmedMonthSummary's doc comment. Reconciled below against the line items as
+  // they're entered, purely as a discrepancy check; it never feeds into what actually gets
+  // saved (lineGroups stay the source of truth for the invoice itself).
+  const { confirmed: confirmedSummary } = useConfirmedMonthSummary(siteId || null, billingMonthValue);
+  const [discrepancyAcknowledged, setDiscrepancyAcknowledged] = useState(false);
+
+  // Reset the acknowledgment whenever the site or month changes — an acknowledgment made for
+  // one site/month's discrepancy should never silently carry over to a different one.
+  useEffect(() => {
+    setDiscrepancyAcknowledged(false);
+  }, [siteId, billingMonthValue]);
 
   // Switching sites: load that site's saved rate categories, and — if it's linked to a Won
   // tender — best-effort prefill the brand/client/contract-ref/client-alias/client-address from
@@ -230,7 +250,25 @@ export default function InvoiceGenerator() {
   const sstAmount = subTotal * sstRate;
   const total = subTotal + sstAmount;
 
-  const canSave = !!(profile && brand && site && clientName.trim() && lineGroups.length > 0);
+  // Man-hours implied by the line items so far — headcount * days * the same 12-hour shift
+  // computeLineAmount() bills at — compared against the Duty Roster-confirmed total (if any) so
+  // a branch manager can see whether what's been typed in actually reconciles with the roster
+  // before generating the invoice. Purely a discrepancy check: neither figure overrides the
+  // other, and the invoice itself only ever saves what's in lineGroups.
+  const lineManHours = lineGroups.reduce(
+    (sum, g) => sum + g.rows.reduce((s, r) => s + r.headcount * r.days * INVOICE_HOURS_PER_SHIFT, 0),
+    0
+  );
+  const remainingManHours = confirmedSummary ? confirmedSummary.manHours - lineManHours : null;
+  const remainingAmount = confirmedSummary ? confirmedSummary.amount - subTotal : null;
+  const hasDiscrepancy =
+    remainingAmount != null && remainingManHours != null
+    && (Math.abs(remainingAmount) > 0.01 || Math.abs(remainingManHours) > 0.05);
+
+  const canSave = !!(
+    profile && brand && site && clientName.trim() && lineGroups.length > 0
+    && (!hasDiscrepancy || discrepancyAcknowledged)
+  );
 
   async function handleSave() {
     if (!profile || !brand || !site) return;
@@ -483,6 +521,50 @@ export default function InvoiceGenerator() {
             </button>
             {ratesSaved && <span className="text-xs text-emerald-600">Saved.</span>}
           </div>
+        </div>
+      )}
+
+      {site && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h3 className="text-sm font-semibold text-slate-800">Duty Roster reconciliation</h3>
+          {confirmedSummary ? (
+            <>
+              <p className="text-xs text-slate-500 mt-0.5 mb-3">
+                Confirmed by {confirmedSummary.byName || 'someone'} for {billingMonth || billingMonthValue}:{' '}
+                <span className="font-medium text-slate-700">
+                  {confirmedSummary.manHours.toFixed(1)} man-hours · RM {confirmedSummary.amount.toFixed(2)}
+                </span>
+              </p>
+              <div className={`rounded-lg px-3 py-2 text-sm ${hasDiscrepancy ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>
+                <p className="font-medium">
+                  Remaining after line items: {remainingManHours!.toFixed(1)} man-hours · RM {remainingAmount!.toFixed(2)}
+                </p>
+                <p className="text-xs mt-0.5 opacity-80">
+                  {hasDiscrepancy
+                    ? "This should reach zero once every line item matches the confirmed roster. You can still generate the invoice with a discrepancy — just acknowledge it below."
+                    : 'Line items match the confirmed roster total.'}
+                </p>
+              </div>
+              {hasDiscrepancy && (
+                <label className="flex items-start gap-2 mt-3 text-xs text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={discrepancyAcknowledged}
+                    onChange={(e) => setDiscrepancyAcknowledged(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    I acknowledge this discrepancy between the confirmed Duty Roster total and the line items below, and want to generate the invoice anyway.
+                  </span>
+                </label>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-slate-400 mt-0.5">
+              Not yet confirmed on Duty Roster for {billingMonth || billingMonthValue} — the branch manager/branch staff can click "Confirm for
+              invoicing" on that month's Summary Report. Invoicing can still proceed without one.
+            </p>
+          )}
         </div>
       )}
 
