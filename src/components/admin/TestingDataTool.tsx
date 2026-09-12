@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTenders } from '../../hooks/useTenders';
 import { useGuards, useBufferGuards } from '../../hooks/useGuards';
 import { setTestingModeEnabled, subscribeTestingModeEnabled } from '../../services/settings';
+import { getTestDataCounts, resetTestData } from '../../services/testDataReset';
 
 /** Minimal shape read straight off a Duty Roster `sites/{id}` doc — there's no shared Site type
  *  in types.ts (that collection is owned by public/duty-roster/index.html's own data model), so
@@ -145,6 +146,58 @@ export default function TestingDataTool() {
     }
   }
 
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetMessage, setResetMessage] = useState<{ text: string; isError: boolean } | null>(null);
+
+  /**
+   * Two confirmations before anything is deleted: the first states exactly what's about to go
+   * (fresh counts, not the page's possibly-stale live data), the second requires typing DELETE —
+   * same phrase scripts/purge-test-data.mjs's --test-data mode already requires from its
+   * terminal, so both paths to this action feel consistent. Nothing outside collections already
+   * tagged isTestData is ever touched.
+   */
+  async function handleResetClick() {
+    setResetMessage(null);
+    setResetBusy(true);
+    try {
+      const counts = await getTestDataCounts();
+      const total = counts.tenders + counts.sites + counts.guards + counts.bufferGuards;
+      if (total === 0) {
+        setResetMessage({ text: 'Nothing is currently tagged as test data — nothing to delete.', isError: false });
+        return;
+      }
+      const confirmed = window.confirm(
+        `Permanently delete all test data?\n\n` +
+          `- ${counts.tenders} tender(s), plus their history logs\n` +
+          `- ${counts.sites} Duty Roster site(s), plus their schedule data\n` +
+          `- ${counts.guards} Guard Bank guard(s)\n` +
+          `- ${counts.bufferGuards} buffer guard(s)\n\n` +
+          `Any real guard still deployed at a test site will be released back to the Guard Pool first. This cannot be undone.`
+      );
+      if (!confirmed) return;
+      const typed = window.prompt('Type DELETE (all caps) to confirm, or Cancel to back out:');
+      if (typed !== 'DELETE') {
+        setResetMessage({ text: 'Cancelled — nothing was deleted.', isError: false });
+        return;
+      }
+      const result = await resetTestData();
+      setResetMessage({
+        text:
+          `Deleted ${result.tenders} tender(s), ${result.history} history entrie(s), ${result.sites} site(s), ` +
+          `${result.months} schedule record(s), ${result.guards} guard(s), and ${result.bufferGuards} buffer guard(s).` +
+          (result.guardsReleased > 0 ? ` Released ${result.guardsReleased} real guard(s) back to the Guard Pool.` : ''),
+        isError: false,
+      });
+    } catch (err) {
+      setResetMessage({
+        text: err instanceof Error ? err.message : 'Could not delete test data.',
+        isError: true,
+      });
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
   if (!profile) return null;
 
   return (
@@ -182,12 +235,33 @@ export default function TestingDataTool() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 className="text-sm font-semibold text-slate-800">Currently tagged as test data</h3>
-        <p className="text-xs text-slate-400 mt-0.5 mb-1">
-          {taggedCount} record{taggedCount === 1 ? '' : 's'} across tenders, sites, guards and
-          buffer guards. Run <code className="font-mono">node scripts/purge-test-data.mjs
-          --test-data</code> from a terminal (signed in as an admin) when you're ready to
-          permanently delete all of them — see that script's own instructions for details.
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800">Currently tagged as test data</h3>
+            <p className="text-xs text-slate-400 mt-0.5 max-w-2xl">
+              {taggedCount} record{taggedCount === 1 ? '' : 's'} across tenders, sites, guards and
+              buffer guards. Deleting is permanent — each tender's history log and each site's
+              schedule data goes with it, and any real guard still deployed at a test site is
+              released back to the Guard Pool first.
+            </p>
+          </div>
+          <button
+            onClick={handleResetClick}
+            disabled={resetBusy}
+            className="shrink-0 px-3.5 py-2 text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-60 rounded-lg"
+          >
+            {resetBusy ? 'Deleting…' : 'Delete all test data'}
+          </button>
+        </div>
+        {resetMessage && (
+          <p className={`text-xs mt-3 ${resetMessage.isError ? 'text-rose-600' : 'text-emerald-600'}`}>
+            {resetMessage.text}
+          </p>
+        )}
+        <p className="text-xs text-slate-400 mt-3">
+          The same cleanup is also available from a terminal via{' '}
+          <code className="font-mono">node scripts/purge-test-data.mjs --test-data</code>, if
+          you'd rather run it that way.
         </p>
       </div>
 
