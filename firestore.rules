@@ -114,10 +114,14 @@ service cloud.firestore {
 
       // Non-owners can additionally update JUST the Active Project detail fields (location,
       // state, city, postcode, contact person, guards deployed, tender doc number, close-out
-      // status) on a Won tender they can see in Active Projects — branch-mates in its
-      // activeBranch, or anyone in HQ — mirroring the read rule above. affectedKeys().hasOnly([...])
-      // is what keeps this narrow: any write that also touches stage, value, ownerUid,
-      // department, etc. falls through and is rejected unless the caller is the owner or an admin.
+      // status) — PLUS, now, contractEnd/tenderValue for a straight renewal (see renewContract()
+      // in services/tenders.ts and RenewContractModal.tsx) — on a Won tender they can see in
+      // Active Projects — branch-mates in its activeBranch, or anyone in HQ — mirroring the read
+      // rule above. affectedKeys().hasOnly([...]) is what keeps this narrow: any write that also
+      // touches stage, ownerUid, department, etc. falls through and is rejected unless the
+      // caller is the owner or an admin. Deliberately does NOT extend contractStart: a renewal
+      // continues the same engagement rather than starting a new one, so that field stays
+      // owner/admin-only like the rest of the sales record.
       allow update: if isActiveUser()
         && (
           isAdmin()
@@ -128,7 +132,7 @@ service cloud.firestore {
             resource.data.stage == 'Won'
             && (resource.data.activeBranch == myDepartment() || myDepartment() == 'HQ')
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['location', 'state', 'city', 'postcode', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'guardRateMode', 'guardRate', 'guardRatePositions', 'closedOut', 'closedOutAt', 'updatedAt'])
+                 .hasOnly(['location', 'state', 'city', 'postcode', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'guardRateMode', 'guardRate', 'guardRatePositions', 'closedOut', 'closedOutAt', 'contractEnd', 'tenderValue', 'updatedAt'])
           )
           // Accepting a pending reassignment (see Tender.pendingReassignment and
           // acceptReassignment() in services/tenders.ts) — only the Branch Manager (not
@@ -161,7 +165,24 @@ service cloud.firestore {
         allow read: if isActiveUser() && (isAdmin() || resource.data.ownerUid == request.auth.uid);
 
         allow create: if isActiveUser()
-          && (isAdmin() || request.resource.data.ownerUid == request.auth.uid);
+          && (
+            isAdmin()
+            || request.resource.data.ownerUid == request.auth.uid
+            // renewContract() (services/tenders.ts) is the one non-owner, non-admin path that
+            // writes history here — a Branch Manager renewing a Won project they run but didn't
+            // personally sell. Unlike ownerUid above (tied to the writer's own auth.uid, so it
+            // can't be spoofed), a branch match has nothing on the new entry itself binding it to
+            // the truth, so this checks the REAL parent tender's stage/activeBranch via get()
+            // rather than trusting anything the caller put on the entry.
+            || (
+              request.resource.data.type == 'value_change'
+              && get(/databases/$(database)/documents/tenders/$(tenderId)).data.stage == 'Won'
+              && (
+                get(/databases/$(database)/documents/tenders/$(tenderId)).data.activeBranch == myDepartment()
+                || myDepartment() == 'HQ'
+              )
+            )
+          );
 
         // Immutable audit log — nobody can ever edit a history entry once written. Deletion is
         // still admin-only (not staff, not even the entry's own owner), reserved for legitimate

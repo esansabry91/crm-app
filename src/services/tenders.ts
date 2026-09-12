@@ -253,6 +253,47 @@ export async function requalifyTender(tender: Tender, actor: Actor): Promise<voi
 }
 
 /**
+ * Renews an Active Project's contract in place — extends `contractEnd` and, if the rate changed,
+ * updates `tenderValue` — instead of closing the project out and re-Winning a fresh tender for
+ * work that never actually stopped (see closeOutProject()'s doc comment for why that would be
+ * the wrong move: it'd needlessly release the project's guards and disconnect it from its site).
+ * `contractStart` is deliberately left untouched — a straight renewal continues the same
+ * engagement, it doesn't start a new one.
+ *
+ * Callable by the tender's owner, an admin, or the Branch Manager currently running this
+ * project (its `activeBranch`) — see firestore.rules' Won-stage branch-scoped update clause,
+ * which now includes contractEnd/tenderValue alongside the other operational fields it already
+ * let branch-mates and HQ touch. This is what lets RenewContractModal.tsx offer "Renew" on every
+ * row of the Active Projects list: whoever's actually running the project day-to-day can renew
+ * it, not only whoever originally sold it.
+ *
+ * Logs a `value_change` history entry only when the value actually changed (mirrors
+ * updateTender()), so the pipeline-value trend chart reflects a real rate change without a
+ * no-op entry cluttering history when a renewal keeps the same rate.
+ */
+export async function renewContract(
+  tender: Tender,
+  input: { contractEnd: string; tenderValue: number },
+  actor: Actor
+): Promise<void> {
+  await updateDoc(doc(db, 'tenders', tender.id), {
+    contractEnd: input.contractEnd,
+    tenderValue: input.tenderValue,
+    updatedAt: Date.now(),
+  });
+  if (input.tenderValue !== tender.tenderValue) {
+    await addHistoryEntry(tender.id, {
+      type: 'value_change',
+      stage: tender.stage,
+      value: input.tenderValue,
+      changedByUid: actor.uid,
+      changedByName: actor.name,
+      ownerUid: tender.ownerUid,
+    });
+  }
+}
+
+/**
  * Corrects the recorded Won/Lost date for a tender that's already in a closed stage (no stage
  * change here — just backfilling or fixing when it actually happened). Logs a history entry at
  * the corrected timestamp so the pipeline-value trend chart re-reflects it.

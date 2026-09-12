@@ -11,6 +11,7 @@ import {
   requestReassignBranch,
   setActiveBranch,
 } from '../services/tenders';
+import RenewContractModal from '../components/active-projects/RenewContractModal';
 import { formatDate, formatRM } from '../utils/format';
 import {
   activeProjectBridgePeriods,
@@ -124,6 +125,7 @@ export default function ActiveProjectsPage() {
   const { branches } = useBranches();
   const [branchFilter, setBranchFilter] = useState('all');
   const [detailsTender, setDetailsTender] = useState<Tender | null>(null);
+  const [renewingTender, setRenewingTender] = useState<Tender | null>(null);
   const [bridgeTimeView, setBridgeTimeView] = useState<BridgeTimeView>('monthly');
   const [bridgePeriodKey, setBridgePeriodKey] = useState<string | null>(null);
   const [raceTimeView, setRaceTimeView] = useState<RaceTimeView>('alltime');
@@ -548,6 +550,19 @@ export default function ActiveProjectsPage() {
                               Duty Roster
                             </Link>
                             <span className="text-slate-300">·</span>
+                            {/* Visible on every row here because it always is one: `projects`
+                                (this table's source list) is already scoped to exactly the same
+                                audience firestore.rules grants contractEnd/tenderValue write
+                                access to for a Won tender — admin/HQ see every row, everyone
+                                else only their own activeBranch's — see renewContract()'s doc
+                                comment in services/tenders.ts. */}
+                            <button
+                              onClick={() => setRenewingTender(t)}
+                              className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                            >
+                              Renew
+                            </button>
+                            <span className="text-slate-300">·</span>
                             <button
                               onClick={() => handleCloseOut(t)}
                               className="text-xs font-medium text-slate-500 hover:text-rose-600"
@@ -572,6 +587,15 @@ export default function ActiveProjectsPage() {
         onClose={() => setDetailsTender(null)}
         liveGuardCount={detailsTender ? liveGuardCounts.get(detailsTender.id) : undefined}
       />
+
+      {profile && (
+        <RenewContractModal
+          open={renewingTender !== null}
+          tender={renewingTender}
+          onClose={() => setRenewingTender(null)}
+          actor={{ uid: profile.uid, name: profile.name, role: profile.role }}
+        />
+      )}
     </div>
   );
 }
