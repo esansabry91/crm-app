@@ -5282,12 +5282,26 @@
       }
 
       const queries = reachableSiteQueries();
-      const initialSnaps = await Promise.all(queries.map(q => q.get().catch(() => ({docs:[]}))));
+      // Track genuine read failures separately from a genuinely empty result: q.get() rejecting
+      // (a permission hiccup while Firebase Auth is still rehydrating, a dropped connection, etc.)
+      // must NEVER be treated the same as "this account truly has zero sites" -- that used to be
+      // exactly what happened here (the .catch() below quietly returned {docs:[]} either way),
+      // and it's what let a single slow/failed read permanently seed a real, live "Site 1" demo
+      // site (six hardcoded sample guards, full sample rotation) straight into Firestore for
+      // everyone to see, even on accounts that already had real sites -- the failed read just
+      // looked identical to an empty one. Now a failed read skips seeding entirely and falls
+      // through to the onSnapshot listeners below, which either recover with the real data once
+      // the read succeeds, or hit their own error handler (bootLocalFallback() -- local-only,
+      // never persisted) if it keeps failing.
+      let initialReadFailed = false;
+      const initialSnaps = await Promise.all(
+        queries.map(q => q.get().catch(() => { initialReadFailed = true; return {docs:[]}; }))
+      );
       // Skip the generic "Site 1" seed when a tenderId deep link is pending — recombine­
       // SitesAndRender's onSnapshot handler below creates the real, tender-linked site directly
       // once it sees this branch has nothing yet, so seeding a throwaway default first would
       // just leave it sitting around unused alongside the real one.
-      if(initialSnaps.every(s => s.docs.length === 0) && !deepLinkTenderId) await migrateOrSeed();
+      if(initialSnaps.every(s => s.docs.length === 0) && !deepLinkTenderId && !initialReadFailed) await migrateOrSeed();
 
       let retriedSeed = false;
       const buckets = queries.map(() => []);
