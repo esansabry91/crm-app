@@ -11,7 +11,7 @@
  */
 export default function QuotationCalculatorPage() {
   return (
-    <div className="h-screen">
+    <div className="h-full">
       <iframe
         src="/quotation-calculator/index.html"
         title="Quotation Calculator"

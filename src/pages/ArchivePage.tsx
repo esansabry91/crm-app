@@ -65,7 +65,7 @@ export default function ArchivePage() {
   if (!profile) return null;
 
   return (
-    <div className="h-screen overflow-y-auto">
+    <div className="h-full overflow-y-auto">
       <header className="px-6 py-5 border-b border-slate-200 bg-white flex items-center justify-between gap-4 flex-wrap sticky top-0 z-10">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">Archive</h1>
@@ -79,9 +79,9 @@ export default function ArchivePage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search client…"
-            className="input w-48"
+            className="input w-full sm:w-48"
           />
-          <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value as 'all' | Stage)} className="input w-40">
+          <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value as 'all' | Stage)} className="input w-full sm:w-40">
             <option value="all">All stages</option>
             {ARCHIVE_STAGES.map((s) => (
               <option key={s} value={s}>
@@ -89,7 +89,7 @@ export default function ArchivePage() {
               </option>
             ))}
           </select>
-          <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-40">
+          <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-full sm:w-40">
             <option value="all">All brands</option>
             {brands.map((b) => (
               <option key={b.id} value={b.id}>

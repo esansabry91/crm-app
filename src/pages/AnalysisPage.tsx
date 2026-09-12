@@ -106,7 +106,7 @@ export default function AnalysisPage() {
   const deptFilterOptions = profile.role === 'admin' ? departmentOptions : [profile.department];
 
   return (
-    <div className="h-screen overflow-y-auto">
+    <div className="h-full overflow-y-auto">
       <header className="px-6 py-5 border-b border-slate-200 bg-white flex items-center justify-between gap-4 flex-wrap sticky top-0 z-10">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">Pipeline Analysis</h1>
@@ -114,8 +114,8 @@ export default function AnalysisPage() {
             {profile.role === 'admin' ? 'All branches · all staff' : 'Your tenders'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-40">
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+          <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-full sm:w-40">
             <option value="all">All brands</option>
             {brands.map((b) => (
               <option key={b.id} value={b.id}>
@@ -123,7 +123,7 @@ export default function AnalysisPage() {
               </option>
             ))}
           </select>
-          <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="input w-40">
+          <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="input w-full sm:w-40">
             <option value="all">All departments</option>
             {deptFilterOptions.map((d) => (
               <option key={d} value={d}>

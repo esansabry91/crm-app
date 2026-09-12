@@ -29,7 +29,7 @@ export default function DutyRosterPage() {
   const src = `/duty-roster/index.html?${query}`;
 
   return (
-    <div className="h-screen">
+    <div className="h-full">
       <iframe key={src} src={src} title="Duty Roster" className="w-full h-full border-0 block" />
     </div>
   );

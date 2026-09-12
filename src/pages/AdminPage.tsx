@@ -10,7 +10,7 @@ export default function AdminPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>('Team');
 
   return (
-    <div className="h-screen overflow-y-auto">
+    <div className="h-full overflow-y-auto">
       <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
         <h1 className="text-lg font-semibold text-slate-900">Admin Settings</h1>
         <p className="text-sm text-slate-500 mb-4">Manage your team, branches and brands.</p>

@@ -72,7 +72,7 @@ export default function PipelinePage() {
   if (!profile) return null;
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-full flex flex-col">
       <header className="px-6 py-5 border-b border-slate-200 bg-white flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">Sales Funnel Pipeline</h1>
@@ -85,9 +85,9 @@ export default function PipelinePage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search client…"
-            className="input w-48"
+            className="input w-full sm:w-48"
           />
-          <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-40">
+          <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-full sm:w-40">
             <option value="all">All brands</option>
             {brands.map((b) => (
               <option key={b.id} value={b.id}>

@@ -219,7 +219,7 @@ export default function GuardBankPage() {
   const loading = guardsLoading || bufferLoading;
 
   return (
-    <div className="h-screen overflow-y-auto">
+    <div className="h-full overflow-y-auto">
       <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>

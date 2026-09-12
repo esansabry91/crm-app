@@ -41,7 +41,7 @@ export default function PastProjectsPage() {
   if (!profile) return null;
 
   return (
-    <div className="h-screen overflow-y-auto">
+    <div className="h-full overflow-y-auto">
       <header className="px-6 py-5 border-b border-slate-200 bg-white flex items-center justify-between gap-4 flex-wrap sticky top-0 z-10">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">Past Projects</h1>
@@ -52,7 +52,7 @@ export default function PastProjectsPage() {
           </p>
         </div>
         {seesAllBranches && (
-          <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input w-44">
+          <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input w-full sm:w-44">
             <option value="all">All branches</option>
             {branchNames.map((b) => (
               <option key={b} value={b}>
