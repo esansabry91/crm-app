@@ -81,7 +81,16 @@ export default function InvoiceList() {
             ← Back to list
           </button>
           <button
-            onClick={() => window.print()}
+            onClick={() => {
+              // Swap the tab title to just the invoice number for the duration of printing, so a
+              // browser that prints "headers and footers" shows the invoice number rather than
+              // this portal's page title. Turning the browser's header/footer off entirely still
+              // needs the "More settings" toggle in that browser's own print dialog.
+              const prevTitle = document.title;
+              document.title = `Invoice ${viewing.invoiceNo}`;
+              window.print();
+              document.title = prevTitle;
+            }}
             className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
           >
             Print / Save as PDF

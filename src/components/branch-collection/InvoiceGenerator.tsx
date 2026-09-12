@@ -321,7 +321,17 @@ export default function InvoiceGenerator() {
             ← Back to editing
           </button>
           <button
-            onClick={() => window.print()}
+            onClick={() => {
+              // Swap the tab title to just the invoice number for the duration of printing, so a
+              // browser that prints "headers and footers" shows the invoice number rather than
+              // this portal's page title. Callers who don't want the browser's header/footer at
+              // all still need to turn that off in their print dialog's "More settings" — no CSS
+              // can suppress it.
+              const prevTitle = document.title;
+              document.title = previewInvoiceNo ? `Invoice ${previewInvoiceNo}` : 'Invoice';
+              window.print();
+              document.title = prevTitle;
+            }}
             className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
           >
             Print / Save as PDF
@@ -386,17 +396,6 @@ export default function InvoiceGenerator() {
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Client name</label>
             <input value={clientName} onChange={(e) => setClientName(e.target.value)} className="input w-full" placeholder="e.g. Malaysia Digital Economy Corporation Sdn Bhd" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">
-              Client alias / short code <span className="text-slate-400 font-normal">(for the invoice number)</span>
-            </label>
-            <input value={clientAlias} onChange={(e) => setClientAlias(e.target.value)} className="input w-full" placeholder="e.g. MDEC" />
-            {site?.tenderId && !clientAlias && (
-              <p className="text-xs text-slate-400 mt-1">
-                Not set on this project yet — add one in Active Projects &gt; Project Details, or type it in here.
-              </p>
-            )}
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Attn.</label>

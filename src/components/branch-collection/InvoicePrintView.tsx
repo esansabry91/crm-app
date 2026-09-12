@@ -1,4 +1,4 @@
-import { amountToRinggitWords } from '../../utils/numberToWords';
+import { amountToRinggitWords, cardinalWordsLower } from '../../utils/numberToWords';
 import type { Brand, InvoiceLineGroup } from '../../types';
 
 export interface InvoicePrintData {
@@ -54,6 +54,7 @@ export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
           .no-print { display: none !important; }
           body { background: white; }
         }
+        @page { margin: 12mm; }
         .inv-table td, .inv-table th { border: 1px solid #cbd5e1; padding: 4px 8px; }
       `}</style>
 
@@ -187,6 +188,19 @@ export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
       </table>
 
       <p className="font-semibold mb-3">{amountToRinggitWords(data.total)}</p>
+
+      <div className="mb-6">
+        <p className="font-medium mb-1">Terms and Conditions:</p>
+        <ol className="list-decimal pl-5" style={{ lineHeight: 1.5 }}>
+          <li>
+            Payment is due within {cardinalWordsLower(data.paymentTermsDays)} ({data.paymentTermsDays}) days from
+            the date of invoice. A late interest fee of one point five per centum (1.5%) applies after the due
+            date.
+          </li>
+          <li>Any discrepancies should be reported within seven (7) days of receipt.</li>
+          <li>Please mention the invoice number when processing payment.</li>
+        </ol>
+      </div>
 
       <div className="mb-6">
         <p className="font-medium mb-1">Details of bank as below</p>
