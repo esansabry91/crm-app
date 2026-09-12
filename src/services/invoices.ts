@@ -51,6 +51,8 @@ export interface NewInvoiceInput {
   paymentTermsDays: number;
   lineGroups: InvoiceLineGroup[];
   sstRate: number;
+  signatoryName?: string;
+  signatoryTitle?: string;
 }
 
 /** Actor performing the create — same shape as createTender's Actor (src/services/tenders.ts),
@@ -80,6 +82,8 @@ export async function createInvoice(input: NewInvoiceInput, actor: Actor): Promi
     quotationNo: input.quotationNo || '',
     paymentTermsDays: input.paymentTermsDays,
     lineGroups: input.lineGroups,
+    signatoryName: input.signatoryName || '',
+    signatoryTitle: input.signatoryTitle || '',
     subTotal,
     sstRate: input.sstRate,
     sstAmount,

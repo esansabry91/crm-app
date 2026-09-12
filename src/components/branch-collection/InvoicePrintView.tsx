@@ -17,6 +17,11 @@ export interface InvoicePrintData {
   sstRate: number;
   sstAmount: number;
   total: number;
+  /** Who signs this invoice — sourced from the site's Branch at generation time (see Branch's
+   *  doc comment in types.ts), not from `brand`: the same brand can be signed for by different
+   *  people/titles depending on which branch office issued the invoice. */
+  signatoryName?: string;
+  signatoryTitle?: string;
 }
 
 function formatMoney(n: number): string {
@@ -53,6 +58,9 @@ export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
       `}</style>
 
       <div className="text-center border-b-2 border-slate-800 pb-3 mb-4">
+        {brand.logoDataUrl && (
+          <img src={brand.logoDataUrl} alt="" className="mx-auto mb-2" style={{ maxHeight: '64px', maxWidth: '240px', objectFit: 'contain' }} />
+        )}
         <h1 className="text-xl font-bold uppercase">{displayName}</h1>
         {brand.registrationNo && <p className="text-xs mt-0.5">Company No.: {brand.registrationNo}</p>}
         {brand.address && <p className="text-xs whitespace-pre-line">{brand.address}</p>}
@@ -208,7 +216,8 @@ export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
         <div>
           <p className="mb-8">For {displayName}</p>
           <p className="border-t border-slate-800 pt-1 w-48">AUTHORISED SIGNATURE</p>
-          <p>NAME: {brand.signatoryName || ''}</p>
+          <p>NAME: {data.signatoryName || ''}</p>
+          {data.signatoryTitle && <p>TITLE: {data.signatoryTitle}</p>}
           <p>DATE:</p>
         </div>
         <div>

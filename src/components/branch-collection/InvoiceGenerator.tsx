@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { useBrands } from '../../hooks/useBranches';
+import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useSitesForBilling, updateSiteBillingRates } from '../../services/siteBilling';
 import { createInvoice, computeLineAmount, sumLineGroups } from '../../services/invoices';
 import InvoicePrintView from './InvoicePrintView';
@@ -19,10 +19,15 @@ import type { InvoiceLineGroup, SiteBillingRate } from '../../types';
 export default function InvoiceGenerator() {
   const { profile } = useAuth();
   const { brands } = useBrands();
+  const { branches } = useBranches();
   const { sites } = useSitesForBilling();
 
   const [siteId, setSiteId] = useState('');
   const site = sites.find((s) => s.id === siteId) || null;
+  // The Branch record matching this site's `branch` field (a plain name string set from the
+  // Duty Roster side) — used to auto-fill who signs the invoice. See Branch's doc comment in
+  // types.ts for why signatory lives on Branch, not Brand.
+  const matchedBranch = site?.branch ? branches.find((b) => b.name === site.branch) || null : null;
 
   const [brandId, setBrandId] = useState('');
   const brand = brands.find((b) => b.id === brandId) || null;
@@ -38,6 +43,8 @@ export default function InvoiceGenerator() {
   const [paymentTermsDays, setPaymentTermsDays] = useState(30);
   const [sstRate, setSstRate] = useState(0.08);
   const [lineGroups, setLineGroups] = useState<InvoiceLineGroup[]>([]);
+  const [signatoryName, setSignatoryName] = useState('');
+  const [signatoryTitle, setSignatoryTitle] = useState('');
 
   const [rateDraft, setRateDraft] = useState<SiteBillingRate[]>([]);
   const [ratesSaving, setRatesSaving] = useState(false);
@@ -64,6 +71,15 @@ export default function InvoiceGenerator() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId]);
+
+  // Auto-fill the signatory from the site's branch whenever the site (or the branches list)
+  // changes — still a plain editable field afterward, same "manual entry, auto-filled" pattern
+  // as the rate categories below, in case a site's branch has no matching Branch record yet.
+  useEffect(() => {
+    setSignatoryName(matchedBranch?.signatoryName || '');
+    setSignatoryTitle(matchedBranch?.signatoryTitle || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteId, matchedBranch?.signatoryName, matchedBranch?.signatoryTitle]);
 
   async function handleSaveRates() {
     if (!site) return;
@@ -165,6 +181,8 @@ export default function InvoiceGenerator() {
           paymentTermsDays,
           lineGroups,
           sstRate,
+          signatoryName: signatoryName.trim(),
+          signatoryTitle: signatoryTitle.trim(),
         },
         { uid: profile.uid, name: profile.name, role: profile.role }
       );
@@ -213,6 +231,8 @@ export default function InvoiceGenerator() {
               sstRate,
               sstAmount,
               total,
+              signatoryName,
+              signatoryTitle,
             }}
           />
         )}
@@ -292,6 +312,19 @@ export default function InvoiceGenerator() {
               <option value={0.06}>6%</option>
               <option value={0}>0% (exempt)</option>
             </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Authorised signatory name</label>
+            <input value={signatoryName} onChange={(e) => setSignatoryName(e.target.value)} className="input w-full" placeholder="e.g. MASITA ARBI" />
+            {site && !matchedBranch && (
+              <p className="text-xs text-slate-400 mt-1">
+                No saved signatory for "{site.branch || 'this site\'s branch'}" yet — set one in Admin Settings &gt; Branches &amp; Brands, or type it in here just for this invoice.
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Signatory title</label>
+            <input value={signatoryTitle} onChange={(e) => setSignatoryTitle(e.target.value)} className="input w-full" placeholder="e.g. Branch Manager" />
           </div>
         </div>
       </div>

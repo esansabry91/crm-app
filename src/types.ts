@@ -76,6 +76,17 @@ export interface Branch {
   id: string;
   name: string;
   createdAt: number;
+  /**
+   * The authorised signatory who signs invoices issued on behalf of this branch/department —
+   * set once from Admin Settings > Branches & Brands, then looked up by the Branch Collection
+   * tab's invoice generator from the Duty Roster site's own `branch` field (a Branch is a staff
+   * department/office, e.g. "Penang Branch"; a Brand is the issuing legal entity on the
+   * letterhead — the same person can sign for different brands under different titles, which is
+   * why this lives here and not on Brand). Copied onto the Invoice itself at creation time so an
+   * already-issued invoice's printed signatory never silently changes if this is edited later.
+   */
+  signatoryName?: string;
+  signatoryTitle?: string;
 }
 
 export interface Brand {
@@ -101,8 +112,10 @@ export interface Brand {
   bankAccountName?: string;
   bankAccountNo?: string;
   bankAddress?: string;
-  signatoryName?: string;
-  signatoryTitle?: string;
+  /** Small logo shown at the top of the invoice letterhead, as a data: URI (resized client-side
+   *  before saving — see the upload control in BrandInvoicingDetails). Optional; the letterhead
+   *  falls back to a text-only header when unset. */
+  logoDataUrl?: string;
 }
 
 export interface Tender {
@@ -399,6 +412,11 @@ export interface Invoice {
   status: InvoiceStatus;
   amountPaid: number;
   paidDate?: string;
+  /** Copied from the site's Branch at the moment this invoice was generated — see Branch's doc
+   *  comment. Snapshotted (not looked up live) so editing a branch's signatory later never
+   *  changes how an already-issued invoice prints. */
+  signatoryName?: string;
+  signatoryTitle?: string;
   createdByUid: string;
   createdByName: string;
   createdAt: number;

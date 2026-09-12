@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useBranches, useBrands } from '../../hooks/useBranches';
-import { addBrand, addBranch, removeBrand, removeBranch, updateBrand } from '../../services/branches';
+import { addBrand, addBranch, removeBrand, removeBranch, updateBrand, updateBranch } from '../../services/branches';
 import type { Branch, Brand } from '../../types';
 
 function ListManager<T extends { id: string; name: string }>({
@@ -89,9 +89,37 @@ const INVOICE_FIELDS: { key: keyof Brand; label: string; placeholder: string; mu
   { key: 'bankAccountName', label: 'Bank account name', placeholder: 'Usually the same as the registered company name' },
   { key: 'bankAccountNo', label: 'Bank account no.', placeholder: 'e.g. 5142 7160 3610' },
   { key: 'bankAddress', label: 'Bank branch address', placeholder: 'Address of the bank branch', multiline: true },
-  { key: 'signatoryName', label: 'Authorised signatory name', placeholder: 'e.g. MASITA ARBI' },
-  { key: 'signatoryTitle', label: 'Signatory title', placeholder: 'e.g. Branch Manager' },
 ];
+
+/** Resizes an uploaded image client-side (so it stays small enough to live as a Firestore field
+ *  alongside the rest of a Brand's invoicing details) and returns it as a PNG data: URI. Capped
+ *  at 240px wide — plenty for a letterhead logo, and keeps the resulting string well under
+ *  Firestore's 1MB document limit even for a busy source image. */
+function resizeImageToDataUrl(file: File, maxWidth = 240): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read that file.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Could not read that image.'));
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not process that image.'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 /**
  * Lets an admin fill in each Brand's letterhead/legal/bank details once — the invoicing profile
@@ -104,6 +132,8 @@ function BrandInvoicingDetails({ brands }: { brands: Brand[] }) {
   const [form, setForm] = useState<Partial<Record<keyof Brand, string>>>({});
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [logoError, setLogoError] = useState('');
+  const [logoBusy, setLogoBusy] = useState(false);
 
   const selected = brands.find((b) => b.id === selectedId) || null;
 
@@ -116,8 +146,10 @@ function BrandInvoicingDetails({ brands }: { brands: Brand[] }) {
     for (const f of INVOICE_FIELDS) {
       next[f.key] = (selected[f.key] as string | undefined) || '';
     }
+    next.logoDataUrl = selected.logoDataUrl || '';
     setForm(next);
     setSaved(false);
+    setLogoError('');
     // Only re-seed when switching to a different brand — not on every brands[] update, so the
     // admin's in-progress edits aren't clobbered by their own save round-tripping through
     // Firestore's live subscription.
@@ -133,10 +165,25 @@ function BrandInvoicingDetails({ brands }: { brands: Brand[] }) {
       for (const f of INVOICE_FIELDS) {
         patch[f.key] = (form[f.key] || '').trim();
       }
+      patch.logoDataUrl = form.logoDataUrl || '';
       await updateBrand(selectedId, patch);
       setSaved(true);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleLogoFile = async (file: File | null) => {
+    if (!file) return;
+    setLogoError('');
+    setLogoBusy(true);
+    try {
+      const dataUrl = await resizeImageToDataUrl(file);
+      setForm((prev) => ({ ...prev, logoDataUrl: dataUrl }));
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : 'Could not process that image.');
+    } finally {
+      setLogoBusy(false);
     }
   };
 
@@ -163,6 +210,46 @@ function BrandInvoicingDetails({ brands }: { brands: Brand[] }) {
 
       {selected && (
         <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Logo</label>
+            <p className="text-xs text-slate-400 mb-2">
+              Shown at the top of the invoice letterhead. Optional — resized automatically, so any
+              reasonably small image file works.
+            </p>
+            <div className="flex items-center gap-3">
+              {form.logoDataUrl && (
+                <img
+                  src={form.logoDataUrl}
+                  alt="Logo preview"
+                  className="border border-slate-200 rounded bg-white"
+                  style={{ maxHeight: '48px', maxWidth: '160px', objectFit: 'contain' }}
+                />
+              )}
+              <label className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200 cursor-pointer">
+                {logoBusy ? 'Processing…' : form.logoDataUrl ? 'Replace logo' : 'Upload logo'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={logoBusy}
+                  onChange={(e) => {
+                    void handleLogoFile(e.target.files?.[0] || null);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              {form.logoDataUrl && (
+                <button
+                  onClick={() => setForm((prev) => ({ ...prev, logoDataUrl: '' }))}
+                  className="text-xs text-rose-500 hover:text-rose-700"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            {logoError && <p className="text-xs text-rose-600 mt-1">{logoError}</p>}
+          </div>
+
           {INVOICE_FIELDS.map((f) => (
             <div key={f.key}>
               <label className="block text-xs font-medium text-slate-500 mb-1">{f.label}</label>
@@ -205,6 +292,89 @@ function BrandInvoicingDetails({ brands }: { brands: Brand[] }) {
   );
 }
 
+/**
+ * Lets an admin set who signs invoices issued for each Branch's sites — see Branch's doc
+ * comment in types.ts for why this lives per-Branch rather than per-Brand (the same person can
+ * sign under different titles for different brands; a Branch is the issuing office/department).
+ * Mirrors BrandInvoicingDetails' pattern one level down: pick a branch, edit its two fields,
+ * save.
+ */
+function BranchSignatoryDetails({ branches }: { branches: Branch[] }) {
+  const [selectedId, setSelectedId] = useState('');
+  const [name, setName] = useState('');
+  const [title, setTitle] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const selected = branches.find((b) => b.id === selectedId) || null;
+
+  useEffect(() => {
+    setName(selected?.signatoryName || '');
+    setTitle(selected?.signatoryTitle || '');
+    setSaved(false);
+    // Only re-seed when switching branches — same reasoning as BrandInvoicingDetails above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  const handleSave = async () => {
+    if (!selectedId) return;
+    setBusy(true);
+    setSaved(false);
+    try {
+      await updateBranch(selectedId, { signatoryName: name.trim(), signatoryTitle: title.trim() });
+      setSaved(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 className="text-sm font-semibold text-slate-800">Branch invoice signatory</h3>
+      <p className="text-xs text-slate-400 mt-0.5 mb-3">
+        Who signs invoices issued for each branch's sites — auto-filled into the Branch
+        Collection tab's invoice generator (still editable per invoice there).
+      </p>
+
+      <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className="input mb-4">
+        <option value="">Select a branch to edit…</option>
+        {branches.map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.name}
+          </option>
+        ))}
+      </select>
+
+      {selected && (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Authorised signatory name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. MASITA ARBI" className="input w-full" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Signatory title</label>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Branch Manager" className="input w-full" />
+          </div>
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              onClick={handleSave}
+              disabled={busy}
+              className="px-3.5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg"
+            >
+              {busy ? 'Saving…' : 'Save signatory'}
+            </button>
+            {saved && <span className="text-xs text-emerald-600">Saved.</span>}
+          </div>
+        </div>
+      )}
+
+      {!selected && branches.length === 0 && (
+        <p className="text-xs text-slate-400">Add a branch above first, then come back here to set its signatory.</p>
+      )}
+    </div>
+  );
+}
+
 export default function BranchBrandManager() {
   const { branches } = useBranches();
   const { brands } = useBrands();
@@ -231,6 +401,7 @@ export default function BranchBrandManager() {
       </div>
 
       <BrandInvoicingDetails brands={brands} />
+      <BranchSignatoryDetails branches={branches} />
     </div>
   );
 }
