@@ -4,6 +4,7 @@ import { usePastProjects } from '../hooks/useActiveProjects';
 import { useBranches } from '../hooks/useBranches';
 import { reopenProject } from '../services/tenders';
 import { formatDate, formatDateTime, formatRM } from '../utils/format';
+import HeaderCollapseToggle from '../components/layout/HeaderCollapseToggle';
 import StatCard from '../components/analytics/StatCard';
 import ProjectDetailsModal from '../components/active-projects/ProjectDetailsModal';
 import { VIZ } from '../utils/vizColors';
@@ -14,6 +15,7 @@ export default function PastProjectsPage() {
   const { projects, loading, seesAllBranches } = usePastProjects(profile);
   const { branches } = useBranches();
   const [branchFilter, setBranchFilter] = useState('all');
+  const [headerExpanded, setHeaderExpanded] = useState(true);
   const [detailsTender, setDetailsTender] = useState<Tender | null>(null);
 
   const branchNames = useMemo(() => branches.map((b) => b.name), [branches]);
@@ -42,24 +44,29 @@ export default function PastProjectsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <header className="px-6 py-5 border-b border-slate-200 bg-white flex items-center justify-between gap-4 flex-wrap sticky top-0 z-10">
-        <div>
+      <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
+        <div className="flex items-center gap-2">
           <h1 className="text-lg font-semibold text-slate-900">Past Projects</h1>
-          <p className="text-sm text-slate-500">
-            {seesAllBranches
-              ? 'Ended contract tenders that have been closed out, across every branch'
-              : `Ended contract tenders closed out for ${profile.department}`}
-          </p>
+          <HeaderCollapseToggle expanded={headerExpanded} onToggle={() => setHeaderExpanded((v) => !v)} />
         </div>
-        {seesAllBranches && (
-          <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input w-full sm:w-44">
-            <option value="all">All branches</option>
-            {branchNames.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
+        {headerExpanded && (
+          <div className="flex items-center justify-between gap-4 flex-wrap mt-2">
+            <p className="text-sm text-slate-500">
+              {seesAllBranches
+                ? 'Ended contract tenders that have been closed out, across every branch'
+                : `Ended contract tenders closed out for ${profile.department}`}
+            </p>
+            {seesAllBranches && (
+              <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input w-full sm:w-44">
+                <option value="all">All branches</option>
+                {branchNames.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         )}
       </header>
 

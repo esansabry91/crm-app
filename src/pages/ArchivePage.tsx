@@ -8,6 +8,7 @@ import TenderFormModal from '../components/tenders/TenderFormModal';
 import StatCard from '../components/analytics/StatCard';
 import { STAGE_COLORS } from '../utils/constants';
 import { formatDate, formatRM } from '../utils/format';
+import HeaderCollapseToggle from '../components/layout/HeaderCollapseToggle';
 import { VIZ } from '../utils/vizColors';
 import type { Stage, Tender } from '../types';
 
@@ -27,6 +28,7 @@ export default function ArchivePage() {
   const { users } = useUsers();
 
   const [search, setSearch] = useState('');
+  const [headerExpanded, setHeaderExpanded] = useState(true);
   const [stageFilter, setStageFilter] = useState<'all' | Stage>('all');
   const [brandFilter, setBrandFilter] = useState('all');
   const [editing, setEditing] = useState<Tender | null>(null);
@@ -66,38 +68,43 @@ export default function ArchivePage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <header className="px-6 py-5 border-b border-slate-200 bg-white flex items-center justify-between gap-4 flex-wrap sticky top-0 z-10">
-        <div>
+      <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
+        <div className="flex items-center gap-2">
           <h1 className="text-lg font-semibold text-slate-900">Pipeline Archive</h1>
-          <p className="text-sm text-slate-500">
-            Won, Lost and Disqualified Lead tenders over a year old — kept for record, off the
-            Sales Funnel board. Still fully counted in Pipeline Analysis.
-          </p>
+          <HeaderCollapseToggle expanded={headerExpanded} onToggle={() => setHeaderExpanded((v) => !v)} />
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search client…"
-            className="input w-full sm:w-48"
-          />
-          <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value as 'all' | Stage)} className="input w-full sm:w-40">
-            <option value="all">All stages</option>
-            {ARCHIVE_STAGES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-          <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-full sm:w-40">
-            <option value="all">All brands</option>
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {headerExpanded && (
+          <div className="flex items-center justify-between gap-4 flex-wrap mt-2">
+            <p className="text-sm text-slate-500">
+              Won, Lost and Disqualified Lead tenders over a year old — kept for record, off the
+              Sales Funnel board. Still fully counted in Pipeline Analysis.
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search client…"
+                className="input w-full sm:w-48"
+              />
+              <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value as 'all' | Stage)} className="input w-full sm:w-40">
+                <option value="all">All stages</option>
+                {ARCHIVE_STAGES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-full sm:w-40">
+                <option value="all">All brands</option>
+                {brands.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
       </header>
 
       {loading ? (

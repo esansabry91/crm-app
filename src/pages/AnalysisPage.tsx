@@ -18,6 +18,7 @@ import {
   type RaceTimeView,
 } from '../utils/analytics';
 import { formatRM } from '../utils/format';
+import HeaderCollapseToggle from '../components/layout/HeaderCollapseToggle';
 import StatCard from '../components/analytics/StatCard';
 import PipelineTrendChart from '../components/analytics/PipelineTrendChart';
 import StageBarChart from '../components/analytics/StageBarChart';
@@ -49,6 +50,7 @@ export default function AnalysisPage() {
 
   const [brandFilter, setBrandFilter] = useState('all');
   const [deptFilter, setDeptFilter] = useState('all');
+  const [headerExpanded, setHeaderExpanded] = useState(true);
   const [raceMetric, setRaceMetric] = useState<RaceMetric>('won');
   const [raceTimeView, setRaceTimeView] = useState<RaceTimeView>('alltime');
   const [bridgeTimeView, setBridgeTimeView] = useState<BridgeTimeView>('monthly');
@@ -107,31 +109,36 @@ export default function AnalysisPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <header className="px-6 py-5 border-b border-slate-200 bg-white flex items-center justify-between gap-4 flex-wrap sticky top-0 z-10">
-        <div>
+      <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
+        <div className="flex items-center gap-2">
           <h1 className="text-lg font-semibold text-slate-900">Pipeline Analysis</h1>
-          <p className="text-sm text-slate-500">
-            {profile.role === 'admin' ? 'All branches · all staff' : 'Your tenders'}
-          </p>
+          <HeaderCollapseToggle expanded={headerExpanded} onToggle={() => setHeaderExpanded((v) => !v)} />
         </div>
-        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-          <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-full sm:w-40">
-            <option value="all">All brands</option>
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-          <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="input w-full sm:w-40">
-            <option value="all">All departments</option>
-            {deptFilterOptions.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        </div>
+        {headerExpanded && (
+          <div className="flex items-center justify-between gap-4 flex-wrap mt-2">
+            <p className="text-sm text-slate-500">
+              {profile.role === 'admin' ? 'All branches · all staff' : 'Your tenders'}
+            </p>
+            <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+              <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-full sm:w-40">
+                <option value="all">All brands</option>
+                {brands.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+              <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="input w-full sm:w-40">
+                <option value="all">All departments</option>
+                {deptFilterOptions.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
       </header>
 
       {loading ? (

@@ -14,6 +14,7 @@ import {
 } from '../services/tenders';
 import RenewContractModal from '../components/active-projects/RenewContractModal';
 import { formatDate, formatRM } from '../utils/format';
+import HeaderCollapseToggle from '../components/layout/HeaderCollapseToggle';
 import {
   activeProjectBridgePeriods,
   activeProjectValueBridge,
@@ -125,6 +126,7 @@ export default function ActiveProjectsPage() {
   );
   const { branches } = useBranches();
   const [branchFilter, setBranchFilter] = useState('all');
+  const [headerExpanded, setHeaderExpanded] = useState(true);
   const [detailsTender, setDetailsTender] = useState<Tender | null>(null);
   const [renewingTender, setRenewingTender] = useState<Tender | null>(null);
   const [bridgeTimeView, setBridgeTimeView] = useState<BridgeTimeView>('monthly');
@@ -287,24 +289,29 @@ export default function ActiveProjectsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <header className="px-6 py-5 border-b border-slate-200 bg-white flex items-center justify-between gap-4 flex-wrap sticky top-0 z-10">
-        <div>
+      <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
+        <div className="flex items-center gap-2">
           <h1 className="text-lg font-semibold text-slate-900">Active Projects</h1>
-          <p className="text-sm text-slate-500">
-            {seesAllBranches
-              ? 'Won tenders currently running, across every branch'
-              : `Won tenders currently running for ${profile.department}`}
-          </p>
+          <HeaderCollapseToggle expanded={headerExpanded} onToggle={() => setHeaderExpanded((v) => !v)} />
         </div>
-        {seesAllBranches && (
-          <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input w-full sm:w-44">
-            <option value="all">All branches</option>
-            {branchNames.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
+        {headerExpanded && (
+          <div className="flex items-center justify-between gap-4 flex-wrap mt-2">
+            <p className="text-sm text-slate-500">
+              {seesAllBranches
+                ? 'Won tenders currently running, across every branch'
+                : `Won tenders currently running for ${profile.department}`}
+            </p>
+            {seesAllBranches && (
+              <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input w-full sm:w-44">
+                <option value="all">All branches</option>
+                {branchNames.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         )}
       </header>
 

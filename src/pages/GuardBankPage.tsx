@@ -17,6 +17,7 @@ import {
   updateBufferGuardContact,
 } from '../services/guards';
 import { formatDate, formatDateTime, formatRM } from '../utils/format';
+import HeaderCollapseToggle from '../components/layout/HeaderCollapseToggle';
 import { VIZ } from '../utils/vizColors';
 import type { BufferGuard, Guard } from '../types';
 
@@ -60,6 +61,7 @@ export default function GuardBankPage() {
   const [tab, setTab] = useState<Tab>('Guard Pool');
   const [toast, setToast] = useState<string | null>(null);
   const [registerOpen, setRegisterOpen] = useState(false);
+  const [headerExpanded, setHeaderExpanded] = useState(true);
   const [registerBufferOpen, setRegisterBufferOpen] = useState(false);
   const [assignGuard, setAssignGuard] = useState<Guard | null>(null);
   const [viewGuardId, setViewGuardId] = useState<string | null>(null);
@@ -223,10 +225,15 @@ export default function GuardBankPage() {
       <header className="px-6 py-5 bg-white sticky top-0 z-10">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-lg font-semibold text-slate-900">Guard Bank</h1>
-            <p className="text-sm text-slate-500 mt-0.5">
-              Every registered guard across all branches — unassigned, deployed, dismissed and buffer.
-            </p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-semibold text-slate-900">Guard Bank</h1>
+              <HeaderCollapseToggle expanded={headerExpanded} onToggle={() => setHeaderExpanded((v) => !v)} />
+            </div>
+            {headerExpanded && (
+              <p className="text-sm text-slate-500 mt-0.5">
+                Every registered guard across all branches — unassigned, deployed, dismissed and buffer.
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {profile?.role === 'admin' && (
