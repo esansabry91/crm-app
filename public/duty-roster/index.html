@@ -3060,7 +3060,7 @@
         <td style="white-space:nowrap;">
           <button class="btn sm" data-view-guard="${g.id}">View</button>
           <button class="btn sm" data-toggle-guard="${g.id}">${inactive?'Reactivate':'Dismiss'}</button>
-          <button class="btn sm danger" data-remove-guard="${g.id}">Remove</button>
+          <button class="btn sm" data-return-guard="${g.id}">Back to Guard Pool</button>
         </td>
       </tr>`;
     }).join("");
@@ -3094,23 +3094,24 @@
         }
       });
     });
-    $$("[data-remove-guard]").forEach(btn => {
+    $$("[data-return-guard]").forEach(btn => {
       btn.addEventListener("click", () => {
-        const id = btn.getAttribute("data-remove-guard");
+        const id = btn.getAttribute("data-return-guard");
         const g = guardById(id);
         if(!g) return;
         openConfirmModal({
-          title: "Remove guard",
-          message: `Permanently remove ${g.name} from this site's guard list? Past roster history that references them will show as "(removed guard)".`,
-          okLabel: "Remove",
-          danger: true,
+          title: "Back to Guard Pool",
+          message: `Send ${g.name} back to the Guard Pool in Guard Bank? They're removed from this site's guard list so they can be assigned elsewhere -- hours they've already worked here stay recorded and are not affected. Past roster history that references them will show as "(removed guard)".`,
+          okLabel: "Back to Guard Pool",
+          danger: false,
           onConfirm: () => {
             const cfg = currentConfig();
             cfg.guards = cfg.guards.filter(x => x.id !== id);
             cfg.isSample = false;
-            addLog(`Removed guard ${g.name} from the roster.`);
+            addLog(`Sent guard ${g.name} back to Guard Pool.`);
             persistConfig();
-            showToast(`Removed ${g.name}.`);
+            syncGuardBankOnReturnToPool(g);
+            showToast(`Sent ${g.name} back to Guard Pool.`);
             render();
           }
         });
@@ -4985,6 +4986,27 @@
           dismissalReason: null, dismissedAt: null, updatedAt: now
         }, {merge:true}).catch(()=>{});
       });
+    });
+  }
+  // Fires from "Back to Guard Pool" on a site's guard list -- releases the guard back to the
+  // Guard Pool in Guard Bank, the same shape releaseGuardsFromSite() (services/guards.ts) gives a
+  // freshly-released guard: status 'pool', siteId/siteName/branch/brandId/brandName cleared.
+  // Deliberately does NOT touch this site's already-recorded shift/manhour history -- that lives
+  // in the roster's own schedule data, untouched by this guard-list removal, so hours already
+  // logged here stay exactly as worked.
+  function syncGuardBankOnReturnToPool(g){
+    if(!dbHandle || !g.employeeId) return;
+    const now = Date.now();
+    guardBankMatchByEmployeeId(g.employeeId).then(existingDoc => {
+      const payload = { status:"pool", siteId:null, siteName:null, branch:null, brandId:null, brandName:null, updatedAt: now };
+      if(existingDoc){
+        existingDoc.ref.set(payload, {merge:true}).catch(()=>{});
+      } else {
+        // Guard predates Guard Bank tracking -- create the pool record now so they're still
+        // reachable for reassignment elsewhere instead of silently going untracked.
+        const created = Object.assign(guardBankIdentityFields(g), payload, { createdAt: now });
+        dbHandle.collection("guards").add(created).catch(()=>{});
+      }
     });
   }
   // Live "have we used this person before?" lookup for the temp-guard form: fires (debounced)
