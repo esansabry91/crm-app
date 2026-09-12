@@ -297,6 +297,31 @@ export async function updateGuardPermitExpiry(id: string, permitExpiryDate: stri
   await updateDoc(doc(db, 'guards', id), { permitExpiryDate, updatedAt: Date.now() });
 }
 
+/**
+ * Permanently removes a Guard Pool record — e.g. a duplicate registration, or someone added by
+ * mistake who was never actually deployed. Admin-only (see the Remove button in
+ * GuardBankPage.tsx and the matching /guards delete rule in firestore.rules) and only ever
+ * offered from the Guard Pool tab: a Deployed guard needs releasing back to the pool first (see
+ * releaseGuardsFromSite()) so no site is left referencing a guard id that no longer exists, and
+ * a Dismissed guard goes through archiveDismissedGuard() below instead, which keeps the record
+ * (and its dismissedAt) so turnover reporting stays accurate.
+ */
+export async function removeGuard(id: string): Promise<void> {
+  await deleteDoc(doc(db, 'guards', id));
+}
+
+/**
+ * Hides a Dismissed guard from the Dismissed Guards list without deleting their record —
+ * admin-only (see the Archive button in GuardBankPage.tsx and the matching /guards update rule
+ * in firestore.rules), and deliberately NOT a delete: computeGuardTurnover()'s trailing-12-month
+ * rate reads dismissedAt off every guard ever dismissed, so removing the record itself would
+ * silently understate turnover the moment an old dismissal is tidied away. Cleared automatically
+ * if Duty Roster later reactivates this guard (see backfillGuardsFromDutyRoster() below).
+ */
+export async function archiveDismissedGuard(id: string): Promise<void> {
+  await updateDoc(doc(db, 'guards', id), { archivedAt: Date.now() });
+}
+
 /** Manual contact-detail edit for a Buffer Guard row (the only edit Guard Bank offers there). */
 export async function updateBufferGuardContact(
   id: string,
@@ -409,6 +434,10 @@ export async function backfillGuardsFromDutyRoster(): Promise<BackfillResult> {
       // these null rather than guess.
       payload.dismissalReason = null;
       payload.dismissedAt = null;
+      // A guard who's back on the live roster is no longer "dismissed" at all, so any earlier
+      // admin Archive (see archiveDismissedGuard() below) no longer applies either — clear it
+      // the same way, rather than leaving a stale archivedAt on what's now an active guard.
+      payload.archivedAt = null;
 
       const existing = await findByEmployeeId(employeeId);
       if (existing) {

@@ -329,7 +329,18 @@ service cloud.firestore {
     // once deployed their branch is already visible/enforced through the linked /sites doc, so
     // Guard Bank stays a single firm-wide list for anyone who can see it at all.
     match /guards/{guardId} {
-      allow read, write: if isActiveUser() && !isPayroll();
+      allow read, create: if isActiveUser() && !isPayroll();
+      // Same general access as create/read, except the archivedAt field (set when an admin hides a
+      // Dismissed guard from the Dismissed Guards list without deleting their record — see
+      // archiveDismissedGuard() in services/guards.ts) is admin-only to write, matching
+      // removeGuard()'s Remove button and this same archive action both being admin-gated
+      // client-side in GuardBankPage.tsx. Keeping the underlying record (not deleting it) is
+      // deliberate: computeGuardTurnover()'s trailing-12-month rate still needs their dismissedAt.
+      allow update: if isActiveUser() && !isPayroll()
+        && (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['archivedAt']));
+      // Admin-only, matching removeGuard()'s Remove button (Guard Pool only) being admin-gated
+      // client-side too — same reasoning as /bufferGuards' delete rule below.
+      allow delete: if isAdmin();
     }
 
     // ---- Buffer Guards (src/pages/GuardBankPage.tsx's "Buffer Guards" sub-tab) ----

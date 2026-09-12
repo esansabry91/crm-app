@@ -10,10 +10,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { useBranches } from '../hooks/useBranches';
 import { useGuards, useBufferGuards, useSitesForPicker } from '../hooks/useGuards';
 import {
+  archiveDismissedGuard,
   backfillGuardsFromDutyRoster,
   computeGuardTurnover,
   guardsWithPermitExpiringSoon,
   removeBufferGuard,
+  removeGuard,
   updateBufferGuardContact,
 } from '../services/guards';
 import { formatDate, formatDateTime, formatRM } from '../utils/format';
@@ -68,6 +70,8 @@ export default function GuardBankPage() {
   const [viewBuffer, setViewBuffer] = useState<BufferGuard | null>(null);
   const [editingBufferId, setEditingBufferId] = useState<string | null>(null);
   const [removingBufferId, setRemovingBufferId] = useState<string | null>(null);
+  const [removingGuardId, setRemovingGuardId] = useState<string | null>(null);
+  const [archivingGuardId, setArchivingGuardId] = useState<string | null>(null);
   const [editPhone, setEditPhone] = useState('');
   const [backfilling, setBackfilling] = useState(false);
 
@@ -80,8 +84,14 @@ export default function GuardBankPage() {
 
   const poolGuards = useMemo(() => guards.filter((g) => g.status === 'pool'), [guards]);
   const deployedGuards = useMemo(() => guards.filter((g) => g.status === 'deployed'), [guards]);
+  // Excludes archived dismissals (see archiveDismissedGuard() in services/guards.ts) — the
+  // record itself is kept (computeGuardTurnover() below still reads it off the full `guards`
+  // array), only this list/tab/stat-tile stops showing it once an admin archives it.
   const dismissedGuards = useMemo(
-    () => guards.filter((g) => g.status === 'dismissed').sort((a, b) => (b.dismissedAt || 0) - (a.dismissedAt || 0)),
+    () =>
+      guards
+        .filter((g) => g.status === 'dismissed' && !g.archivedAt)
+        .sort((a, b) => (b.dismissedAt || 0) - (a.dismissedAt || 0)),
     [guards]
   );
   const viewGuard = useMemo(() => (viewGuardId ? guards.find((g) => g.id === viewGuardId) ?? null : null), [viewGuardId, guards]);
@@ -215,6 +225,38 @@ export default function GuardBankPage() {
       flash(err instanceof Error ? err.message : 'Could not remove this buffer guard.');
     } finally {
       setRemovingBufferId(null);
+    }
+  }
+
+  /** Guard Pool only — see removeGuard()'s own doc comment for why Deployed/Dismissed don't offer this. */
+  async function removeFromPool(g: Guard) {
+    if (!window.confirm(`Remove ${g.name} from Guard Bank? This permanently deletes their record and cannot be undone.`)) return;
+    setRemovingGuardId(g.id);
+    try {
+      await removeGuard(g.id);
+      flash(`Removed ${g.name} from Guard Bank.`);
+    } catch (err) {
+      flash(err instanceof Error ? err.message : 'Could not remove this guard.');
+    } finally {
+      setRemovingGuardId(null);
+    }
+  }
+
+  async function archiveDismissed(g: Guard) {
+    if (
+      !window.confirm(
+        `Archive ${g.name}? They'll drop off the Dismissed Guards list, but their record is kept — the turnover rate above still counts them.`
+      )
+    )
+      return;
+    setArchivingGuardId(g.id);
+    try {
+      await archiveDismissedGuard(g.id);
+      flash(`Archived ${g.name}.`);
+    } catch (err) {
+      flash(err instanceof Error ? err.message : 'Could not archive this guard.');
+    } finally {
+      setArchivingGuardId(null);
     }
   }
 
@@ -470,6 +512,15 @@ export default function GuardBankPage() {
                         >
                           Assign to site
                         </button>
+                        {profile?.role === 'admin' && (
+                          <button
+                            onClick={() => removeFromPool(g)}
+                            disabled={removingGuardId === g.id}
+                            className="px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-60 rounded-md"
+                          >
+                            {removingGuardId === g.id ? 'Removing…' : 'Remove'}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -579,6 +630,15 @@ export default function GuardBankPage() {
                         >
                           View
                         </button>
+                        {profile?.role === 'admin' && (
+                          <button
+                            onClick={() => archiveDismissed(g)}
+                            disabled={archivingGuardId === g.id}
+                            className="px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-60 rounded-md"
+                          >
+                            {archivingGuardId === g.id ? 'Archiving…' : 'Archive'}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

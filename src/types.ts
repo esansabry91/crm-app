@@ -223,6 +223,13 @@ export interface Guard {
   /** Set once status is 'dismissed'; cleared again if Duty Roster reactivates the guard. */
   dismissalReason?: DismissalReason;
   dismissedAt?: number;
+  /**
+   * Set by an admin's "Archive" action on a Dismissed guard (see archiveDismissedGuard() in
+   * services/guards.ts) — hides them from the Dismissed Guards list without deleting the
+   * record, so computeGuardTurnover()'s trailing-12-month rate still counts their dismissedAt.
+   * Cleared again if Duty Roster reactivates the guard, same as dismissalReason/dismissedAt.
+   */
+  archivedAt?: number;
   createdAt: number;
   updatedAt: number;
 }

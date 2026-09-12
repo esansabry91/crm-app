@@ -322,6 +322,10 @@
     <select id="branchFilter" hidden></select>
     <label class="small" style="margin:0;">Client site</label>
     <select id="siteSelect"></select>
+    <label class="small" id="showArchivedLabel" style="margin:0;display:flex;align-items:center;gap:4px;" hidden>
+      <input type="checkbox" id="showArchivedToggle" />
+      Show archived
+    </label>
     <span class="small" id="siteBranchBadge" style="color:var(--muted, #64748b);"></span>
     <button class="btn sm" id="newSiteBtn" type="button">+ New site</button>
     <button class="btn sm" id="renameSiteBtn" type="button">Rename</button>
@@ -1140,6 +1144,7 @@
     isPayroll: false,       // "payroll" role — reaches every branch's sites like a privileged user, but strictly view/export only
     canEdit: true,          // false for payroll — drives the read-only lockdown
     branchFilterValue: "", // currently selected branch in the sitebar's branch filter dropdown (Admin/HQ/Payroll only — "" = all)
+    showArchivedSites: false, // "Show archived" checkbox in the sitebar (Admin/HQ/Payroll only) — a closed-out project's site is hidden from the Client Site dropdown by default, this brings it back on demand for historical records/payroll export
     branchOptions: [],     // branch names from the CRM's own branch list, for the "assign to branch" picker
     // "siteId::monthKey" -> {homeGuardId: [{dateStr,hours}, ...]}. Populated on demand by the
     // "Refresh combined hours" button (computeIncomingSupportDates()) — raw, unclassified
@@ -4073,6 +4078,13 @@
     // renderSiteSelect() lands on for the newly-selected branch, not just the dropdown itself.
     render();
   });
+  $("#showArchivedToggle").addEventListener("change", () => {
+    state.showArchivedSites = $("#showArchivedToggle").checked;
+    // Same reasoning as #branchFilter's handler above — toggling this can add or drop the
+    // currently-selected site from the list, so the rest of the page needs to follow wherever
+    // renderSiteSelect() lands.
+    render();
+  });
   $("#newSiteBtn").addEventListener("click", () => {
     openNewSiteModal();
   });
@@ -4705,11 +4717,14 @@
         : state.sites.filter(s => s.branch === state.branchFilterValue);
     }
     // A closed-out project's site archives itself (see setLinkedSitesArchived() in the CRM's
-    // tenders.ts) — Admin/HQ/Payroll still need to reach it for historical records and payroll
-    // export, so it stays in their list (tagged below); everyone else only ever needs their
-    // active projects' sites day to day, so it drops out of their picker entirely once archived.
+    // tenders.ts) — hidden from the Client Site dropdown by default for everyone, the same as
+    // it always has been for non-privileged roles. Admin/HQ/Payroll can still reach it for
+    // historical records or payroll export, via the "Show archived" checkbox next to this
+    // dropdown (hidden entirely for everyone else, since they'd have nothing to show).
     const canSeeArchived = (state.isPrivileged && !state.isPayroll) || state.isPayroll;
-    if(!canSeeArchived) visibleSites = visibleSites.filter(s => !s.archived);
+    const showArchivedLabel = $("#showArchivedLabel");
+    if(showArchivedLabel) showArchivedLabel.hidden = !canSeeArchived;
+    if(!canSeeArchived || !state.showArchivedSites) visibleSites = visibleSites.filter(s => !s.archived);
     if(!visibleSites.length){
       // The selected branch genuinely has no client sites — show that plainly rather than
       // silently falling back to every site (which is what used to make the Client Site
