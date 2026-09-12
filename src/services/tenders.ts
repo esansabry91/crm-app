@@ -11,6 +11,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { releaseGuardsFromSite } from './guards';
 import type { Role, Stage, Tender } from '../types';
 
 /** Actor performing an action — `role` is optional only for call-site back-compat; every real
@@ -412,6 +413,18 @@ export async function updateActiveProjectDetails(
  * — the tender keeps counting as Won revenue forever in Pipeline Analysis, staff performance,
  * brand breakdown, and the sales race charts. It just moves out of Active Projects (and its value
  * totals / breakdowns) and into Past Projects.
+ *
+ * Also releases any guards still deployed to this project's site(s) back into the Guard Pool
+ * (see setLinkedSitesArchived() -> releaseGuardsFromSite() in services/guards.ts), so they're
+ * immediately available to assign elsewhere instead of staying marked "deployed" against a
+ * project that's no longer running.
+ *
+ * A contract simply being RENEWED — continuing at the same or a new rate with no real break in
+ * work — is NOT a close-out: call updateTender() to extend `contractEnd` (and update
+ * `tenderValue` if the rate changed, which logs its own value_change history entry) on this same
+ * tender instead. Closing out and re-Winning a fresh tender for a renewal would needlessly
+ * release its guards and disconnect it from its existing Duty Roster site for no reason, since
+ * the work never actually stopped.
  */
 export async function closeOutProject(tenderId: string) {
   await updateDoc(doc(db, 'tenders', tenderId), { closedOut: true, closedOutAt: Date.now() });
@@ -446,6 +459,16 @@ async function setLinkedSitesArchived(tenderId: string, archived: boolean) {
         )
       )
     );
+    // The project these sites belong to is ending (close-out or delete, never a mere reopen) —
+    // pull any guards still deployed here back into the Guard Pool instead of leaving them
+    // stuck "deployed" against a site that's no longer active. Deliberately NOT mirrored when
+    // un-archiving (archived === false, i.e. reopenProject()): a guard released here may already
+    // have been reassigned elsewhere in the meantime, so auto-redeploying them back on reopen
+    // would risk double-booking rather than reflecting reality — reopening only restores the
+    // site, staff re-assign guards to it manually if the reopened project still needs them.
+    if (archived) {
+      await Promise.all(snap.docs.map((d) => releaseGuardsFromSite(d.id)));
+    }
   } catch {
     // Best-effort — see doc comment above.
   }

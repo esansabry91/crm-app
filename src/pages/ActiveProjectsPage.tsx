@@ -265,8 +265,11 @@ export default function ActiveProjectsPage() {
   const handleCloseOut = (t: Tender) => {
     const confirmed = window.confirm(
       `Close out "${t.clientName}"?\n\n` +
-        `It will move out of Active Projects and into Past Projects. Its value keeps counting in ` +
-        `Pipeline Analysis as Won revenue — this only affects the Active Projects view.`
+        `It will move out of Active Projects and into Past Projects, and any guards still deployed ` +
+        `here move back into the Guard Pool. Its value keeps counting in Pipeline Analysis as Won ` +
+        `revenue — this only affects the Active Projects view.\n\n` +
+        `If this contract is simply being renewed and work is continuing without a break, edit its ` +
+        `Contract End date (and value, if the rate changed) instead — closing out will release its guards.`
     );
     if (!confirmed) return;
     closeOutProject(t.id);

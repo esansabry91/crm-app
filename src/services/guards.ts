@@ -212,6 +212,45 @@ export async function assignGuardToSite(guard: Guard, site: SitePickerOption): P
 }
 
 /**
+ * Returns every currently-deployed guard at this site back to the Guard Pool (status 'pool', with
+ * siteId/siteName/branch/brandId/brandName cleared — the same shape a freshly-registered pool
+ * guard has). Called whenever a site is archived because the project it belongs to is ending
+ * (see setLinkedSitesArchived() in services/tenders.ts, invoked from closeOutProject() and
+ * deleteTender()) — a guard's deployment shouldn't outlive the project they were assigned to, so
+ * they're released for reassignment elsewhere instead of sitting "deployed" against a site that's
+ * no longer active.
+ *
+ * Deliberately filtered to status == 'deployed' only: a DISMISSED guard also keeps their old
+ * siteId (see Guard.siteId's doc comment — kept so the Dismissed tab can still be filtered by
+ * where they last worked), and this must never resurrect one back to 'pool' just because that
+ * old site closed. Best-effort — swallows its own errors so a permissions hiccup here never
+ * blocks the close-out/delete action itself, same spirit as setLinkedSitesArchived()'s own
+ * best-effort site archiving.
+ */
+export async function releaseGuardsFromSite(siteId: string): Promise<void> {
+  try {
+    const snap = await getDocs(
+      query(guardsCollection(), where('siteId', '==', siteId), where('status', '==', 'deployed'))
+    );
+    await Promise.all(
+      snap.docs.map((d) =>
+        updateDoc(d.ref, {
+          status: 'pool',
+          siteId: null,
+          siteName: null,
+          branch: null,
+          brandId: null,
+          brandName: null,
+          updatedAt: Date.now(),
+        })
+      )
+    );
+  } catch {
+    // Best-effort — see doc comment above.
+  }
+}
+
+/**
  * Trailing-12-month turnover: (guards dismissed in the last 12 months) / (average active
  * headcount over that same window) * 100 — the formula confirmed for this feature. Guard Bank
  * has no historical headcount snapshots, so "active at a past moment" is approximated from each
