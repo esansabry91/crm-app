@@ -68,7 +68,7 @@ export default function ArchivePage() {
     <div className="h-full overflow-y-auto">
       <header className="px-6 py-5 border-b border-slate-200 bg-white flex items-center justify-between gap-4 flex-wrap sticky top-0 z-10">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Archive</h1>
+          <h1 className="text-lg font-semibold text-slate-900">Pipeline Archive</h1>
           <p className="text-sm text-slate-500">
             Won, Lost and Disqualified Lead tenders over a year old — kept for record, off the
             Sales Funnel board. Still fully counted in Pipeline Analysis.

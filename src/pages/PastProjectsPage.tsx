@@ -47,8 +47,8 @@ export default function PastProjectsPage() {
           <h1 className="text-lg font-semibold text-slate-900">Past Projects</h1>
           <p className="text-sm text-slate-500">
             {seesAllBranches
-              ? 'Won tenders that have been closed out, across every branch'
-              : `Won tenders closed out for ${profile.department}`}
+              ? 'Ended contract tenders that have been closed out, across every branch'
+              : `Ended contract tenders closed out for ${profile.department}`}
           </p>
         </div>
         {seesAllBranches && (
