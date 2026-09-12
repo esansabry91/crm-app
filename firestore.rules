@@ -94,6 +94,16 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Per (brand+branch+client) running sequence backing an auto-generated invoice number's
+    // trailing RUNNING segment — see sanitizeInvoiceCode()/createInvoice() in
+    // services/invoices.ts. Same read/write audience as /invoices itself: createInvoice()
+    // increments a counter doc in the same transaction it creates the invoice doc in, so both
+    // need to be writable by whoever can create invoices.
+    match /invoiceCounters/{counterId} {
+      allow read: if isActiveUser() && !isPayroll();
+      allow write: if isActiveUser() && (isAdmin() || isBranchManager());
+    }
+
     // ---- App-wide settings (currently just Testing Mode) ----
     // A single doc, settings/app, read by every active user (both the CRM and
     // public/duty-roster/index.html need to know testingModeEnabled at record-creation time so
@@ -170,7 +180,7 @@ service cloud.firestore {
             resource.data.stage == 'Won'
             && (resource.data.activeBranch == myDepartment() || myDepartment() == 'HQ')
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['location', 'state', 'city', 'postcode', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'guardRateMode', 'guardRate', 'guardRatePositions', 'closedOut', 'closedOutAt', 'contractEnd', 'tenderValue', 'updatedAt'])
+                 .hasOnly(['location', 'state', 'city', 'postcode', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'clientAlias', 'clientAddress', 'guardRateMode', 'guardRate', 'guardRatePositions', 'closedOut', 'closedOutAt', 'contractEnd', 'tenderValue', 'updatedAt'])
           )
           // Accepting a pending reassignment (see Tender.pendingReassignment and
           // acceptReassignment() in services/tenders.ts) — only the Branch Manager (not

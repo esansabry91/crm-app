@@ -78,6 +78,7 @@ function ListManager<T extends { id: string; name: string }>({
 /** One field in the invoicing-details form below — driven off this list so adding a new field
  *  later is one entry here, not a repeated block of JSX. */
 const INVOICE_FIELDS: { key: keyof Brand; label: string; placeholder: string; multiline?: boolean }[] = [
+  { key: 'shortCode', label: 'Short code / nickname (for invoice numbers)', placeholder: 'e.g. PZ' },
   { key: 'legalName', label: 'Registered company name', placeholder: 'e.g. PROZAS SECURITY (M) SDN BHD — used on the invoice header; falls back to the brand name above if left blank' },
   { key: 'registrationNo', label: 'Company registration no.', placeholder: 'e.g. 200701036994 (795023-X)' },
   { key: 'address', label: 'Address', placeholder: 'Full company address, as it should appear on the invoice', multiline: true },
@@ -303,6 +304,7 @@ function BranchSignatoryDetails({ branches }: { branches: Branch[] }) {
   const [selectedId, setSelectedId] = useState('');
   const [name, setName] = useState('');
   const [title, setTitle] = useState('');
+  const [shortCode, setShortCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -311,6 +313,7 @@ function BranchSignatoryDetails({ branches }: { branches: Branch[] }) {
   useEffect(() => {
     setName(selected?.signatoryName || '');
     setTitle(selected?.signatoryTitle || '');
+    setShortCode(selected?.shortCode || '');
     setSaved(false);
     // Only re-seed when switching branches — same reasoning as BrandInvoicingDetails above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -321,7 +324,11 @@ function BranchSignatoryDetails({ branches }: { branches: Branch[] }) {
     setBusy(true);
     setSaved(false);
     try {
-      await updateBranch(selectedId, { signatoryName: name.trim(), signatoryTitle: title.trim() });
+      await updateBranch(selectedId, {
+        signatoryName: name.trim(),
+        signatoryTitle: title.trim(),
+        shortCode: shortCode.trim(),
+      });
       setSaved(true);
     } finally {
       setBusy(false);
@@ -347,6 +354,10 @@ function BranchSignatoryDetails({ branches }: { branches: Branch[] }) {
 
       {selected && (
         <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Short code / nickname (for invoice numbers)</label>
+            <input value={shortCode} onChange={(e) => setShortCode(e.target.value)} placeholder="e.g. KV2" className="input w-full" />
+          </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Authorised signatory name</label>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. MASITA ARBI" className="input w-full" />

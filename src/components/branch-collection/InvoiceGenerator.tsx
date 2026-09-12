@@ -4,9 +4,27 @@ import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useSitesForBilling, updateSiteBillingRates } from '../../services/siteBilling';
-import { createInvoice, computeLineAmount, sumLineGroups } from '../../services/invoices';
+import { createInvoice, computeLineAmount, sumLineGroups, peekNextInvoiceNumber } from '../../services/invoices';
 import InvoicePrintView from './InvoicePrintView';
 import type { InvoiceLineGroup, SiteBillingRate } from '../../types';
+
+const MONTH_NAMES = [
+  'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+  'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
+];
+
+/** Turns a `<input type="month">` value ("2026-08") into the prose form used on the invoice's
+ *  description line ("AUGUST 2026"). Empty/invalid input returns ''. */
+function formatBillingMonth(monthValue: string): string {
+  const [y, m] = monthValue.split('-').map(Number);
+  if (!y || !m || m < 1 || m > 12) return '';
+  return `${MONTH_NAMES[m - 1]} ${y}`;
+}
+
+function currentMonthValue(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
 /**
  * The Branch Collection tab's invoice-building form. Deliberately semi-manual (see the Rate
@@ -15,6 +33,13 @@ import type { InvoiceLineGroup, SiteBillingRate } from '../../types';
  * typed in fresh per invoice against the Duty Roster Summary Report (opened in another tab) —
  * nothing here reads guard attendance directly. Amount per row = headcount * days * a 12-hour
  * shift * rate, matching the sample invoices this was modeled on exactly.
+ *
+ * The invoice number, billing month, client address, contract/PO reference and authorised
+ * signatory are all auto-filled from elsewhere (the site's linked Won tender in Active Projects,
+ * the site's Branch record, and a running per-brand+branch+client counter) rather than typed in
+ * fresh each time — see each field's own comment below for exactly where it's sourced from. Every
+ * auto-filled field stays editable, in case the source data isn't set up yet or this particular
+ * invoice needs a one-off correction.
  */
 export default function InvoiceGenerator() {
   const { profile } = useAuth();
@@ -25,8 +50,9 @@ export default function InvoiceGenerator() {
   const [siteId, setSiteId] = useState('');
   const site = sites.find((s) => s.id === siteId) || null;
   // The Branch record matching this site's `branch` field (a plain name string set from the
-  // Duty Roster side) — used to auto-fill who signs the invoice. See Branch's doc comment in
-  // types.ts for why signatory lives on Branch, not Brand.
+  // Duty Roster side) — used to auto-fill who signs the invoice and the BRANCH segment of the
+  // invoice number. See Branch's doc comment in types.ts for why signatory/shortCode live on
+  // Branch, not Brand.
   const matchedBranch = site?.branch ? branches.find((b) => b.name === site.branch) || null : null;
 
   const [brandId, setBrandId] = useState('');
@@ -34,10 +60,10 @@ export default function InvoiceGenerator() {
 
   const [clientName, setClientName] = useState('');
   const [clientAddress, setClientAddress] = useState('');
+  const [clientAlias, setClientAlias] = useState('');
   const [attnName, setAttnName] = useState('');
-  const [invoiceNo, setInvoiceNo] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [billingMonth, setBillingMonth] = useState('');
+  const [billingMonthValue, setBillingMonthValue] = useState(currentMonthValue);
   const [contractRef, setContractRef] = useState('');
   const [quotationNo, setQuotationNo] = useState('');
   const [paymentTermsDays, setPaymentTermsDays] = useState(30);
@@ -54,8 +80,20 @@ export default function InvoiceGenerator() {
   const [saveMessage, setSaveMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
+  // The invoice number's BRAND/BRANCH segments — a saved short code/nickname when the brand or
+  // branch has one set (Admin Settings > Branches & Brands), falling back to the full name
+  // otherwise so numbering still works before anyone's filled those in.
+  const brandCode = (brand?.shortCode || brand?.name || '').trim();
+  const branchCode = (matchedBranch?.shortCode || matchedBranch?.name || site?.branch || '').trim();
+
+  const [previewInvoiceNo, setPreviewInvoiceNo] = useState('');
+  const [previewNonce, setPreviewNonce] = useState(0);
+
+  const billingMonth = formatBillingMonth(billingMonthValue);
+
   // Switching sites: load that site's saved rate categories, and — if it's linked to a Won
-  // tender — best-effort prefill the brand/client from that tender so they're not retyped.
+  // tender — best-effort prefill the brand/client/contract-ref/client-alias/client-address from
+  // that tender's Active Projects details so they're not retyped.
   useEffect(() => {
     setRateDraft(site?.billingRates || []);
     setRatesSaved(false);
@@ -63,11 +101,23 @@ export default function InvoiceGenerator() {
       getDoc(doc(db, 'tenders', site.tenderId))
         .then((snap) => {
           if (!snap.exists()) return;
-          const t = snap.data() as { brandId?: string; clientName?: string };
+          const t = snap.data() as {
+            brandId?: string;
+            clientName?: string;
+            clientAlias?: string;
+            clientAddress?: string;
+            tenderDocNumber?: string;
+          };
           if (t.brandId) setBrandId(t.brandId);
           if (t.clientName) setClientName(t.clientName);
+          setClientAlias(t.clientAlias || '');
+          setClientAddress(t.clientAddress || '');
+          setContractRef(t.tenderDocNumber || '');
         })
         .catch(() => {});
+    } else {
+      setClientAlias('');
+      setContractRef('');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId]);
@@ -80,6 +130,30 @@ export default function InvoiceGenerator() {
     setSignatoryTitle(matchedBranch?.signatoryTitle || '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId, matchedBranch?.signatoryName, matchedBranch?.signatoryTitle]);
+
+  // Live preview of the NEXT invoice number for this exact brand+branch+client combination —
+  // read-only (see peekNextInvoiceNumber's doc comment); the number actually assigned to a saved
+  // invoice is only finalized inside createInvoice()'s transaction. previewNonce is bumped after
+  // a successful save so this re-peeks and shows what the *next* invoice would be.
+  useEffect(() => {
+    const alias = clientAlias.trim() || clientName.trim();
+    if (!brandCode || !branchCode || !alias) {
+      setPreviewInvoiceNo('');
+      return;
+    }
+    let cancelled = false;
+    const year = new Date(`${invoiceDate}T00:00:00`).getFullYear() || new Date().getFullYear();
+    peekNextInvoiceNumber(brandCode, branchCode, alias, year)
+      .then((no) => {
+        if (!cancelled) setPreviewInvoiceNo(no);
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewInvoiceNo('');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [brandCode, branchCode, clientAlias, clientName, invoiceDate, previewNonce]);
 
   async function handleSaveRates() {
     if (!site) return;
@@ -156,26 +230,28 @@ export default function InvoiceGenerator() {
   const sstAmount = subTotal * sstRate;
   const total = subTotal + sstAmount;
 
-  const canSave = !!(profile && brand && site && clientName.trim() && invoiceNo.trim() && lineGroups.length > 0);
+  const canSave = !!(profile && brand && site && clientName.trim() && lineGroups.length > 0);
 
   async function handleSave() {
     if (!profile || !brand || !site) return;
     setSaving(true);
     setSaveMessage(null);
     try {
-      await createInvoice(
+      const result = await createInvoice(
         {
           brandId: brand.id,
           brandName: brand.name,
+          brandCode,
           siteId: site.id,
           siteName: site.name,
           tenderId: site.tenderId,
           clientName: clientName.trim(),
           clientAddress: clientAddress.trim(),
           attnName: attnName.trim(),
-          invoiceNo: invoiceNo.trim(),
+          branchCode,
+          clientAlias: clientAlias.trim() || clientName.trim(),
           invoiceDate,
-          billingMonth: billingMonth.trim(),
+          billingMonth,
           contractRef: contractRef.trim(),
           quotationNo: quotationNo.trim(),
           paymentTermsDays,
@@ -186,9 +262,9 @@ export default function InvoiceGenerator() {
         },
         { uid: profile.uid, name: profile.name, role: profile.role }
       );
-      setSaveMessage({ text: 'Invoice saved — find it in the Invoices tab.', isError: false });
+      setSaveMessage({ text: `Invoice ${result.invoiceNo} saved — find it in the Invoices tab.`, isError: false });
       setLineGroups([]);
-      setInvoiceNo('');
+      setPreviewNonce((n) => n + 1);
     } catch (err) {
       setSaveMessage({ text: err instanceof Error ? err.message : 'Could not save invoice.', isError: true });
     } finally {
@@ -217,7 +293,7 @@ export default function InvoiceGenerator() {
           <InvoicePrintView
             data={{
               brand,
-              invoiceNo,
+              invoiceNo: previewInvoiceNo || '(assigned when saved)',
               invoiceDate,
               clientName,
               clientAddress,
@@ -274,16 +350,33 @@ export default function InvoiceGenerator() {
             <input value={clientName} onChange={(e) => setClientName(e.target.value)} className="input w-full" placeholder="e.g. Malaysia Digital Economy Corporation Sdn Bhd" />
           </div>
           <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              Client alias / short code <span className="text-slate-400 font-normal">(for the invoice number)</span>
+            </label>
+            <input value={clientAlias} onChange={(e) => setClientAlias(e.target.value)} className="input w-full" placeholder="e.g. MDEC" />
+            {site?.tenderId && !clientAlias && (
+              <p className="text-xs text-slate-400 mt-1">
+                Not set on this project yet — add one in Active Projects &gt; Project Details, or type it in here.
+              </p>
+            )}
+          </div>
+          <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Attn.</label>
             <input value={attnName} onChange={(e) => setAttnName(e.target.value)} className="input w-full" placeholder="e.g. En. Farul Izzat bin Kamarudin" />
           </div>
-          <div className="sm:col-span-2">
+          <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Client address</label>
             <textarea value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} className="input w-full" rows={2} />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Invoice no.</label>
-            <input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} className="input w-full" placeholder="e.g. PZ/KV2/MDEC/2026/05" />
+            <div className="input w-full bg-slate-50 text-slate-600 flex items-center justify-between gap-2">
+              <span className="font-medium">{previewInvoiceNo || 'Select a site, brand and client first'}</span>
+              {previewInvoiceNo && <span className="text-[11px] text-slate-400 whitespace-nowrap">Auto-generated</span>}
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Format: BRAND/BRANCH/CLIENT/YEAR/RUNNING NO. — finalized when you save (shown here is a preview).
+            </p>
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Invoice date</label>
@@ -291,7 +384,7 @@ export default function InvoiceGenerator() {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Billing month (for the description line)</label>
-            <input value={billingMonth} onChange={(e) => setBillingMonth(e.target.value)} className="input w-full" placeholder="e.g. AUGUST 2026" />
+            <input type="month" value={billingMonthValue} onChange={(e) => setBillingMonthValue(e.target.value)} className="input w-full" />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Payment terms (days)</label>
@@ -303,7 +396,7 @@ export default function InvoiceGenerator() {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Contract / Letter of Award / PO No.</label>
-            <input value={contractRef} onChange={(e) => setContractRef(e.target.value)} className="input w-full" />
+            <input value={contractRef} onChange={(e) => setContractRef(e.target.value)} className="input w-full" placeholder="Auto-filled from the project's Tender Document No." />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">SST rate</label>

@@ -442,6 +442,8 @@ export async function updateActiveProjectDetails(
     contactPerson: string;
     guardsDeployed: number;
     tenderDocNumber: string;
+    clientAlias: string;
+    clientAddress: string;
     guardRateMode: 'same' | 'multiple';
     guardRate: number;
     guardRatePositions: { name: string; rate: number }[];

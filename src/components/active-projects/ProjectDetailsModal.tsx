@@ -20,15 +20,17 @@ interface Props {
  * Lets anyone who can see a project in Active Projects (its branch-mates, HQ, or admin — the
  * same audience Firestore's read rule allows) fill in the operational details that aren't part
  * of the sales record: worksite location (state, city, postcode included), an on-site/client
- * contact, how many guards are currently deployed, the tender document reference number, and how
- * permanent guards on this project's Duty Roster site bill the client per man-hour (see
- * Tender.guardRateMode's own doc comment in types.ts — read live from the Duty Roster's Summary
- * Report, never snapshotted). Deliberately separate from TenderFormModal — that one edits the
- * sales record and is locked to the owner/admin; this one edits only these fields, which the
- * Firestore rules allow more people to touch. Every field is required before Save will submit —
- * see handleSave — except Security Guards Deployed once it's roster-driven (see the
- * liveGuardCount prop doc comment), Tender Document No. (often not issued yet when these details
- * are first filled in), and the Guard Rate section, which is optional since a rate may get
+ * contact, how many guards are currently deployed, the tender document reference number, a
+ * client alias/short code and billing address (both read by the Branch Collection tab's invoice
+ * generator — see Tender.clientAlias's doc comment in types.ts), and how permanent guards on this
+ * project's Duty Roster site bill the client per man-hour (see Tender.guardRateMode's own doc
+ * comment in types.ts — read live from the Duty Roster's Summary Report, never snapshotted).
+ * Deliberately separate from TenderFormModal — that one edits the sales record and is locked to
+ * the owner/admin; this one edits only these fields, which the Firestore rules allow more people
+ * to touch. Every field is required before Save will submit — see handleSave — except Security
+ * Guards Deployed once it's roster-driven (see the liveGuardCount prop doc comment), Tender
+ * Document No., Client Alias and Client Billing Address (often not filled in yet when these
+ * details are first entered), and the Guard Rate section, which is optional since a rate may get
  * finalized separately from the rest of a project's details.
  */
 export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCount }: Props) {
@@ -39,6 +41,8 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   const [contactPerson, setContactPerson] = useState('');
   const [guardsDeployed, setGuardsDeployed] = useState('');
   const [tenderDocNumber, setTenderDocNumber] = useState('');
+  const [clientAlias, setClientAlias] = useState('');
+  const [clientAddress, setClientAddress] = useState('');
   const [rateMode, setRateMode] = useState<'same' | 'multiple'>('same');
   const [flatRate, setFlatRate] = useState('');
   const [positions, setPositions] = useState<{ name: string; rate: string }[]>([]);
@@ -54,6 +58,8 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     setContactPerson(tender.contactPerson || '');
     setGuardsDeployed(tender.guardsDeployed != null ? String(tender.guardsDeployed) : '');
     setTenderDocNumber(tender.tenderDocNumber || '');
+    setClientAlias(tender.clientAlias || '');
+    setClientAddress(tender.clientAddress || '');
     setRateMode(tender.guardRateMode === 'multiple' ? 'multiple' : 'same');
     setFlatRate(tender.guardRate != null ? String(tender.guardRate) : '');
     setPositions(
@@ -137,6 +143,8 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
         postcode: postcode.trim(),
         contactPerson: contactPerson.trim(),
         tenderDocNumber: tenderDocNumber.trim(),
+        clientAlias: clientAlias.trim(),
+        clientAddress: clientAddress.trim(),
         ...(guards !== undefined ? { guardsDeployed: guards } : {}),
         ...rateFields,
       });
@@ -234,6 +242,25 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
               onChange={(e) => setTenderDocNumber(e.target.value)}
               className="input"
               placeholder="e.g. IPSB/T-2026/014"
+            />
+          </Field>
+
+          <Field label="Client Alias / Short Code (for invoice numbers)">
+            <input
+              value={clientAlias}
+              onChange={(e) => setClientAlias(e.target.value)}
+              className="input"
+              placeholder="e.g. MDEC"
+            />
+          </Field>
+
+          <Field label="Client Billing Address">
+            <textarea
+              value={clientAddress}
+              onChange={(e) => setClientAddress(e.target.value)}
+              className="input"
+              rows={2}
+              placeholder="Printed on invoices, if different from the worksite location above"
             />
           </Field>
 

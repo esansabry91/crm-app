@@ -87,6 +87,10 @@ export interface Branch {
    */
   signatoryName?: string;
   signatoryTitle?: string;
+  /** Short code used as the BRANCH segment of an auto-generated invoice number (e.g. "KV2") —
+   *  see sanitizeInvoiceCode()'s doc comment in services/invoices.ts. Falls back to the
+   *  branch's full `name` when unset. */
+  shortCode?: string;
 }
 
 export interface Brand {
@@ -116,6 +120,10 @@ export interface Brand {
    *  before saving — see the upload control in BrandInvoicingDetails). Optional; the letterhead
    *  falls back to a text-only header when unset. */
   logoDataUrl?: string;
+  /** Short code used as the BRAND segment of an auto-generated invoice number (e.g. "PZ") — see
+   *  sanitizeInvoiceCode()'s doc comment in services/invoices.ts. Falls back to the brand's
+   *  full `name` when unset. */
+  shortCode?: string;
 }
 
 export interface Tender {
@@ -189,6 +197,14 @@ export interface Tender {
   contactPerson?: string; // on-site or client contact (free text: name, phone, email, etc.)
   guardsDeployed?: number; // number of security guards currently deployed
   tenderDocNumber?: string; // official tender submission document number/ID
+  /** Short code identifying the client on an auto-generated invoice number (e.g. "MDEC") — see
+   *  sanitizeInvoiceCode()'s doc comment in services/invoices.ts. Falls back to `clientName`
+   *  when unset. Also part of the same widened Active Project detail fields as tenderDocNumber
+   *  above (see firestore.rules), so branch-mates/HQ can fill it in without being the owner. */
+  clientAlias?: string;
+  /** The client's billing address, printed on the invoice — distinct from `location` above
+   *  (that's the worksite address; a client's registered/billing address can differ). */
+  clientAddress?: string;
   /**
    * How permanent guards on this project's Duty Roster site(s) are billed to the client, per
    * man-hour actually worked (read live by public/duty-roster/index.html's Summary Report —
