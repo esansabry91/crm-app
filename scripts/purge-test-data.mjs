@@ -33,7 +33,20 @@
  *       testing with a throwaway test account, to fully retire its data without touching
  *       anyone else's records. Find a user's UID in Firebase console -> Authentication -> Users.
  *
- * Either mode prints exactly what it found and requires you to type DELETE to confirm before
+ *   node scripts/purge-test-data.mjs --test-data
+ *       Deletes every tender/site/guard/buffer guard tagged isTestData:true, wherever it was
+ *       created and by whomever -- the CRM's own Admin Settings -> Testing Data tab is what
+ *       tags new records this way while its "Testing Mode" toggle is on (see
+ *       src/components/admin/TestingDataTool.tsx). Use this ONCE, right before going live, after
+ *       turning Testing Mode off and doing a final pass in that tab to tag anything created
+ *       before the tagging feature existed. Also deletes each purged tender's `history`
+ *       subcollection and each purged site's `months` subcollection (Firestore never cascades
+ *       those on its own), and releases any REAL (non-test) guard still deployed at a purged
+ *       site back to the Guard Pool first, so nothing real is left pointing at a deleted site.
+ *       Leaves every real (untagged) tender/site/guard/buffer guard, plus branches, brands, and
+ *       every team member's profile, completely untouched.
+ *
+ * Every mode prints exactly what it found and requires you to type DELETE to confirm before
  * anything is actually removed.
  */
 
@@ -138,20 +151,158 @@ function askHidden(promptText) {
   });
 }
 
+/**
+ * --test-data mode: deletes everything tagged isTestData:true across tenders (+ history), sites
+ * (+ months), guards, and buffer guards. See this script's own top-of-file doc comment for the
+ * full story on when and why to run this.
+ */
+async function runTestDataPurge(db, ask) {
+  console.log('Scanning for everything tagged isTestData across tenders, sites, guards and buffer guards...\n');
+
+  let tendersSnap, sitesSnap, guardsSnap, bufferSnap, historySnapAll;
+  try {
+    tendersSnap = await getDocs(query(collection(db, 'tenders'), where('isTestData', '==', true)));
+    sitesSnap = await getDocs(query(collection(db, 'sites'), where('isTestData', '==', true)));
+    guardsSnap = await getDocs(query(collection(db, 'guards'), where('isTestData', '==', true)));
+    bufferSnap = await getDocs(query(collection(db, 'bufferGuards'), where('isTestData', '==', true)));
+    // history has no isTestData of its own -- matched below against the test tenders just found.
+    historySnapAll = await getDocs(collectionGroup(db, 'history'));
+  } catch (err) {
+    if (err.code === 'permission-denied') {
+      console.error(
+        '\nFirestore rejected this read as permission-denied, even though sign-in succeeded.\n' +
+          'This means Firestore does not currently see this account as an active admin, or the\n' +
+          'settings/app doc / isTestData fields this mode relies on aren\'t deployed yet. See the\n' +
+          '--all mode\'s own permission-denied message above (same three most likely causes).'
+      );
+    } else {
+      console.error('\nUnexpected error while reading data:', err.message);
+    }
+    process.exit(1);
+  }
+
+  const testTenderIds = new Set(tendersSnap.docs.map((d) => d.id));
+  const historyDocsToDelete = historySnapAll.docs.filter((d) => testTenderIds.has(d.data().tenderId));
+
+  // For each test-flagged site, find any guard CURRENTLY deployed there that is NOT itself
+  // test-flagged -- these need releasing back to the Guard Pool first, not left pointing at a
+  // site that's about to disappear. Mirrors releaseGuardsFromSite() in src/services/guards.ts.
+  const testGuardIds = new Set(guardsSnap.docs.map((d) => d.id));
+  const guardsToRelease = [];
+  const monthDocsToDelete = [];
+  for (const siteDoc of sitesSnap.docs) {
+    const deployedSnap = await getDocs(
+      query(collection(db, 'guards'), where('siteId', '==', siteDoc.id), where('status', '==', 'deployed'))
+    );
+    for (const gd of deployedSnap.docs) {
+      if (!testGuardIds.has(gd.id)) guardsToRelease.push(gd.ref);
+    }
+    const monthsSnap = await getDocs(collection(db, 'sites', siteDoc.id, 'months'));
+    monthDocsToDelete.push(...monthsSnap.docs.map((d) => d.ref));
+  }
+
+  console.log('This will permanently delete:');
+  console.log(`  - ${tendersSnap.docs.length} tender record(s), plus ${historyDocsToDelete.length} history log entrie(s)`);
+  console.log(`  - ${sitesSnap.docs.length} Duty Roster site(s), plus ${monthDocsToDelete.length} month/schedule record(s) under them`);
+  console.log(`  - ${guardsSnap.docs.length} Guard Bank guard(s)`);
+  console.log(`  - ${bufferSnap.docs.length} buffer guard(s)`);
+  if (guardsToRelease.length > 0) {
+    console.log(
+      `\nIt will also release ${guardsToRelease.length} real (non-test) guard(s) currently deployed at a test site back to the Guard Pool, so they don't end up pointing at a deleted site.`
+    );
+  }
+  console.log(
+    '\nNothing outside these tagged records (branches, brands, real tenders/sites/guards, team member accounts) is touched.\n'
+  );
+
+  const totalToDelete =
+    tendersSnap.docs.length +
+    historyDocsToDelete.length +
+    sitesSnap.docs.length +
+    monthDocsToDelete.length +
+    guardsSnap.docs.length +
+    bufferSnap.docs.length;
+  if (totalToDelete === 0) {
+    console.log('Nothing is currently tagged as test data - nothing to delete.');
+    return;
+  }
+
+  const confirm = await ask('Type DELETE (all caps) to proceed, or anything else to cancel: ');
+  if (confirm.trim() !== 'DELETE') {
+    console.log('Cancelled - nothing was deleted.');
+    return;
+  }
+
+  if (guardsToRelease.length > 0) {
+    let releaseBatch = writeBatch(db);
+    let releaseCount = 0;
+    for (const ref of guardsToRelease) {
+      releaseBatch.update(ref, {
+        status: 'pool',
+        siteId: null,
+        siteName: null,
+        branch: null,
+        brandId: null,
+        brandName: null,
+        updatedAt: Date.now(),
+      });
+      releaseCount++;
+      if (releaseCount === 400) {
+        await releaseBatch.commit();
+        releaseBatch = writeBatch(db);
+        releaseCount = 0;
+      }
+    }
+    if (releaseCount > 0) await releaseBatch.commit();
+    console.log(`Released ${guardsToRelease.length} real guard(s) back to the Guard Pool.`);
+  }
+
+  const refsToDelete = [
+    ...historyDocsToDelete.map((d) => d.ref),
+    ...tendersSnap.docs.map((d) => d.ref),
+    ...monthDocsToDelete,
+    ...sitesSnap.docs.map((d) => d.ref),
+    ...guardsSnap.docs.map((d) => d.ref),
+    ...bufferSnap.docs.map((d) => d.ref),
+  ];
+
+  let batch = writeBatch(db);
+  let opCount = 0;
+  let totalDeleted = 0;
+  for (const ref of refsToDelete) {
+    batch.delete(ref);
+    opCount++;
+    totalDeleted++;
+    if (opCount === 400) {
+      await batch.commit();
+      batch = writeBatch(db);
+      opCount = 0;
+      console.log(`  ...${totalDeleted} deleted so far`);
+    }
+  }
+  if (opCount > 0) await batch.commit();
+
+  console.log(
+    `\nDone - deleted ${totalDeleted} document(s) and released ${guardsToRelease.length} real guard(s) back to the Guard Pool.`
+  );
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const allMode = args.includes('--all');
   const uidArg = args.find((a) => a.startsWith('--uid='));
   const uid = uidArg ? uidArg.split('=')[1] : null;
+  const testDataMode = args.includes('--test-data');
 
-  if (!allMode && !uid) {
+  const modesSelected = [allMode, !!uid, testDataMode].filter(Boolean).length;
+  if (modesSelected === 0) {
     console.error(
-      'Usage:\n  node scripts/purge-test-data.mjs --all\n  node scripts/purge-test-data.mjs --uid=<firebase-auth-uid>'
+      'Usage:\n  node scripts/purge-test-data.mjs --all\n  node scripts/purge-test-data.mjs --uid=<firebase-auth-uid>\n  node scripts/purge-test-data.mjs --test-data'
     );
     process.exit(1);
   }
-  if (allMode && uid) {
-    console.error('Pass either --all or --uid=<uid>, not both.');
+  if (modesSelected > 1) {
+    console.error('Pass exactly one of --all, --uid=<uid>, or --test-data, not more than one.');
     process.exit(1);
   }
 
@@ -202,6 +353,12 @@ async function main() {
     console.log(`Diagnostic - could not even read your own profile doc: ${err.code || err.message}`);
   }
   console.log('');
+
+  if (testDataMode) {
+    await runTestDataPurge(db, ask);
+    rl.close();
+    return;
+  }
 
   // ---- gather what would be deleted ----
   let tendersSnap;

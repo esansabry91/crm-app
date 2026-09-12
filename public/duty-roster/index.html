@@ -1145,6 +1145,12 @@
     canEdit: true,          // false for payroll — drives the read-only lockdown
     branchFilterValue: "", // currently selected branch in the sitebar's branch filter dropdown (Admin/HQ/Payroll only — "" = all)
     showArchivedSites: false, // "Show archived" checkbox in the sitebar (Admin/HQ/Payroll only) — a closed-out project's site is hidden from the Client Site dropdown by default, this brings it back on demand for historical records/payroll export
+    // Mirrors the CRM's settings/app.testingModeEnabled doc (see src/services/settings.ts and
+    // src/components/admin/TestingDataTool.tsx) -- while true, every new site/guard/buffer guard
+    // created from THIS console also gets isTestData:true, matching the CRM side, so nothing
+    // created anywhere can slip through un-tagged before go-live. Kept live via an onSnapshot
+    // in initDb(), same pattern as everything else read from Firestore here.
+    testingModeEnabled: false,
     branchOptions: [],     // branch names from the CRM's own branch list, for the "assign to branch" picker
     // "siteId::monthKey" -> {homeGuardId: [{dateStr,hours}, ...]}. Populated on demand by the
     // "Refresh combined hours" button (computeIncomingSupportDates()) — raw, unclassified
@@ -4657,7 +4663,7 @@
     // unassigned; anyone else can only ever create a site for their own branch — mirrored
     // and enforced server-side in firestore.rules' canReachSite().
     const assignedBranch = (state.isPrivileged && !state.isPayroll) ? (branch || null) : (state.myDepartment || null);
-    const cfg = { id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false, archivedAt: null, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, createdAt: nowIso(), updatedAt: nowIso() };
+    const cfg = { id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false, archivedAt: null, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, isTestData: !!state.testingModeEnabled, createdAt: nowIso(), updatedAt: nowIso() };
     state.sites.push({id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false});
     state.configsCache[id] = cfg;
     if(dbHandle) dbHandle.doc("sites/"+id).set(cfg).catch(()=>{});
@@ -4950,6 +4956,7 @@
           existingDoc.ref.set(payload, {merge:true}).catch(()=>{});
         } else {
           payload.createdAt = now;
+          payload.isTestData = !!state.testingModeEnabled;
           dbHandle.collection("guards").add(payload).catch(()=>{});
         }
       });
@@ -4970,7 +4977,8 @@
           const payload = Object.assign(guardBankIdentityFields(g), {
             status: "dismissed", siteId: state.currentSiteId, siteName: site.name || null,
             branch: site.branch || null, brandId: brand.brandId, brandName: brand.brandName,
-            dismissalReason: reason, dismissedAt: now, createdAt: now, updatedAt: now
+            dismissalReason: reason, dismissedAt: now, createdAt: now, updatedAt: now,
+            isTestData: !!state.testingModeEnabled
           });
           dbHandle.collection("guards").add(payload).catch(()=>{});
         });
@@ -5009,7 +5017,7 @@
       } else {
         // Guard predates Guard Bank tracking -- create the pool record now so they're still
         // reachable for reassignment elsewhere instead of silently going untracked.
-        const created = Object.assign(guardBankIdentityFields(g), payload, { createdAt: now });
+        const created = Object.assign(guardBankIdentityFields(g), payload, { createdAt: now, isTestData: !!state.testingModeEnabled });
         dbHandle.collection("guards").add(created).catch(()=>{});
       }
     });
@@ -5075,7 +5083,7 @@
           ref.set(Object.assign({}, patch, { timesUsed: prevUsed + 1 }), {merge:true}).catch(()=>{});
         } else {
           dbHandle.collection("bufferGuards").add(Object.assign({ name: entry.name }, patch, {
-            firstUsedAt: now, timesUsed: 1
+            firstUsedAt: now, timesUsed: 1, isTestData: !!state.testingModeEnabled
           })).catch(()=>{});
         }
       })
@@ -5175,6 +5183,10 @@
     const id = newId("site");
     const cfg = makeSampleConfig();
     cfg.id = id; cfg.name = "Site 1"; cfg.branch = null; cfg.createdAt = nowIso();
+    // Always synthetic placeholder content (see this function's own doc comment on the caller
+    // side, initDb()) -- tagged unconditionally, regardless of Testing Mode, since there's no
+    // scenario where an auto-seeded demo site is genuine data.
+    cfg.isTestData = true;
     await dbHandle.doc("sites/"+id).set(cfg).catch(()=>{});
   }
 
@@ -5235,6 +5247,15 @@
       });
 
       dbHandle = firebase.firestore();
+
+      // Mirrors the CRM's settings/app.testingModeEnabled doc live -- see state.testingModeEnabled's
+      // own doc comment above. Best-effort and swallows its own errors (defaults stay false,
+      // i.e. "treat as real data") so a permissions hiccup on this one doc never blocks the rest
+      // of the app from loading.
+      dbHandle.doc("settings/app").onSnapshot(
+        snap => { state.testingModeEnabled = !!(snap.exists && snap.data().testingModeEnabled); },
+        () => { state.testingModeEnabled = false; }
+      );
 
       // Who is this, and which branch do they belong to? Drives the branch-scoping below —
       // a Branch Manager or "dutyStaff" account only ever reaches their own branch's sites,

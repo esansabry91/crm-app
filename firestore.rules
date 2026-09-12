@@ -68,6 +68,17 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // ---- App-wide settings (currently just Testing Mode) ----
+    // A single doc, settings/app, read by every active user (both the CRM and
+    // public/duty-roster/index.html need to know testingModeEnabled at record-creation time so
+    // they can stamp new tenders/sites/guards/bufferGuards with isTestData) but writable only by
+    // an admin — see src/components/admin/TestingDataTool.tsx for the toggle UI and
+    // src/services/settings.ts / index.html's state.testingModeEnabled for how it's read.
+    match /settings/{docId} {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+
     // ---- Tenders ----
     // Admins (HQ / Superior) see and manage every tender. Staff can only manage tenders where
     // they are the owner, and can never reassign a tender away from themselves nor create one

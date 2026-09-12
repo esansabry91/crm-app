@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { releaseGuardsFromSite } from './guards';
+import { getTestingModeEnabled } from './settings';
 import type { Role, Stage, Tender } from '../types';
 
 /** Actor performing an action — `role` is optional only for call-site back-compat; every real
@@ -83,6 +84,9 @@ export async function createTender(
   const now = Date.now();
   const isClosed = input.stage === 'Won' || input.stage === 'Lost';
   const historyTimestamp = isClosed && input.closedDate ? closedDateToMillis(input.closedDate) : now;
+  // See Tender.isTestData's doc comment in types.ts — stamped once, at creation, from whatever
+  // Testing Mode was set to at that moment.
+  const isTestData = await getTestingModeEnabled();
 
   // Firestore's addDoc() rejects fields explicitly set to `undefined` — closedDate/submittedDate
   // are optional and undefined for most tenders, so they must be omitted entirely rather than
@@ -96,6 +100,7 @@ export async function createTender(
     // the same activeBranch default moveTenderStage would, so it doesn't rely on the opportunistic
     // backfill (which has no idea who created it) to fill this in afterwards.
     ...(input.stage === 'Won' ? { activeBranch: defaultActiveBranchOnWin(input.department, actor.role) } : {}),
+    isTestData,
     createdAt: now,
     updatedAt: now,
   });

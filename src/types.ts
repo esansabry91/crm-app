@@ -164,6 +164,14 @@ export interface Tender {
    */
   closedOut?: boolean;
   closedOutAt?: number;
+  /**
+   * Set true at creation time whenever Testing Mode was on (see AppSettings.testingModeEnabled
+   * and src/services/settings.ts) — marks this as throwaway demo/testing content rather than a
+   * genuine sales record, so it can be found and bulk-removed later via
+   * scripts/purge-test-data.mjs's --test-data mode without touching real data. Never set on a
+   * tender created while Testing Mode was off, and never changed after creation.
+   */
+  isTestData?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -230,6 +238,8 @@ export interface Guard {
    * Cleared again if Duty Roster reactivates the guard, same as dismissalReason/dismissedAt.
    */
   archivedAt?: number;
+  /** Same meaning and lifecycle as Tender.isTestData — see its doc comment. */
+  isTestData?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -256,6 +266,8 @@ export interface BufferGuard {
   firstUsedAt: number;
   lastUsedAt: number;
   timesUsed: number;
+  /** Same meaning and lifecycle as Tender.isTestData — see its doc comment. */
+  isTestData?: boolean;
 }
 
 /** One entry in a tender's audit trail, used to reconstruct the pipeline-value trend over time. */
@@ -270,4 +282,17 @@ export interface TenderHistoryEntry {
   changedByName: string;
   fromStage?: Stage;
   ownerUid: string;
+}
+
+/**
+ * The single settings/app document (see firestore.rules' /settings block) — app-wide toggles
+ * that both the CRM and public/duty-roster/index.html read. Currently just Testing Mode: see
+ * src/services/settings.ts (React side) and index.html's state.testingModeEnabled (Duty Roster
+ * side) for how each side keeps this in sync and stamps new records with isTestData while it's
+ * on. Toggled from src/components/admin/TestingDataTool.tsx, admin-only.
+ */
+export interface AppSettings {
+  testingModeEnabled: boolean;
+  updatedAt: number;
+  updatedByName?: string;
 }

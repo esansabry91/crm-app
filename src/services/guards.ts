@@ -12,6 +12,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { getTestingModeEnabled } from './settings';
 import type { BufferGuard, Guard } from '../types';
 
 /**
@@ -88,6 +89,8 @@ export async function registerGuard(input: GuardIdentityInput): Promise<string> 
     );
   }
   const now = Date.now();
+  // See Guard.isTestData's doc comment in types.ts.
+  const isTestData = await getTestingModeEnabled();
   const ref = await addDoc(guardsCollection(), {
     name: input.name,
     employeeId: input.employeeId,
@@ -107,6 +110,7 @@ export async function registerGuard(input: GuardIdentityInput): Promise<string> 
     brandName: null,
     dismissalReason: null,
     dismissedAt: null,
+    isTestData,
     createdAt: now,
     updatedAt: now,
   });
@@ -147,6 +151,8 @@ export async function registerBufferGuard(input: BufferGuardIdentityInput): Prom
     );
   }
   const now = Date.now();
+  // See BufferGuard.isTestData's doc comment in types.ts.
+  const isTestData = await getTestingModeEnabled();
   const ref = await addDoc(bufferGuardsCollection(), {
     name,
     rate: input.rate,
@@ -160,6 +166,7 @@ export async function registerBufferGuard(input: BufferGuardIdentityInput): Prom
     firstUsedAt: now,
     lastUsedAt: now,
     timesUsed: 0,
+    isTestData,
   });
   return ref.id;
 }

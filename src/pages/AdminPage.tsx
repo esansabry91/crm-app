@@ -3,8 +3,9 @@ import clsx from 'clsx';
 import BranchBrandManager from '../components/admin/BranchBrandManager';
 import UserManager from '../components/admin/UserManager';
 import DepartmentRepairTool from '../components/admin/DepartmentRepairTool';
+import TestingDataTool from '../components/admin/TestingDataTool';
 
-const TABS = ['Team', 'Branches & Brands', 'Data Repair'] as const;
+const TABS = ['Team', 'Branches & Brands', 'Data Repair', 'Testing Data'] as const;
 
 export default function AdminPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>('Team');
@@ -35,8 +36,10 @@ export default function AdminPage() {
           <UserManager />
         ) : tab === 'Branches & Brands' ? (
           <BranchBrandManager />
-        ) : (
+        ) : tab === 'Data Repair' ? (
           <DepartmentRepairTool />
+        ) : (
+          <TestingDataTool />
         )}
       </div>
     </div>
