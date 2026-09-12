@@ -9,6 +9,9 @@ export const STAGE_COLORS: Record<Stage, { bg: string; border: string; text: str
   Negotiation: { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', dot: '#ea580c' },
   Won: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', dot: '#059669' },
   Lost: { bg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-700', dot: '#e11d48' },
+  // Deliberately a different hue from Lost (rose) — this lead never got a real shot, it was
+  // screened out up front, so it reads as a distinct outcome rather than "competed and lost".
+  'Disqualified Lead': { bg: 'bg-stone-50', border: 'border-stone-200', text: 'text-stone-600', dot: '#78716c' },
 };
 
 /** Categorical palette for brand breakdowns / other series that aren't stage-keyed. */

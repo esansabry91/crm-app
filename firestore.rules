@@ -147,9 +147,11 @@ service cloud.firestore {
           )
         );
 
-      // Staff can delete a tender they own (matches the create/update scoping above); admins
-      // can delete any tender.
-      allow delete: if isActiveUser() && (isAdmin() || resource.data.ownerUid == request.auth.uid);
+      // Admin-only. Every tender is forced to move through the pipeline (Won/Lost/Disqualified
+      // Lead) instead of being deletable by whoever owns it — keeps the funnel's history and
+      // analytics accurate. Admin keeps this as a deliberate override for genuine data cleanup
+      // (matches the same client-side gating in TenderFormModal.tsx's Delete button).
+      allow delete: if isAdmin();
 
       // ---- Change history (audit trail that powers the pipeline-value trend chart) ----
       // Denormalized `ownerUid` on each entry keeps this rule self-contained (no extra

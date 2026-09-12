@@ -8,13 +8,19 @@ export default function KanbanColumn({
   stage,
   tenders,
   onCardClick,
+  onDisqualify,
   canDrag,
 }: {
   stage: Stage;
   tenders: Tender[];
   onCardClick: (t: Tender) => void;
+  onDisqualify: (t: Tender) => void;
   canDrag: boolean;
 }) {
+  // Disqualified Lead is only ever reached via the confirmed "Disqualify" button on a New Lead
+  // card (see onDisqualify/TenderCard.tsx) — never a drag, from any column, so this column's
+  // drop target is disabled unconditionally rather than gated on canDrag like the others.
+  const dropDisabled = !canDrag || stage === 'Disqualified Lead';
   const colors = STAGE_COLORS[stage];
   const totalValue = tenders.reduce((s, t) => s + (t.tenderValue || 0), 0);
 
@@ -33,7 +39,7 @@ export default function KanbanColumn({
         <p className="text-xs text-slate-500 mt-0.5">{formatRM(totalValue)}</p>
       </div>
 
-      <Droppable droppableId={stage} isDropDisabled={!canDrag}>
+      <Droppable droppableId={stage} isDropDisabled={dropDisabled}>
         {(provided, snapshot) => (
           <div
             ref={provided.innerRef}
@@ -49,6 +55,7 @@ export default function KanbanColumn({
                 index={i}
                 draggable={canDrag}
                 onClick={() => onCardClick(t)}
+                onDisqualify={() => onDisqualify(t)}
               />
             ))}
             {provided.placeholder}

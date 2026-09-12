@@ -6,11 +6,13 @@ export default function TenderCard({
   tender,
   index,
   onClick,
+  onDisqualify,
   draggable,
 }: {
   tender: Tender;
   index: number;
   onClick: () => void;
+  onDisqualify: () => void;
   draggable: boolean;
 }) {
   const content = (
@@ -37,9 +39,28 @@ export default function TenderCard({
           {tender.stage} on {formatDate(tender.closedDate)}
         </p>
       )}
+      {tender.stage === 'Disqualified Lead' && tender.disqualifiedDate && (
+        <p className="mt-1 text-[11px] text-stone-500">
+          Disqualified on {formatDate(tender.disqualifiedDate)}
+        </p>
+      )}
       <div className="mt-2 pt-2 border-t border-slate-100 text-[11px] text-slate-500 truncate">
         {tender.ownerName}
       </div>
+      {tender.stage === 'New Lead' && draggable && (
+        <button
+          type="button"
+          onClick={(e) => {
+            // Don't also trigger the card's own onClick (which opens the edit modal) — this
+            // button lives inside that same clickable card.
+            e.stopPropagation();
+            onDisqualify();
+          }}
+          className="mt-2 w-full text-[11px] font-medium text-stone-500 hover:text-stone-700 hover:bg-stone-50 border border-stone-200 rounded-md py-1 transition"
+        >
+          Disqualify
+        </button>
+      )}
     </div>
   );
 

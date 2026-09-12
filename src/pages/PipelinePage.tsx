@@ -6,7 +6,7 @@ import { useUsers } from '../hooks/useUsers';
 import KanbanBoard from '../components/kanban/KanbanBoard';
 import TenderFormModal from '../components/tenders/TenderFormModal';
 import SubmissionDateModal from '../components/tenders/SubmissionDateModal';
-import { moveTenderStage } from '../services/tenders';
+import { disqualifyTender, isTenderArchived, moveTenderStage } from '../services/tenders';
 import type { Tender } from '../types';
 import { formatRM } from '../utils/format';
 
@@ -32,6 +32,9 @@ export default function PipelinePage() {
 
   const filtered = useMemo(() => {
     return tenders.filter((t) => {
+      // Won/Lost/Disqualified Lead tenders over a year old move to the Archive page instead of
+      // sitting on the board forever — see isTenderArchived()'s doc comment in services/tenders.ts.
+      if (isTenderArchived(t)) return false;
       if (brandFilter !== 'all' && t.brandId !== brandFilter) return false;
       if (search.trim() && !t.clientName.toLowerCase().includes(search.trim().toLowerCase())) return false;
       return true;
@@ -39,6 +42,19 @@ export default function PipelinePage() {
   }, [tenders, brandFilter, search]);
 
   const totalValue = filtered.reduce((s, t) => s + (t.tenderValue || 0), 0);
+
+  const handleDisqualify = async (tender: Tender) => {
+    const confirmed = window.confirm(
+      `Disqualify "${tender.clientName}"? It will move straight to Disqualified Lead — this can only be undone by editing it and changing its stage back.`
+    );
+    if (!confirmed) return;
+    if (!profile) return;
+    try {
+      await disqualifyTender(tender, { uid: profile.uid, name: profile.name, role: profile.role });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Could not disqualify this lead.');
+    }
+  };
 
   if (!profile) return null;
 
@@ -89,6 +105,7 @@ export default function PipelinePage() {
               setEditing(t);
               setModalOpen(true);
             }}
+            onDisqualify={handleDisqualify}
             onDropStage={(tender, newStage) => {
               // Submission date is required exactly once, the moment a tender first reaches
               // Submitted — hold off on the actual stage move until SubmissionDateModal confirms

@@ -16,6 +16,9 @@ import { formatRM } from '../../utils/format';
 function colorForStage(stage: string) {
   if (stage === 'Won') return VIZ.status.good;
   if (stage === 'Lost') return VIZ.status.critical;
+  // Distinct from Lost (critical/red) — screened out before ever being a real opportunity,
+  // not a competed-and-lost deal, so it reads as its own outcome rather than a flavor of Lost.
+  if (stage === 'Disqualified Lead') return VIZ.status.serious;
   return VIZ.categorical.blue;
 }
 

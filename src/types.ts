@@ -18,7 +18,7 @@
  */
 export type Role = 'admin' | 'branchManager' | 'dutyStaff' | 'payroll';
 
-/** The 7 fixed pipeline stages, in kanban column order. */
+/** The 8 fixed pipeline stages, in kanban column order. */
 export const STAGES = [
   'New Lead',
   'Qualified Lead',
@@ -27,6 +27,7 @@ export const STAGES = [
   'Negotiation',
   'Won',
   'Lost',
+  'Disqualified Lead',
 ] as const;
 
 export type Stage = (typeof STAGES)[number];
@@ -40,7 +41,11 @@ export const OPEN_STAGES: Stage[] = [
   'Negotiation',
 ];
 
-export const CLOSED_STAGES: Stage[] = ['Won', 'Lost'];
+// Disqualified Lead counts as "closed" here (it's a final outcome, not open pipeline), but
+// pipelineSummary()'s winRate math deliberately does NOT use this constant — it checks
+// stage === 'Won'/'Lost' directly, so a disqualified lead (screened out before ever being a real
+// opportunity) never dilutes the win rate the way folding it into "closed" there would.
+export const CLOSED_STAGES: Stage[] = ['Won', 'Lost', 'Disqualified Lead'];
 
 export interface UserProfile {
   uid: string;
@@ -80,6 +85,16 @@ export interface Tender {
   notes?: string;
   /** ISO date (yyyy-mm-dd) the tender was actually won/lost — only meaningful when stage is Won or Lost. */
   closedDate?: string;
+  /**
+   * ISO date (yyyy-mm-dd) a New Lead was disqualified — only meaningful when stage is
+   * Disqualified Lead. Set exactly once, automatically, by disqualifyTender() the moment the
+   * "Disqualify" button on a New Lead card is confirmed (see TenderCard.tsx) — there's no manual
+   * date picker for this anywhere, unlike closedDate, since disqualifying only ever happens now,
+   * not backdated. Cleared (set back to null) if the tender is later moved to any other stage.
+   * Together with closedDate, this is what isTenderArchived() in services/tenders.ts measures
+   * the 1-year-old threshold against for the Sales Funnel board hiding it into Archive.
+   */
+  disqualifiedDate?: string;
   /**
    * ISO date (yyyy-mm-dd) the tender was submitted to the client — captured exactly once, the
    * first time the tender enters the "Submitted" stage (required at that point, and validated

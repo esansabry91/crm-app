@@ -7,6 +7,7 @@ import PipelinePage from './pages/PipelinePage';
 import AnalysisPage from './pages/AnalysisPage';
 import ActiveProjectsPage from './pages/ActiveProjectsPage';
 import PastProjectsPage from './pages/PastProjectsPage';
+import ArchivePage from './pages/ArchivePage';
 import DutyRosterPage from './pages/DutyRosterPage';
 import GuardBankPage from './pages/GuardBankPage';
 import QuotationCalculatorPage from './pages/QuotationCalculatorPage';
@@ -81,6 +82,16 @@ export default function App() {
               <ProtectedRoute hideFromStaff>
                 <AppLayout>
                   <PastProjectsPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/archive"
+            element={
+              <ProtectedRoute hideFromStaff>
+                <AppLayout>
+                  <ArchivePage />
                 </AppLayout>
               </ProtectedRoute>
             }

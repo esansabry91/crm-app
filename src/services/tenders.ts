@@ -167,6 +167,7 @@ export async function moveTenderStage(
     updatedAt: Date.now(),
     // Clear closedDate when moving back to an open stage, so stale dates don't linger.
     closedDate: isClosed ? (closedDate ?? null) : null,
+    disqualifiedDate: null,
     activeBranch: becomingWon
       ? tender.activeBranch || defaultActiveBranchOnWin(tender.department, actor.role)
       : null,
@@ -185,6 +186,36 @@ export async function moveTenderStage(
     },
     historyTimestamp
   );
+}
+
+/**
+ * Moves a New Lead straight to Disqualified Lead — the ONLY path into that stage. The "Disqualify"
+ * button on a New Lead card (see TenderCard.tsx) is the sole caller, gated behind a
+ * window.confirm() first. Deliberately NOT folded into the generic moveTenderStage() above:
+ * TenderFormModal's Stage dropdown never offers 'Disqualified Lead' as a target, and
+ * KanbanColumn disables dropping into that column entirely, so a disqualification can never
+ * happen as a casual dropdown pick or an accidental drag — only this explicit, confirmed action.
+ * Throws if the tender isn't currently New Lead (defense in depth behind the UI's own gating).
+ */
+export async function disqualifyTender(tender: Tender, actor: Actor): Promise<void> {
+  if (tender.stage !== 'New Lead') {
+    throw new Error('Only a New Lead can be disqualified.');
+  }
+  const disqualifiedDate = new Date().toISOString().slice(0, 10);
+  await updateDoc(doc(db, 'tenders', tender.id), {
+    stage: 'Disqualified Lead',
+    disqualifiedDate,
+    updatedAt: Date.now(),
+  });
+  await addHistoryEntry(tender.id, {
+    type: 'stage_change',
+    stage: 'Disqualified Lead',
+    fromStage: 'New Lead',
+    value: tender.tenderValue,
+    changedByUid: actor.uid,
+    changedByName: actor.name,
+    ownerUid: tender.ownerUid,
+  });
 }
 
 /**
@@ -408,6 +439,30 @@ export async function deleteTender(tender: Tender, actor: { uid: string; name: s
   });
   await setLinkedSitesArchived(tender.id, true);
   await deleteDoc(doc(db, 'tenders', tender.id));
+}
+
+const ARCHIVE_AFTER_MS = 365 * 24 * 60 * 60 * 1000;
+
+/**
+ * True once a Won/Lost/Disqualified Lead tender has been sitting in that stage for more than a
+ * full year — PipelinePage's Sales Funnel board filters these out with this, and ArchivePage
+ * lists exactly the ones it returns true for. Purely a computed/display concern: this app has no
+ * backend scheduler (no Cloud Functions), so nothing is ever written when a tender crosses the
+ * threshold — it just quietly stops showing on the board the next time anyone loads it. Every
+ * other view (Pipeline Analysis, Active/Past Projects, this tender's own history) is completely
+ * unaffected and keeps counting it exactly as before — same non-destructive spirit as
+ * Tender.closedOut.
+ */
+export function isTenderArchived(tender: Tender, asOf: number = Date.now()): boolean {
+  const dateStr =
+    tender.stage === 'Disqualified Lead'
+      ? tender.disqualifiedDate
+      : tender.stage === 'Won' || tender.stage === 'Lost'
+        ? tender.closedDate
+        : null;
+  if (!dateStr) return false;
+  const at = closedDateToMillis(dateStr);
+  return Number.isFinite(at) && asOf - at > ARCHIVE_AFTER_MS;
 }
 
 export function tsToMillis(v: unknown): number {

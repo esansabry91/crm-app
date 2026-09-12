@@ -294,7 +294,7 @@ export default function TenderFormModal({
             </Field>
             <Field label="Stage">
               <select value={stage} onChange={(e) => setStage(e.target.value as Stage)} className="input">
-                {STAGES.map((s) => (
+                {STAGES.filter((s) => s !== 'Disqualified Lead' || editing?.stage === 'Disqualified Lead').map((s) => (
                   <option key={s} value={s}>
                     {s}
                   </option>
@@ -314,6 +314,16 @@ export default function TenderFormModal({
               <span className="block text-xs text-slate-400 mt-1">
                 Use the real date this tender was {stage === 'Won' ? 'won' : 'lost'} — this is what
                 the pipeline value trend chart uses, so it's safe to backdate for past deals.
+              </span>
+            </Field>
+          )}
+
+          {stage === 'Disqualified Lead' && editing?.disqualifiedDate && (
+            <Field label="Disqualified on">
+              <p className="text-sm text-slate-600">{formatDate(editing.disqualifiedDate)}</p>
+              <span className="block text-xs text-slate-400 mt-1">
+                Set automatically when this lead was disqualified — not editable here. Change the
+                Stage above to move it out of Disqualified Lead if this was done in error.
               </span>
             </Field>
           )}
@@ -400,7 +410,11 @@ export default function TenderFormModal({
 
           <div className="flex items-center justify-between pt-2">
             <div>
-              {editing && (isAdmin || editing.ownerUid === profile.uid) && (
+              {/* Admin-only — owners no longer get to delete their own tenders, so every tender is
+                  forced to move through the pipeline (Won/Lost/Disqualified Lead) instead of
+                  being able to disappear, keeping the funnel's history and analytics accurate.
+                  Admin retains it as a deliberate override for genuine data cleanup. */}
+              {editing && isAdmin && (
                 <button
                   type="button"
                   onClick={handleDelete}
