@@ -600,12 +600,30 @@ export function pipelineBridgePeriods(entries: TenderHistoryEntry[], view: Bridg
  * out): see closedThisPeriod below. A reopen of something closed in an EARLIER period still counts
  * as new to *this* period, since it genuinely wasn't part of this period's starting open pool.
  *
- * A tender created directly into Won/Lost (e.g. backfilling a historical win rather than dragging
- * it through the pipeline) is shown the same way: as a same-period pass-through into New Tenders
- * and straight back out via Won/Lost, landing on whichever period its own (possibly backdated)
- * closedDate falls in. That keeps backfilled history visible on the chart instead of silently
- * vanishing, while still netting to zero so it never distorts the end-of-period open total.
+ * A tender created directly into Won/Lost/Disqualified Lead (e.g. backfilling a historical
+ * outcome rather than dragging it through the pipeline) is shown the same way: as a same-period
+ * pass-through into New Tenders and straight back out via its outcome bucket, landing on
+ * whichever period its own (possibly backdated) closedDate/disqualifiedDate falls in. That keeps
+ * backfilled history visible on the chart instead of silently vanishing, while still netting to
+ * zero so it never distorts the end-of-period open total.
+ *
+ * A tender moved directly between two closed outcomes without passing back through an open stage
+ * first (e.g. Won -> Lost, correcting a mistaken win) is reclassified from its old bucket into its
+ * new one when that happens within THIS SAME period — see closedThisPeriod below — so it shows up
+ * under the outcome it actually ended this period on, not the one it passed through on the way.
+ * If it closed in an EARLIER period, this period's open-pipeline value was never affected by
+ * either move, so there's nothing for this bridge to show for it.
  */
+/** The three terminal pipeline outcomes a tender's value can leave the open pool through. */
+type ClosedBucket = 'won' | 'lost' | 'disqualified';
+
+function closedBucketFor(stage: Stage): ClosedBucket | null {
+  if (stage === 'Won') return 'won';
+  if (stage === 'Lost') return 'lost';
+  if (stage === 'Disqualified Lead') return 'disqualified';
+  return null;
+}
+
 export function pipelineValueBridge(
   entries: TenderHistoryEntry[],
   view: BridgeTimeView,
@@ -625,12 +643,21 @@ export function pipelineValueBridge(
   let newValue = 0;
   let wonValue = 0;
   let lostValue = 0;
+  let disqualifiedValue = 0;
   let removedValue = 0;
   let adjustValue = 0;
-  // Tenders closed (Won/Lost) earlier in THIS period, keyed by tenderId. When one of them moves
-  // back to an open stage before the period ends, we reverse its bucket entry here instead of
-  // also booking the reopen as a "new" tender — see the doc comment above.
-  const closedThisPeriod = new Map<string, { bucket: 'won' | 'lost'; amount: number }>();
+
+  function addToBucket(bucket: ClosedBucket, delta: number) {
+    if (bucket === 'won') wonValue += delta;
+    else if (bucket === 'lost') lostValue += delta;
+    else disqualifiedValue += delta;
+  }
+
+  // Tenders closed (Won/Lost/Disqualified Lead) earlier in THIS period, keyed by tenderId. When
+  // one of them moves back to an open stage before the period ends, we reverse its bucket entry
+  // here instead of also booking the reopen as a "new" tender; when it instead moves straight to
+  // a DIFFERENT closed outcome, we reclassify it into that bucket — see the doc comment above.
+  const closedThisPeriod = new Map<string, { bucket: ClosedBucket; amount: number }>();
 
   for (; i < sorted.length && sorted[i].timestamp < periodEnd; i++) {
     const e = sorted[i];
@@ -648,30 +675,26 @@ export function pipelineValueBridge(
     const nowOpen = OPEN_STAGES.includes(e.stage);
 
     if (e.type === 'created') {
+      const bucket = closedBucketFor(e.stage);
       if (nowOpen) {
         newValue += e.value;
-      } else if (e.stage === 'Won' || e.stage === 'Lost') {
-        // Backfilled straight into Won/Lost — never touched the open pool, but still show it as
-        // a same-period pass-through (added to New Tenders, immediately taken back out via the
-        // matching bucket) so backfilled history isn't invisible here. Tracked in
-        // closedThisPeriod too, in case it gets reopened later in this same period.
+      } else if (bucket) {
+        // Backfilled straight into a closed outcome — never touched the open pool, but still
+        // show it as a same-period pass-through (added to New Tenders, immediately taken back
+        // out via the matching bucket) so backfilled history isn't invisible here. Tracked in
+        // closedThisPeriod too, in case it gets reopened or reclassified later in this period.
         newValue += e.value;
-        if (e.stage === 'Won') {
-          wonValue -= e.value;
-          closedThisPeriod.set(e.tenderId, { bucket: 'won', amount: e.value });
-        } else {
-          lostValue -= e.value;
-          closedThisPeriod.set(e.tenderId, { bucket: 'lost', amount: e.value });
-        }
+        addToBucket(bucket, -e.value);
+        closedThisPeriod.set(e.tenderId, { bucket, amount: e.value });
       }
     } else if (e.type === 'stage_change') {
+      const prevBucket = prev ? closedBucketFor(prev.stage) : null;
+      const nowBucket = closedBucketFor(e.stage);
+
       if (prevOpen && !nowOpen) {
-        if (e.stage === 'Won') {
-          wonValue -= prevValue;
-          closedThisPeriod.set(e.tenderId, { bucket: 'won', amount: prevValue });
-        } else if (e.stage === 'Lost') {
-          lostValue -= prevValue;
-          closedThisPeriod.set(e.tenderId, { bucket: 'lost', amount: prevValue });
+        if (nowBucket) {
+          addToBucket(nowBucket, -prevValue);
+          closedThisPeriod.set(e.tenderId, { bucket: nowBucket, amount: prevValue });
         }
       } else if (!prevOpen && nowOpen) {
         const closedEntry = closedThisPeriod.get(e.tenderId);
@@ -679,12 +702,22 @@ export function pipelineValueBridge(
           // Same tender closed and reopened within this one period — cancel the earlier bucket
           // entry instead of double counting. A value that genuinely changed while it sat closed
           // (rare, but possible via a manual correction) still shows up as a real adjustment.
-          if (closedEntry.bucket === 'won') wonValue += closedEntry.amount;
-          else lostValue += closedEntry.amount;
+          addToBucket(closedEntry.bucket, closedEntry.amount);
           if (e.value !== closedEntry.amount) adjustValue += e.value - closedEntry.amount;
           closedThisPeriod.delete(e.tenderId);
         } else {
           newValue += e.value; // reopened from a stage closed in an EARLIER period — genuinely new to this period's open pool
+        }
+      } else if (!prevOpen && !nowOpen && prevBucket && nowBucket && prevBucket !== nowBucket) {
+        // Moved directly between two closed outcomes (e.g. Won -> Lost) without passing back
+        // through an open stage. Only reclassify if it closed within THIS period — otherwise the
+        // open-pipeline value was already accounted for in an earlier period and this move
+        // doesn't change it.
+        const closedEntry = closedThisPeriod.get(e.tenderId);
+        if (closedEntry) {
+          addToBucket(closedEntry.bucket, closedEntry.amount);
+          addToBucket(nowBucket, -e.value);
+          closedThisPeriod.set(e.tenderId, { bucket: nowBucket, amount: e.value });
         }
       } else if (prevOpen && nowOpen && prevValue !== e.value) {
         adjustValue += e.value - prevValue;
@@ -694,13 +727,15 @@ export function pipelineValueBridge(
     }
   }
 
-  const endValue = startValue + newValue + wonValue + lostValue + removedValue + adjustValue;
+  const endValue =
+    startValue + newValue + wonValue + lostValue + disqualifiedValue + removedValue + adjustValue;
   const { start: startLabel, end: endLabel } = periodBoundaryLabels(view);
 
   const bars: WaterfallBar[] = [{ label: startLabel, amount: startValue, kind: 'total' }];
   if (newValue !== 0) bars.push({ label: 'New Tenders', amount: newValue, kind: 'delta' });
   if (wonValue !== 0) bars.push({ label: 'Won', amount: wonValue, kind: 'delta' });
   if (lostValue !== 0) bars.push({ label: 'Lost', amount: lostValue, kind: 'delta' });
+  if (disqualifiedValue !== 0) bars.push({ label: 'Disqualified', amount: disqualifiedValue, kind: 'delta' });
   if (removedValue !== 0) bars.push({ label: 'Removed', amount: removedValue, kind: 'delta' });
   if (adjustValue !== 0) bars.push({ label: 'Value Adjustments', amount: adjustValue, kind: 'delta' });
   bars.push({ label: endLabel, amount: endValue, kind: 'total' });
