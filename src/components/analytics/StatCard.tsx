@@ -16,7 +16,7 @@ export default function StatCard({
     <div className="bg-white rounded-xl border border-slate-200 px-4 py-3.5">
       <p className="text-xs font-medium text-slate-500 leading-4 min-h-[2rem]">{label}</p>
       <p
-        className="text-2xl font-semibold mt-1 tabular-nums"
+        className="text-2xl font-semibold mt-1 tabular-nums break-words"
         style={{ color: accent || '#0b0b0b' }}
       >
         {value}

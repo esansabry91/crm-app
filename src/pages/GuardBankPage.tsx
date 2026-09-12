@@ -220,7 +220,7 @@ export default function GuardBankPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
+      <header className="px-6 py-5 bg-white sticky top-0 z-10">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-lg font-semibold text-slate-900">Guard Bank</h1>
@@ -258,7 +258,12 @@ export default function GuardBankPage() {
             )}
           </div>
         </div>
+      </header>
 
+      {/* Stat grid, tabs and filters scroll normally (not sticky, unlike the title bar above) —
+          on a short landscape-phone viewport this whole block plus the title bar can otherwise
+          exceed the entire visible height, permanently hiding the guard list below it. */}
+      <div className="px-6 pb-4 bg-white border-b border-slate-200">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
           <StatCard
             label="Total permanent hired"
@@ -393,7 +398,7 @@ export default function GuardBankPage() {
             </button>
           )}
         </div>
-      </header>
+      </div>
 
       {toast && (
         <div className="mx-6 mt-4 px-3.5 py-2 rounded-lg bg-emerald-50 text-emerald-700 text-sm">{toast}</div>

@@ -138,7 +138,7 @@ export default function AnalysisPage() {
         <p className="px-6 py-8 text-sm text-slate-400">Loading analytics…</p>
       ) : (
         <div className="px-6 py-6 space-y-6 max-w-6xl">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard
               label="Open Pipeline Value"
               value={formatRM(summary.openValue)}
