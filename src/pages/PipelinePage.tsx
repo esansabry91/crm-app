@@ -6,7 +6,7 @@ import { useUsers } from '../hooks/useUsers';
 import KanbanBoard from '../components/kanban/KanbanBoard';
 import TenderFormModal from '../components/tenders/TenderFormModal';
 import SubmissionDateModal from '../components/tenders/SubmissionDateModal';
-import { disqualifyTender, isTenderArchived, moveTenderStage } from '../services/tenders';
+import { disqualifyTender, isTenderArchived, moveTenderStage, requalifyTender } from '../services/tenders';
 import type { Tender } from '../types';
 import { formatRM } from '../utils/format';
 
@@ -45,7 +45,7 @@ export default function PipelinePage() {
 
   const handleDisqualify = async (tender: Tender) => {
     const confirmed = window.confirm(
-      `Disqualify "${tender.clientName}"? It will move straight to Disqualified Lead — this can only be undone by editing it and changing its stage back.`
+      `Disqualify "${tender.clientName}"? It will move straight to Disqualified Lead — this can only be undone by using its "Re-qualify" button.`
     );
     if (!confirmed) return;
     if (!profile) return;
@@ -53,6 +53,19 @@ export default function PipelinePage() {
       await disqualifyTender(tender, { uid: profile.uid, name: profile.name, role: profile.role });
     } catch (err) {
       window.alert(err instanceof Error ? err.message : 'Could not disqualify this lead.');
+    }
+  };
+
+  const handleRequalify = async (tender: Tender) => {
+    const confirmed = window.confirm(
+      `Re-qualify "${tender.clientName}"? It will move back to New Lead and re-enter the pipeline from the top.`
+    );
+    if (!confirmed) return;
+    if (!profile) return;
+    try {
+      await requalifyTender(tender, { uid: profile.uid, name: profile.name, role: profile.role });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Could not re-qualify this lead.');
     }
   };
 
@@ -106,6 +119,7 @@ export default function PipelinePage() {
               setModalOpen(true);
             }}
             onDisqualify={handleDisqualify}
+            onRequalify={handleRequalify}
             onDropStage={(tender, newStage) => {
               // Submission date is required exactly once, the moment a tender first reaches
               // Submitted — hold off on the actual stage move until SubmissionDateModal confirms

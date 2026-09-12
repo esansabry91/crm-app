@@ -7,13 +7,19 @@ export default function TenderCard({
   index,
   onClick,
   onDisqualify,
+  onRequalify,
   draggable,
+  canAct,
 }: {
   tender: Tender;
   index: number;
   onClick: () => void;
   onDisqualify: () => void;
+  onRequalify: () => void;
   draggable: boolean;
+  // Whether action buttons (Disqualify/Re-qualify) should show — independent of `draggable`,
+  // since a Disqualified Lead card is never draggable but still needs its Re-qualify button.
+  canAct: boolean;
 }) {
   const content = (
     <div
@@ -47,7 +53,7 @@ export default function TenderCard({
       <div className="mt-2 pt-2 border-t border-slate-100 text-[11px] text-slate-500 truncate">
         {tender.ownerName}
       </div>
-      {tender.stage === 'New Lead' && draggable && (
+      {tender.stage === 'New Lead' && canAct && (
         <button
           type="button"
           onClick={(e) => {
@@ -59,6 +65,19 @@ export default function TenderCard({
           className="mt-2 w-full text-[11px] font-medium text-stone-500 hover:text-stone-700 hover:bg-stone-50 border border-stone-200 rounded-md py-1 transition"
         >
           Disqualify
+        </button>
+      )}
+      {tender.stage === 'Disqualified Lead' && canAct && (
+        <button
+          type="button"
+          onClick={(e) => {
+            // Same reasoning as the Disqualify button above — this card is also clickable.
+            e.stopPropagation();
+            onRequalify();
+          }}
+          className="mt-2 w-full text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-md py-1 transition"
+        >
+          Re-qualify
         </button>
       )}
     </div>

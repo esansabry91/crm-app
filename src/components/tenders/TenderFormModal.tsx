@@ -5,6 +5,7 @@ import {
   createTender,
   deleteTender,
   moveTenderStage,
+  requalifyTender,
   setClosedDate,
   setSubmittedDate,
   updateTender,
@@ -209,6 +210,23 @@ export default function TenderFormModal({
     }
   };
 
+  // Same action as the "Re-qualify" button on the Kanban card (see TenderCard.tsx) — repeated
+  // here so a Disqualified Lead tender that's aged onto the Archive page (and so no longer has a
+  // Kanban card at all) still has a way back into the pipeline instead of being stuck forever.
+  const handleRequalify = async () => {
+    if (!editing) return;
+    if (!confirm(`Re-qualify "${editing.clientName}"? It will move back to New Lead and re-enter the pipeline from the top.`)) return;
+    setSaving(true);
+    try {
+      await requalifyTender(editing, { uid: profile.uid, name: profile.name, role: profile.role });
+      onClose();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Could not re-qualify this lead.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
@@ -293,8 +311,20 @@ export default function TenderFormModal({
               />
             </Field>
             <Field label="Stage">
-              <select value={stage} onChange={(e) => setStage(e.target.value as Stage)} className="input">
-                {STAGES.filter((s) => s !== 'Disqualified Lead' || editing?.stage === 'Disqualified Lead').map((s) => (
+              {/* Disqualified Lead is sealed on both sides: never a dropdown target (so it can't
+                  be picked casually), and — once a tender IS Disqualified Lead — locked read-only
+                  here too, so the only way back out is the confirmed "Re-qualify" button on its
+                  Kanban card (see requalifyTender() in services/tenders.ts). */}
+              <select
+                value={stage}
+                onChange={(e) => setStage(e.target.value as Stage)}
+                disabled={editing?.stage === 'Disqualified Lead'}
+                className="input disabled:bg-slate-50 disabled:text-slate-500"
+              >
+                {(editing?.stage === 'Disqualified Lead'
+                  ? (['Disqualified Lead'] as Stage[])
+                  : STAGES.filter((s) => s !== 'Disqualified Lead')
+                ).map((s) => (
                   <option key={s} value={s}>
                     {s}
                   </option>
@@ -322,9 +352,18 @@ export default function TenderFormModal({
             <Field label="Disqualified on">
               <p className="text-sm text-slate-600">{formatDate(editing.disqualifiedDate)}</p>
               <span className="block text-xs text-slate-400 mt-1">
-                Set automatically when this lead was disqualified — not editable here. Change the
-                Stage above to move it out of Disqualified Lead if this was done in error.
+                Set automatically when this lead was disqualified. Stage can't be changed from
+                here — use "Re-qualify" below (or its card in the Sales Funnel Pipeline) to send
+                it back to New Lead instead.
               </span>
+              <button
+                type="button"
+                onClick={handleRequalify}
+                disabled={saving}
+                className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-60"
+              >
+                Re-qualify
+              </button>
             </Field>
           )}
 

@@ -9,18 +9,25 @@ export default function KanbanColumn({
   tenders,
   onCardClick,
   onDisqualify,
+  onRequalify,
   canDrag,
 }: {
   stage: Stage;
   tenders: Tender[];
   onCardClick: (t: Tender) => void;
   onDisqualify: (t: Tender) => void;
+  onRequalify: (t: Tender) => void;
   canDrag: boolean;
 }) {
   // Disqualified Lead is only ever reached via the confirmed "Disqualify" button on a New Lead
   // card (see onDisqualify/TenderCard.tsx) — never a drag, from any column, so this column's
   // drop target is disabled unconditionally rather than gated on canDrag like the others.
   const dropDisabled = !canDrag || stage === 'Disqualified Lead';
+  // And it's sealed on the way out too: a Disqualified Lead card can't be picked up and dragged
+  // anywhere at all — the confirmed "Re-qualify" button (see onRequalify/TenderCard.tsx) is the
+  // only way out, and it always lands on New Lead. Contrast with Won/Lost, which stay draggable
+  // but need an extra confirmation (see KanbanBoard's wasTerminal check).
+  const cardDraggable = canDrag && stage !== 'Disqualified Lead';
   const colors = STAGE_COLORS[stage];
   const totalValue = tenders.reduce((s, t) => s + (t.tenderValue || 0), 0);
 
@@ -53,9 +60,11 @@ export default function KanbanColumn({
                 key={t.id}
                 tender={t}
                 index={i}
-                draggable={canDrag}
+                draggable={cardDraggable}
+                canAct={canDrag}
                 onClick={() => onCardClick(t)}
                 onDisqualify={() => onDisqualify(t)}
+                onRequalify={() => onRequalify(t)}
               />
             ))}
             {provided.placeholder}

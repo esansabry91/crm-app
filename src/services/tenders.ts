@@ -196,6 +196,7 @@ export async function moveTenderStage(
  * KanbanColumn disables dropping into that column entirely, so a disqualification can never
  * happen as a casual dropdown pick or an accidental drag — only this explicit, confirmed action.
  * Throws if the tender isn't currently New Lead (defense in depth behind the UI's own gating).
+ * See requalifyTender() below for the (equally sealed) way back out.
  */
 export async function disqualifyTender(tender: Tender, actor: Actor): Promise<void> {
   if (tender.stage !== 'New Lead') {
@@ -211,6 +212,38 @@ export async function disqualifyTender(tender: Tender, actor: Actor): Promise<vo
     type: 'stage_change',
     stage: 'Disqualified Lead',
     fromStage: 'New Lead',
+    value: tender.tenderValue,
+    changedByUid: actor.uid,
+    changedByName: actor.name,
+    ownerUid: tender.ownerUid,
+  });
+}
+
+/**
+ * Moves a Disqualified Lead back to New Lead — the ONLY path out of that stage. The "Re-qualify"
+ * button on a Disqualified Lead card (see TenderCard.tsx) is the sole caller, gated behind a
+ * window.confirm() first. Disqualified Lead is deliberately sealed on both sides: KanbanColumn
+ * makes its cards undraggable (so there's no drag-out path) and TenderFormModal locks the Stage
+ * dropdown to read-only whenever a tender is in this stage (so there's no dropdown-out path
+ * either) — this function, and only this function, is how a disqualified lead re-enters the
+ * pipeline, and it always lands back at New Lead so the tender is "processed to go through the
+ * pipeline accordingly" from the top rather than being droppable straight into some later stage.
+ * Throws if the tender isn't currently Disqualified Lead (defense in depth behind the UI's own
+ * gating).
+ */
+export async function requalifyTender(tender: Tender, actor: Actor): Promise<void> {
+  if (tender.stage !== 'Disqualified Lead') {
+    throw new Error('Only a Disqualified Lead can be re-qualified.');
+  }
+  await updateDoc(doc(db, 'tenders', tender.id), {
+    stage: 'New Lead',
+    disqualifiedDate: null,
+    updatedAt: Date.now(),
+  });
+  await addHistoryEntry(tender.id, {
+    type: 'stage_change',
+    stage: 'New Lead',
+    fromStage: 'Disqualified Lead',
     value: tender.tenderValue,
     changedByUid: actor.uid,
     changedByName: actor.name,
