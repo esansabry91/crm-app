@@ -11,6 +11,7 @@ const ROLE_LABELS: Record<string, string> = {
   admin: 'HQ Admin',
   dutyStaff: 'Staff',
   payroll: 'Payroll',
+  developer: 'Developer',
 };
 function roleLabel(role: string): string {
   return ROLE_LABELS[role] || role;
@@ -171,6 +172,7 @@ export default function UserManager() {
             <option value="admin">HQ Admin — sees everything</option>
             <option value="dutyStaff">Staff — Duty Roster only, nothing else</option>
             <option value="payroll">Payroll — Duty Roster only, view &amp; export only, all branches</option>
+            <option value="developer">Developer — full access like HQ Admin, but every record it creates is auto-tagged as test data</option>
           </select>
           <select value={department} onChange={(e) => setDepartment(e.target.value)} className="input">
             {departmentOptions.map((d) => (
@@ -220,6 +222,7 @@ export default function UserManager() {
                       <option value="admin">HQ Admin</option>
                       <option value="dutyStaff">Staff</option>
                       <option value="payroll">Payroll</option>
+                      <option value="developer">Developer</option>
                     </select>
                   </td>
                   <td className="py-2 pr-4">

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { Tender, UserProfile } from '../types';
+import { isAdminRole } from '../types';
 
 /**
  * Subscribes to every Won tender scoped by who's asking — the shared subscription behind both
@@ -19,7 +20,7 @@ export function useWonTenders(profile: UserProfile | null) {
   const [wonTenders, setWonTenders] = useState<Tender[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const seesAllBranches = profile?.role === 'admin' || profile?.department === 'HQ';
+  const seesAllBranches = isAdminRole(profile?.role) || profile?.department === 'HQ';
 
   useEffect(() => {
     if (!profile) {

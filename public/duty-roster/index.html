@@ -1142,6 +1142,7 @@
     myRole: null,          // this signed-in user's CRM role
     isPrivileged: false,   // admin, or department "HQ" — reaches every branch's sites, like elsewhere in the CRM
     isPayroll: false,       // "payroll" role — reaches every branch's sites like a privileged user, but strictly view/export only
+    isDeveloper: false,     // "developer" role — full access like isPrivileged, but forces isTestData:true on everything it creates (see initDb())
     canEdit: true,          // false for payroll — drives the read-only lockdown
     branchFilterValue: "", // currently selected branch in the sitebar's branch filter dropdown (Admin/HQ/Payroll only — "" = all)
     showArchivedSites: false, // "Show archived" checkbox in the sitebar (Admin/HQ/Payroll only) — a closed-out project's site is hidden from the Client Site dropdown by default, this brings it back on demand for historical records/payroll export
@@ -4663,7 +4664,7 @@
     // unassigned; anyone else can only ever create a site for their own branch — mirrored
     // and enforced server-side in firestore.rules' canReachSite().
     const assignedBranch = (state.isPrivileged && !state.isPayroll) ? (branch || null) : (state.myDepartment || null);
-    const cfg = { id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false, archivedAt: null, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, isTestData: !!state.testingModeEnabled, createdAt: nowIso(), updatedAt: nowIso() };
+    const cfg = { id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false, archivedAt: null, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, isTestData: !!(state.testingModeEnabled || state.isDeveloper), createdAt: nowIso(), updatedAt: nowIso() };
     state.sites.push({id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false});
     state.configsCache[id] = cfg;
     if(dbHandle) dbHandle.doc("sites/"+id).set(cfg).catch(()=>{});
@@ -4956,7 +4957,7 @@
           existingDoc.ref.set(payload, {merge:true}).catch(()=>{});
         } else {
           payload.createdAt = now;
-          payload.isTestData = !!state.testingModeEnabled;
+          payload.isTestData = !!(state.testingModeEnabled || state.isDeveloper);
           dbHandle.collection("guards").add(payload).catch(()=>{});
         }
       });
@@ -4978,7 +4979,7 @@
             status: "dismissed", siteId: state.currentSiteId, siteName: site.name || null,
             branch: site.branch || null, brandId: brand.brandId, brandName: brand.brandName,
             dismissalReason: reason, dismissedAt: now, createdAt: now, updatedAt: now,
-            isTestData: !!state.testingModeEnabled
+            isTestData: !!(state.testingModeEnabled || state.isDeveloper)
           });
           dbHandle.collection("guards").add(payload).catch(()=>{});
         });
@@ -5017,7 +5018,7 @@
       } else {
         // Guard predates Guard Bank tracking -- create the pool record now so they're still
         // reachable for reassignment elsewhere instead of silently going untracked.
-        const created = Object.assign(guardBankIdentityFields(g), payload, { createdAt: now, isTestData: !!state.testingModeEnabled });
+        const created = Object.assign(guardBankIdentityFields(g), payload, { createdAt: now, isTestData: !!(state.testingModeEnabled || state.isDeveloper) });
         dbHandle.collection("guards").add(created).catch(()=>{});
       }
     });
@@ -5083,7 +5084,7 @@
           ref.set(Object.assign({}, patch, { timesUsed: prevUsed + 1 }), {merge:true}).catch(()=>{});
         } else {
           dbHandle.collection("bufferGuards").add(Object.assign({ name: entry.name }, patch, {
-            firstUsedAt: now, timesUsed: 1, isTestData: !!state.testingModeEnabled
+            firstUsedAt: now, timesUsed: 1, isTestData: !!(state.testingModeEnabled || state.isDeveloper)
           })).catch(()=>{});
         }
       })
@@ -5273,7 +5274,13 @@
         }
         state.myUid = authUser.uid;
       }
-      state.isPrivileged = state.myRole === "admin" || state.myDepartment === "HQ";
+      state.isPrivileged = state.myRole === "admin" || state.myRole === "developer" || state.myDepartment === "HQ";
+      // Dedicated testing account (see Role's doc comment in src/types.ts) — full access like
+      // admin/HQ (already covered by isPrivileged above), but every site/guard it creates here
+      // gets auto-tagged isTestData:true regardless of state.testingModeEnabled, so testing under
+      // this account never mixes into real branches'/staff's genuine data. See
+      // shouldStampTestData() in src/services/settings.ts for the CRM-side equivalent.
+      state.isDeveloper = state.myRole === "developer";
       // "Payroll" is a strictly view/export-only role: it reaches every branch's sites like a
       // privileged user (so it must be included in the unfiltered query below), but it must
       // never be treated as privileged elsewhere — it doesn't get "+ New site"/Rename/Delete

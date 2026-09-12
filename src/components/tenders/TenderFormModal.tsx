@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Branch, Brand, Stage, Tender, UserProfile } from '../../types';
-import { STAGES } from '../../types';
+import { STAGES, isAdminRole } from '../../types';
 import {
   createTender,
   deleteTender,
@@ -31,7 +31,7 @@ export default function TenderFormModal({
   staffOptions,
   editing,
 }: Props) {
-  const isAdmin = profile.role === 'admin';
+  const isAdmin = isAdminRole(profile.role);
   const departmentOptions = ['HQ', ...branches.map((b) => b.name)];
 
   const [clientName, setClientName] = useState('');

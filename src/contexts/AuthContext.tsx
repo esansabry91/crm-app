@@ -9,6 +9,7 @@ import {
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import type { UserProfile } from '../types';
+import { isAdminRole } from '../types';
 
 interface AuthContextValue {
   firebaseUser: User | null;
@@ -77,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         firebaseUser,
         profile,
         loading: !authResolved || (!!firebaseUser && !profileResolved),
-        isAdmin: profile?.role === 'admin',
+        isAdmin: isAdminRole(profile?.role),
         login,
         logout,
         resetPassword,

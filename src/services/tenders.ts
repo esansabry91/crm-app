@@ -12,8 +12,9 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { releaseGuardsFromSite } from './guards';
-import { getTestingModeEnabled } from './settings';
+import { shouldStampTestData } from './settings';
 import type { Role, Stage, Tender } from '../types';
+import { isAdminRole } from '../types';
 
 /** Actor performing an action — `role` is optional only for call-site back-compat; every real
  *  caller passes it. */
@@ -28,7 +29,7 @@ type Actor = { uid: string; name: string; role?: Role };
  * the submitting branch (`department`) as a convenience.
  */
 function defaultActiveBranchOnWin(department: string, actorRole: Role | undefined): string | null {
-  if (actorRole === 'admin') return null;
+  if (isAdminRole(actorRole)) return null;
   if (department === 'HQ') return null;
   return department;
 }
@@ -85,8 +86,9 @@ export async function createTender(
   const isClosed = input.stage === 'Won' || input.stage === 'Lost';
   const historyTimestamp = isClosed && input.closedDate ? closedDateToMillis(input.closedDate) : now;
   // See Tender.isTestData's doc comment in types.ts — stamped once, at creation, from whatever
-  // Testing Mode was set to at that moment.
-  const isTestData = await getTestingModeEnabled();
+  // Testing Mode was set to at that moment, OR'd with whether the creating account is itself a
+  // 'developer' account (see shouldStampTestData()'s doc comment in services/settings.ts).
+  const isTestData = await shouldStampTestData(actor.role);
 
   // Firestore's addDoc() rejects fields explicitly set to `undefined` — closedDate/submittedDate
   // are optional and undefined for most tenders, so they must be omitted entirely rather than

@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTenders } from '../hooks/useTenders';
 import { useTenderHistory } from '../hooks/useTenderHistory';
 import { useBranches, useBrands } from '../hooks/useBranches';
+import { isAdminRole } from '../types';
 import {
   brandBreakdown,
   buildRaceFrames,
@@ -105,7 +106,7 @@ export default function AnalysisPage() {
   // choices that all return the same data except one. Scope the header dropdown itself to just
   // their branch; departmentOptions above stays company-wide since it also feeds the admin-only
   // race chart's colorDomain further down.
-  const deptFilterOptions = profile.role === 'admin' ? departmentOptions : [profile.department];
+  const deptFilterOptions = isAdminRole(profile.role) ? departmentOptions : [profile.department];
 
   return (
     <div className="h-full overflow-y-auto">
@@ -117,7 +118,7 @@ export default function AnalysisPage() {
         {headerExpanded && (
           <div className="flex items-center justify-between gap-4 flex-wrap mt-2">
             <p className="text-sm text-slate-500">
-              {profile.role === 'admin' ? 'All branches · all staff' : 'Your tenders'}
+              {isAdminRole(profile.role) ? 'All branches · all staff' : 'Your tenders'}
             </p>
             <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
               <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-full sm:w-40">
@@ -243,7 +244,7 @@ export default function AnalysisPage() {
             <BrandBreakdownSection rows={brandRows} />
           </Card>
 
-          {profile.role === 'admin' && (
+          {isAdminRole(profile.role) && (
             <>
               <Card title="Tender Won/Submitted — Value Over Time">
                 <RaceBarChart

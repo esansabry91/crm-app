@@ -22,6 +22,7 @@ import { formatDate, formatDateTime, formatRM } from '../utils/format';
 import HeaderCollapseToggle from '../components/layout/HeaderCollapseToggle';
 import { VIZ } from '../utils/vizColors';
 import type { BufferGuard, Guard } from '../types';
+import { isAdminRole } from '../types';
 
 const TABS = ['Guard Pool', 'Deployed Guards', 'Dismissed Guards', 'Buffer Guards'] as const;
 type Tab = (typeof TABS)[number];
@@ -278,7 +279,7 @@ export default function GuardBankPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            {profile?.role === 'admin' && (
+            {isAdminRole(profile?.role) && (
               <button
                 onClick={runDutyRosterSync}
                 disabled={backfilling}
@@ -512,7 +513,7 @@ export default function GuardBankPage() {
                         >
                           Assign to site
                         </button>
-                        {profile?.role === 'admin' && (
+                        {isAdminRole(profile?.role) && (
                           <button
                             onClick={() => removeFromPool(g)}
                             disabled={removingGuardId === g.id}
@@ -630,7 +631,7 @@ export default function GuardBankPage() {
                         >
                           View
                         </button>
-                        {profile?.role === 'admin' && (
+                        {isAdminRole(profile?.role) && (
                           <button
                             onClick={() => archiveDismissed(g)}
                             disabled={archivingGuardId === g.id}
@@ -720,7 +721,7 @@ export default function GuardBankPage() {
                         >
                           View
                         </button>
-                        {profile?.role === 'admin' && (
+                        {isAdminRole(profile?.role) && (
                           <button
                             onClick={() => removeBuffer(bg)}
                             disabled={removingBufferId === bg.id}

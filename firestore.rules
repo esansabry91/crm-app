@@ -11,11 +11,14 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(uid));
     }
 
-    // True only for a signed-in user whose /users/{uid} profile exists, has role "admin",
-    // and has not been deactivated.
+    // True only for a signed-in user whose /users/{uid} profile exists, has role "admin" or
+    // "developer" (the account owner's own dedicated testing role — same access as admin, but
+    // its own writes get auto-tagged isTestData: true client-side; see Role's doc comment in
+    // src/types.ts and shouldStampTestData() in src/services/settings.ts), and has not been
+    // deactivated.
     function isAdmin() {
       return isSignedIn()
-        && userDoc(request.auth.uid).data.role == 'admin'
+        && (userDoc(request.auth.uid).data.role == 'admin' || userDoc(request.auth.uid).data.role == 'developer')
         && userDoc(request.auth.uid).data.active != false;
     }
 

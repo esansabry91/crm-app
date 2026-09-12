@@ -11,6 +11,7 @@ import { formatDate, formatRM } from '../utils/format';
 import HeaderCollapseToggle from '../components/layout/HeaderCollapseToggle';
 import { VIZ } from '../utils/vizColors';
 import type { Stage, Tender } from '../types';
+import { isAdminRole } from '../types';
 
 const ARCHIVE_STAGES: Stage[] = ['Won', 'Lost', 'Disqualified Lead'];
 
@@ -35,7 +36,7 @@ export default function ArchivePage() {
   const [modalOpen, setModalOpen] = useState(false);
 
   const staffOptions = useMemo(
-    () => (profile?.role === 'admin' ? users.filter((u) => u.active !== false) : profile ? [profile] : []),
+    () => (isAdminRole(profile?.role) ? users.filter((u) => u.active !== false) : profile ? [profile] : []),
     [profile, users]
   );
 

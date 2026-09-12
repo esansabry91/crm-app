@@ -31,6 +31,7 @@ import WaterfallChart from '../components/analytics/WaterfallChart';
 import RaceBarChart from '../components/analytics/RaceBarChart';
 import { VIZ } from '../utils/vizColors';
 import type { Tender } from '../types';
+import { isAdminRole } from '../types';
 
 const ENDING_SOON_DAYS = 60;
 
@@ -134,7 +135,7 @@ export default function ActiveProjectsPage() {
   const [raceTimeView, setRaceTimeView] = useState<RaceTimeView>('alltime');
   const [raceMetric, setRaceMetric] = useState<ActiveProjectRaceMetric>('value');
 
-  const isAdmin = profile?.role === 'admin';
+  const isAdmin = isAdminRole(profile?.role);
   const branchNames = useMemo(() => branches.map((b) => b.name), [branches]);
 
   // One-time-per-tender opportunistic backfill for Won tenders that predate Active Projects and

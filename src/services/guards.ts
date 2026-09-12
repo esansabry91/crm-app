@@ -12,7 +12,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { getTestingModeEnabled } from './settings';
+import { shouldStampTestData } from './settings';
 import type { BufferGuard, Guard } from '../types';
 
 /**
@@ -89,8 +89,9 @@ export async function registerGuard(input: GuardIdentityInput): Promise<string> 
     );
   }
   const now = Date.now();
-  // See Guard.isTestData's doc comment in types.ts.
-  const isTestData = await getTestingModeEnabled();
+  // See Guard.isTestData's doc comment in types.ts — see shouldStampTestData()'s doc comment
+  // in services/settings.ts for why this isn't just the global Testing Mode toggle.
+  const isTestData = await shouldStampTestData();
   const ref = await addDoc(guardsCollection(), {
     name: input.name,
     employeeId: input.employeeId,
@@ -151,8 +152,9 @@ export async function registerBufferGuard(input: BufferGuardIdentityInput): Prom
     );
   }
   const now = Date.now();
-  // See BufferGuard.isTestData's doc comment in types.ts.
-  const isTestData = await getTestingModeEnabled();
+  // See BufferGuard.isTestData's doc comment in types.ts — see shouldStampTestData()'s doc
+  // comment in services/settings.ts for why this isn't just the global Testing Mode toggle.
+  const isTestData = await shouldStampTestData();
   const ref = await addDoc(bufferGuardsCollection(), {
     name,
     rate: input.rate,

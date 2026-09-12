@@ -16,7 +16,21 @@
  * in firestore.rules (isPayroll() is read-only everywhere); this Role value is just what routes
  * an account into that mode.
  */
-export type Role = 'admin' | 'branchManager' | 'dutyStaff' | 'payroll';
+export type Role = 'admin' | 'branchManager' | 'dutyStaff' | 'payroll' | 'developer';
+
+/**
+ * True for any role that should get full administrative access throughout the app — currently
+ * 'admin' and 'developer'. 'developer' exists purely so the account owner can sign in as a
+ * dedicated testing account with the exact same access as a real admin, while every record it
+ * creates gets auto-tagged isTestData: true (see getTestingModeEnabled()/shouldStampTestData()
+ * in services/settings.ts) regardless of the global Testing Mode toggle — so testing under this
+ * role never gets mixed up with genuine data real staff/admin accounts create at the same time.
+ * Always use this helper instead of comparing `role === 'admin'` directly, so a developer
+ * account is never accidentally left out of an admin-gated check.
+ */
+export function isAdminRole(role: Role | string | undefined | null): boolean {
+  return role === 'admin' || role === 'developer';
+}
 
 /** The 8 fixed pipeline stages, in kanban column order. */
 export const STAGES = [

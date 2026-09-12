@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { isAdminRole } from '../../types';
 import clsx from 'clsx';
 
 const navItemClass = ({ isActive }: { isActive: boolean }) =>
@@ -76,7 +77,7 @@ function NavContent({ onNavigate }: { onNavigate: () => void }) {
             <span aria-hidden>🗓️</span> Duty Roster
           </NavLink>
         )}
-        {profile?.role === 'admin' && (
+        {isAdminRole(profile?.role) && (
           <NavLink to="/admin" className={navItemClass} onClick={onNavigate}>
             <span aria-hidden>⚙️</span> Admin Settings
           </NavLink>
@@ -88,11 +89,13 @@ function NavContent({ onNavigate }: { onNavigate: () => void }) {
         <p className="text-xs text-slate-400 truncate">
           {profile?.role === 'admin'
             ? 'HQ Admin'
-            : profile?.role === 'dutyStaff'
-              ? 'Staff'
-              : profile?.role === 'payroll'
-                ? 'Payroll'
-                : 'Branch Manager'}{' '}
+            : profile?.role === 'developer'
+              ? 'Developer'
+              : profile?.role === 'dutyStaff'
+                ? 'Staff'
+                : profile?.role === 'payroll'
+                  ? 'Payroll'
+                  : 'Branch Manager'}{' '}
           ·{' '}
           {profile?.department}
         </p>

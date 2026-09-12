@@ -9,6 +9,7 @@ import TenderFormModal from '../components/tenders/TenderFormModal';
 import SubmissionDateModal from '../components/tenders/SubmissionDateModal';
 import { disqualifyTender, isTenderArchived, moveTenderStage, requalifyTender } from '../services/tenders';
 import type { Tender } from '../types';
+import { isAdminRole } from '../types';
 import { formatRM } from '../utils/format';
 
 export default function PipelinePage() {
@@ -28,7 +29,7 @@ export default function PipelinePage() {
   const [headerExpanded, setHeaderExpanded] = useState(true);
 
   const staffOptions = useMemo(
-    () => (profile?.role === 'admin' ? users.filter((u) => u.active !== false) : profile ? [profile] : []),
+    () => (isAdminRole(profile?.role) ? users.filter((u) => u.active !== false) : profile ? [profile] : []),
     [profile, users]
   );
 

@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { isAdminRole } from '../../types';
 
 export default function ProtectedRoute({
   children,
@@ -65,7 +66,7 @@ export default function ProtectedRoute({
     return <Navigate to="/duty-roster" replace />;
   }
 
-  if (adminOnly && profile?.role !== 'admin') {
+  if (adminOnly && !isAdminRole(profile?.role)) {
     return <Navigate to="/pipeline" replace />;
   }
 
