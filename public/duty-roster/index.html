@@ -2239,14 +2239,20 @@
 
     const out = [header, ...rows];
 
-    // Temporary/relief guards, listed separately below the permanent roster — only their own
-    // man-hours are meaningful here, but those hours still roll into the grand total below.
+    // Temporary/relief guards, listed separately below the permanent roster — bill the same
+    // way Support guards do (see supportGuardRate()), and that Rate/Amount plus their man-hours
+    // roll into the grand total below, same as the on-screen Summary Report.
     if(tempIds.length){
       out.push(["", "Temporary guards this month", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
       tempIds.forEach(id => {
         const s = summary[id] || {};
         totals.manHours += n(s.manHours);
-        out.push(["", `${(tempGuards[id]||{}).name || "(unknown)"} (Temp)`, n(s.manHours), "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+        const rate = supportGuardRate();
+        const amount = rate != null ? rate * n(s.manHours) : null;
+        addToRateGroup(rate, s.manHours);
+        totals.amount += n(amount);
+        out.push(["", `${(tempGuards[id]||{}).name || "(unknown)"} (Temp)`, n(s.manHours), "", "", "", "", "", "", "", "", "", "", "",
+          rate != null ? rate : "", amount != null ? amount : ""]);
       });
     }
 
@@ -2488,7 +2494,7 @@
     s.manHours += hours;
     if(isHoliday){
       s.holidayDaysWorked++;
-      s.holidayOTHours += hours;
+      s.holidayOTHours += Math.max(0, hours - normalThreshold);
     } else {
       s._nonHolidayWorked = (s._nonHolidayWorked || 0) + 1;
       if(s._nonHolidayWorked <= NORMAL_WORK_DAYS){
@@ -2496,7 +2502,7 @@
         s.normalOTHours += Math.max(0, hours - normalThreshold);
       } else {
         s.restDaysWorked++;
-        s.restOTHours += hours;
+        s.restOTHours += Math.max(0, hours - normalThreshold);
       }
     }
   }
@@ -2734,9 +2740,11 @@
       </tr>`;
     });
 
-    // Temporary/relief guards get their own section below the permanent roster — just their
-    // own man-hours for the month (the other columns don't apply to one-off coverage), but
-    // their man-hours still feed into the grand total below so the overall figure is complete.
+    // Temporary/relief guards get their own section below the permanent roster — the other
+    // per-day columns don't apply to one-off coverage, but they bill like Support guards do:
+    // same flat rate as everyone else in 'same' mode, or the lowest listed position rate in
+    // 'multiple' mode, via supportGuardRate() — and their man-hours + amount feed the grand
+    // total below so the overall figure (and invoice) is complete.
     let tempSection = "";
     if(tempIds.length){
       tempSection += `<tr><td colspan="15" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Temporary guards this month</td></tr>`;
@@ -2744,11 +2752,18 @@
         const s = summary[id] || {};
         const name = (tempGuards[id] || {}).name || "(unknown)";
         totals.manHours += n(s.manHours);
+        const rate = supportGuardRate();
+        const amount = rate != null ? rate * n(s.manHours) : null;
+        if(rate == null) anyMissingRate = true;
+        addToRateGroup(rate, s.manHours);
+        totals.amount += n(amount);
         return `<tr>
           <td class="mono">—</td>
           <td>${escapeHtml(name)} <span style="color:var(--muted, #64748b);font-size:12px;">(Temp)</span></td>
           <td class="mono">${h(s.manHours)}</td>
-          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
+          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
+          <td class="mono">${rate != null ? rm(rate) : "—"}</td>
+          <td class="mono">${amount != null ? rm(amount) : "—"}</td>
         </tr>`;
       }).join("");
     }
@@ -2831,7 +2846,7 @@
         + (holidayCount
             ? `${holidayCount} public holiday${holidayCount===1?"":"s"} marked this month. `
             : `No public holidays marked this month — add them in Guards & Shifts if this month has any. `)
-        + ((guards.length || supportIds.length) && anyMissingRate
+        + ((guards.length || tempIds.length || supportIds.length) && anyMissingRate
             ? `Some guards have no billing rate resolved — set one up in this project's Project Details, and give each guard a matching Position if it bills by position; their Amount is excluded from the total until then.`
             : ``);
     }
