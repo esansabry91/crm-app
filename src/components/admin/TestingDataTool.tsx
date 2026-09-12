@@ -14,7 +14,9 @@ interface RawSite {
   name: string;
   branch: string | null;
   archived: boolean;
-  isTestData: boolean;
+  /** undefined = never reviewed by this tool yet (see the "not yet sorted" sections below) —
+   *  kept tri-state on purpose, so don't coerce with !!. */
+  isTestData: boolean | undefined;
   createdAt: string;
 }
 
@@ -33,7 +35,7 @@ function useRawSites() {
               name: (data.name as string) || 'Untitled site',
               branch: (data.branch as string) ?? null,
               archived: !!data.archived,
-              isTestData: !!data.isTestData,
+              isTestData: typeof data.isTestData === 'boolean' ? data.isTestData : undefined,
               createdAt: (data.createdAt as string) || '',
             };
           })
@@ -113,16 +115,33 @@ export default function TestingDataTool() {
   const { bufferGuards } = useBufferGuards();
   const { sites } = useRawSites();
 
-  const untaggedTenders = useMemo(() => tenders.filter((t) => !t.isTestData), [tenders]);
-  const untaggedGuards = useMemo(() => guards.filter((g) => !g.isTestData), [guards]);
-  const untaggedBuffer = useMemo(() => bufferGuards.filter((b) => !b.isTestData), [bufferGuards]);
-  const untaggedSites = useMemo(() => sites.filter((s) => !s.isTestData), [sites]);
+  const untaggedTenders = useMemo(() => tenders.filter((t) => t.isTestData === undefined), [tenders]);
+  const untaggedGuards = useMemo(() => guards.filter((g) => g.isTestData === undefined), [guards]);
+  const untaggedBuffer = useMemo(() => bufferGuards.filter((b) => b.isTestData === undefined), [bufferGuards]);
+  const untaggedSites = useMemo(() => sites.filter((s) => s.isTestData === undefined), [sites]);
 
   const taggedCount =
     tenders.filter((t) => t.isTestData).length +
     guards.filter((g) => g.isTestData).length +
     bufferGuards.filter((b) => b.isTestData).length +
     sites.filter((s) => s.isTestData).length;
+
+  const [confirmBusyKey, setConfirmBusyKey] = useState<string | null>(null);
+
+  /**
+   * Bulk-confirms every record in one "not yet sorted" list as genuine (isTestData: false) in
+   * one shot, instead of clicking "Mark as test data" past each of them one at a time. Once
+   * written, each record has an explicit isTestData value and permanently drops out of its
+   * "not yet sorted" list — see the untagged-list filters (isTestData === undefined) above.
+   */
+  async function confirmAllReal(key: string, ids: string[], writeOne: (id: string) => Promise<void>) {
+    setConfirmBusyKey(key);
+    try {
+      await Promise.all(ids.map(writeOne));
+    } finally {
+      setConfirmBusyKey(null);
+    }
+  }
 
   const [resetBusy, setResetBusy] = useState(false);
   const [resetMessage, setResetMessage] = useState<{ text: string; isError: boolean } | null>(null);
@@ -242,12 +261,27 @@ export default function TestingDataTool() {
         <>
           {untaggedTenders.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <h4 className="text-sm font-semibold text-slate-800 mb-1">
-                Tenders not yet sorted ({untaggedTenders.length})
-              </h4>
+              <div className="flex items-start justify-between gap-3 mb-1">
+                <h4 className="text-sm font-semibold text-slate-800">
+                  Tenders not yet sorted ({untaggedTenders.length})
+                </h4>
+                <button
+                  onClick={() =>
+                    confirmAllReal(
+                      'tenders',
+                      untaggedTenders.map((t) => t.id),
+                      (id) => updateDoc(doc(db, 'tenders', id), { isTestData: false, updatedAt: Date.now() })
+                    )
+                  }
+                  disabled={confirmBusyKey === 'tenders'}
+                  className="shrink-0 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 rounded px-2.5 py-1 border border-emerald-200"
+                >
+                  {confirmBusyKey === 'tenders' ? 'Confirming…' : 'Confirm all as real data'}
+                </button>
+              </div>
               <p className="text-xs text-slate-400 mb-3">
-                Made before Testing Mode existed (or while it was off) — mark the ones that were
-                only for testing.
+                Left over from before this feature existed — mark any that were only for testing,
+                or confirm the rest as real in one go.
               </p>
               {untaggedTenders.map((t) => (
                 <TestDataRow
@@ -263,11 +297,27 @@ export default function TestingDataTool() {
 
           {untaggedSites.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <h4 className="text-sm font-semibold text-slate-800 mb-1">
-                Duty Roster sites not yet sorted ({untaggedSites.length})
-              </h4>
+              <div className="flex items-start justify-between gap-3 mb-1">
+                <h4 className="text-sm font-semibold text-slate-800">
+                  Duty Roster sites not yet sorted ({untaggedSites.length})
+                </h4>
+                <button
+                  onClick={() =>
+                    confirmAllReal(
+                      'sites',
+                      untaggedSites.map((s) => s.id),
+                      (id) => updateDoc(doc(db, 'sites', id), { isTestData: false, updatedAt: new Date().toISOString() })
+                    )
+                  }
+                  disabled={confirmBusyKey === 'sites'}
+                  className="shrink-0 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 rounded px-2.5 py-1 border border-emerald-200"
+                >
+                  {confirmBusyKey === 'sites' ? 'Confirming…' : 'Confirm all as real data'}
+                </button>
+              </div>
               <p className="text-xs text-slate-400 mb-3">
-                Includes archived sites — sort those too if they were only ever test/demo sites.
+                Includes archived sites — sort those too if they were only ever test/demo sites,
+                or confirm the rest as real in one go.
               </p>
               {untaggedSites.map((s) => (
                 <TestDataRow
@@ -283,9 +333,24 @@ export default function TestingDataTool() {
 
           {untaggedGuards.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <h4 className="text-sm font-semibold text-slate-800 mb-1">
-                Guard Bank guards not yet sorted ({untaggedGuards.length})
-              </h4>
+              <div className="flex items-start justify-between gap-3 mb-1">
+                <h4 className="text-sm font-semibold text-slate-800">
+                  Guard Bank guards not yet sorted ({untaggedGuards.length})
+                </h4>
+                <button
+                  onClick={() =>
+                    confirmAllReal(
+                      'guards',
+                      untaggedGuards.map((g) => g.id),
+                      (id) => updateDoc(doc(db, 'guards', id), { isTestData: false, updatedAt: Date.now() })
+                    )
+                  }
+                  disabled={confirmBusyKey === 'guards'}
+                  className="shrink-0 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 rounded px-2.5 py-1 border border-emerald-200"
+                >
+                  {confirmBusyKey === 'guards' ? 'Confirming…' : 'Confirm all as real data'}
+                </button>
+              </div>
               {untaggedGuards.map((g) => (
                 <TestDataRow
                   key={g.id}
@@ -300,9 +365,24 @@ export default function TestingDataTool() {
 
           {untaggedBuffer.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <h4 className="text-sm font-semibold text-slate-800 mb-1">
-                Buffer guards not yet sorted ({untaggedBuffer.length})
-              </h4>
+              <div className="flex items-start justify-between gap-3 mb-1">
+                <h4 className="text-sm font-semibold text-slate-800">
+                  Buffer guards not yet sorted ({untaggedBuffer.length})
+                </h4>
+                <button
+                  onClick={() =>
+                    confirmAllReal(
+                      'bufferGuards',
+                      untaggedBuffer.map((b) => b.id),
+                      (id) => updateDoc(doc(db, 'bufferGuards', id), { isTestData: false })
+                    )
+                  }
+                  disabled={confirmBusyKey === 'bufferGuards'}
+                  className="shrink-0 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 rounded px-2.5 py-1 border border-emerald-200"
+                >
+                  {confirmBusyKey === 'bufferGuards' ? 'Confirming…' : 'Confirm all as real data'}
+                </button>
+              </div>
               {untaggedBuffer.map((b) => (
                 <TestDataRow
                   key={b.id}
