@@ -82,6 +82,18 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // ---- Branch Collection (billing / invoicing) ----
+    // Financial records — readable by any active non-Payroll user (Payroll's Duty Roster access
+    // is strictly view/export and has nothing to do with billing), but only Admin/Developer or a
+    // Branch Manager can create or change one. Never Payroll, never dutyStaff/Support-only roles
+    // (both already never reach this collection anyway — see AppLayout.tsx/ProtectedRoute's
+    // hideFromStaff gating on the Branch Collection tab).
+    match /invoices/{invoiceId} {
+      allow read: if isActiveUser() && !isPayroll();
+      allow create, update: if isActiveUser() && (isAdmin() || isBranchManager());
+      allow delete: if isAdmin();
+    }
+
     // ---- App-wide settings (currently just Testing Mode) ----
     // A single doc, settings/app, read by every active user (both the CRM and
     // public/duty-roster/index.html need to know testingModeEnabled at record-creation time so

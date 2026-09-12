@@ -12,6 +12,7 @@ import DutyRosterPage from './pages/DutyRosterPage';
 import GuardBankPage from './pages/GuardBankPage';
 import QuotationCalculatorPage from './pages/QuotationCalculatorPage';
 import AdminPage from './pages/AdminPage';
+import BranchCollectionPage from './pages/BranchCollectionPage';
 import NewTenderWatcher from './components/notifications/NewTenderWatcher';
 import TenderAssignedWatcher from './components/notifications/TenderAssignedWatcher';
 
@@ -135,6 +136,16 @@ export default function App() {
               <ProtectedRoute adminOnly hideFromStaff>
                 <AppLayout>
                   <AdminPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/branch-collection"
+            element={
+              <ProtectedRoute hideFromStaff>
+                <AppLayout>
+                  <BranchCollectionPage />
                 </AppLayout>
               </ProtectedRoute>
             }

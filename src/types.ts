@@ -82,6 +82,27 @@ export interface Brand {
   id: string;
   name: string;
   createdAt: number;
+  /**
+   * Invoicing/legal details for this Brand — all optional so existing Brand docs (name + createdAt
+   * only) keep working unedited. Set once per brand from Admin Settings > Branches & Brands, then
+   * reused as the letterhead/bank details on every invoice generated for that brand under the
+   * Branch Collection tab. A Brand is the ISSUING company on an invoice (e.g. "Prozas Security" vs
+   * "Swift Eagle Security" — two differently-registered trading names a Won tender gets assigned
+   * to), not the client being billed (that's Tender.clientName/department).
+   */
+  legalName?: string;
+  registrationNo?: string;
+  address?: string;
+  tel?: string;
+  fax?: string;
+  serviceTaxNo?: string;
+  tin?: string;
+  bankName?: string;
+  bankAccountName?: string;
+  bankAccountNo?: string;
+  bankAddress?: string;
+  signatoryName?: string;
+  signatoryTitle?: string;
 }
 
 export interface Tender {
@@ -309,4 +330,79 @@ export interface AppSettings {
   testingModeEnabled: boolean;
   updatedAt: number;
   updatedByName?: string;
+}
+
+// ---- Branch Collection (billing / invoicing) ----
+
+/**
+ * One billable position category at a Duty Roster site, with its contracted hourly rate — e.g.
+ * { category: "Security Officer", hourlyRate: 11.45 }. Stored as `sites/{id}.billingRates` (a
+ * new field on the existing Duty Roster site doc, written from the CRM side only — Duty Roster's
+ * own vanilla-JS app never reads or writes this field). Set once per site in the invoice
+ * generator, then reused every month so headcount/days are the only things typed per invoice.
+ */
+export interface SiteBillingRate {
+  category: string;
+  hourlyRate: number;
+}
+
+/** One row within an invoice line group — one guard category's headcount/days/rate for one
+ *  location. `amount` is computed as headcount * days * 12 (a 12-hour shift) * rate and stored
+ *  alongside the inputs so a saved invoice's total never silently drifts if the formula changes
+ *  later. */
+export interface InvoiceLineRow {
+  category: string;
+  headcount: number;
+  days: number;
+  rate: number;
+  amount: number;
+}
+
+/** One physical location/post within a site's invoice — e.g. "MDEC HQ" vs "eXpats SERVICE
+ *  CENTRE" on the same site's invoice. Typed manually per invoice (see Role/Brand doc comments
+ *  for why this isn't derived automatically from Duty Roster data). */
+export interface InvoiceLineGroup {
+  location: string;
+  rows: InvoiceLineRow[];
+}
+
+export type InvoiceStatus = 'unpaid' | 'partial' | 'paid';
+
+/**
+ * A single monthly invoice generated from the Branch Collection tab. `brandId`/`brandName`
+ * denormalize which of the company's brands (see Brand's doc comment) is issuing it — that
+ * brand's invoicing details (services/branches.ts) supply the letterhead/bank details when the
+ * invoice is printed. `siteId` links back to the Duty Roster site this was billed for (nullable
+ * since a site can later be deleted without breaking a historical invoice).
+ */
+export interface Invoice {
+  id: string;
+  brandId: string;
+  brandName: string;
+  siteId: string | null;
+  siteName: string;
+  tenderId: string | null;
+  clientName: string;
+  clientAddress?: string;
+  attnName?: string;
+  invoiceNo: string;
+  invoiceDate: string;
+  billingMonth: string;
+  contractRef?: string;
+  quotationNo?: string;
+  paymentTermsDays: number;
+  lineGroups: InvoiceLineGroup[];
+  subTotal: number;
+  sstRate: number;
+  sstAmount: number;
+  total: number;
+  status: InvoiceStatus;
+  amountPaid: number;
+  paidDate?: string;
+  createdByUid: string;
+  createdByName: string;
+  createdAt: number;
+  updatedAt: number;
+  /** Same meaning and lifecycle as Tender.isTestData — see its doc comment. */
+  isTestData?: boolean;
 }

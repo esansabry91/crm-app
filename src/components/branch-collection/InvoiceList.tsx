@@ -1,0 +1,137 @@
+import { useEffect, useState } from 'react';
+import { subscribeInvoices, updateInvoiceStatus } from '../../services/invoices';
+import { useBrands } from '../../hooks/useBranches';
+import InvoicePrintView from './InvoicePrintView';
+import type { Invoice, InvoiceStatus } from '../../types';
+
+const STATUS_LABEL: Record<InvoiceStatus, string> = {
+  unpaid: 'Unpaid',
+  partial: 'Partially Paid',
+  paid: 'Paid',
+};
+const STATUS_COLOR: Record<InvoiceStatus, string> = {
+  unpaid: 'bg-rose-50 text-rose-700',
+  partial: 'bg-amber-50 text-amber-700',
+  paid: 'bg-emerald-50 text-emerald-700',
+};
+
+function StatusEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
+  const [status, setStatus] = useState<InvoiceStatus>(invoice.status);
+  const [amountPaid, setAmountPaid] = useState(invoice.amountPaid);
+  const [paidDate, setPaidDate] = useState(invoice.paidDate || '');
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    setBusy(true);
+    try {
+      await updateInvoiceStatus(invoice.id, { status, amountPaid, paidDate: paidDate || undefined });
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-slate-100 pt-3 mt-3 flex flex-wrap items-center gap-2">
+      <select value={status} onChange={(e) => setStatus(e.target.value as InvoiceStatus)} className="input">
+        <option value="unpaid">Unpaid</option>
+        <option value="partial">Partially Paid</option>
+        <option value="paid">Paid</option>
+      </select>
+      <input
+        type="number"
+        value={amountPaid}
+        onChange={(e) => setAmountPaid(Number(e.target.value) || 0)}
+        className="input w-32"
+        placeholder="Amount paid (RM)"
+      />
+      <input type="date" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} className="input" />
+      <button onClick={save} disabled={busy} className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg">
+        {busy ? 'Saving…' : 'Save'}
+      </button>
+      <button onClick={onClose} className="text-xs text-slate-500 hover:underline">
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+/** Lists every generated invoice, lets you view/print one (reusing InvoicePrintView), and update
+ *  its payment status. Invoices themselves are created from InvoiceGenerator — this component
+ *  never creates one, only reads and updates status. */
+export default function InvoiceList() {
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const { brands } = useBrands();
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  useEffect(() => subscribeInvoices(setInvoices), []);
+
+  const viewing = invoices.find((i) => i.id === viewingId) || null;
+
+  if (viewing) {
+    const brand = brands.find((b) => b.id === viewing.brandId);
+    return (
+      <div>
+        <div className="no-print flex items-center gap-3 mb-4">
+          <button
+            onClick={() => setViewingId(null)}
+            className="px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200"
+          >
+            ← Back to list
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+          >
+            Print / Save as PDF
+          </button>
+        </div>
+        {brand ? (
+          <InvoicePrintView data={{ ...viewing, brand }} />
+        ) : (
+          <p className="text-sm text-rose-600">This invoice's brand no longer exists — can't render its letterhead.</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 className="text-sm font-semibold text-slate-800 mb-3">Invoices ({invoices.length})</h3>
+      <div className="space-y-2">
+        {invoices.map((inv) => (
+          <div key={inv.id} className="border border-slate-100 rounded-lg p-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-sm font-medium text-slate-800">
+                  {inv.invoiceNo} · {inv.clientName}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {inv.brandName} · {inv.siteName} · {inv.invoiceDate}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`text-xs font-medium px-2 py-1 rounded ${STATUS_COLOR[inv.status]}`}>
+                  {STATUS_LABEL[inv.status]}
+                </span>
+                <span className="text-sm font-semibold">RM {inv.total.toFixed(2)}</span>
+                <button onClick={() => setViewingId(inv.id)} className="text-xs font-medium text-blue-700 hover:underline">
+                  View
+                </button>
+                <button
+                  onClick={() => setEditingId(editingId === inv.id ? null : inv.id)}
+                  className="text-xs font-medium text-slate-500 hover:underline"
+                >
+                  Status
+                </button>
+              </div>
+            </div>
+            {editingId === inv.id && <StatusEditor invoice={inv} onClose={() => setEditingId(null)} />}
+          </div>
+        ))}
+        {invoices.length === 0 && <p className="text-xs text-slate-400">No invoices generated yet.</p>}
+      </div>
+    </div>
+  );
+}

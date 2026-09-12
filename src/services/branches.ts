@@ -1,5 +1,6 @@
-import { addDoc, collection, deleteDoc, doc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import type { Brand } from '../types';
 
 export async function addBranch(name: string) {
   await addDoc(collection(db, 'branches'), { name: name.trim(), createdAt: Date.now() });
@@ -15,4 +16,11 @@ export async function addBrand(name: string) {
 
 export async function removeBrand(id: string) {
   await deleteDoc(doc(db, 'brands', id));
+}
+
+/** Updates a Brand's invoicing/legal details — see Brand's doc comment in types.ts. Patch-only
+ *  (Firestore updateDoc merges just the given fields), so saving the invoicing form never
+ *  touches `name`/`createdAt` unless explicitly included. */
+export async function updateBrand(id: string, patch: Partial<Omit<Brand, 'id' | 'createdAt'>>) {
+  await updateDoc(doc(db, 'brands', id), patch);
 }

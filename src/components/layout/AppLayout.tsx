@@ -60,6 +60,9 @@ function NavContent({ onNavigate }: { onNavigate: () => void }) {
             <NavLink to="/quotation-calculator" className={navItemClass} onClick={onNavigate}>
               <span aria-hidden>🧮</span> Quotation Calculator
             </NavLink>
+            <NavLink to="/branch-collection" className={navItemClass} onClick={onNavigate}>
+              <span aria-hidden>🧾</span> Branch Collection
+            </NavLink>
           </>
         )}
         {profile?.role === 'dutyStaff' && (
@@ -119,7 +122,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           phones too, not just portrait, so the panel stays closeable/openable there as well);
           the sidebar itself is hidden entirely below lg in favor of the slide-over drawer opened
           from here. */}
-      <header className="lg:hidden shrink-0 flex items-center gap-3 px-4 h-14 border-b border-slate-200 bg-white">
+      <header className="lg:hidden shrink-0 flex items-center gap-3 px-4 h-14 border-b border-slate-200 bg-white no-print">
         <button
           type="button"
           onClick={() => setDrawerOpen(true)}
@@ -141,7 +144,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       {/* Mobile slide-over drawer — same NavContent as the desktop sidebar, overlaid on top of
           the page instead of permanently taking up width. */}
       {drawerOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 flex">
+        <div className="lg:hidden fixed inset-0 z-50 flex no-print">
           <div className="absolute inset-0 bg-black/40" onClick={() => setDrawerOpen(false)} aria-hidden />
           <aside className="relative w-72 max-w-[85vw] h-full bg-white flex flex-col shadow-xl">
             <button
@@ -161,7 +164,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       )}
 
       {/* Desktop sidebar — same content/behavior as before, just hidden below lg. */}
-      <aside className="hidden lg:flex w-60 shrink-0 border-r border-slate-200 bg-white flex-col">
+      <aside className="hidden lg:flex w-60 shrink-0 border-r border-slate-200 bg-white flex-col no-print">
         <NavContent onNavigate={() => {}} />
       </aside>
 
