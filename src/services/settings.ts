@@ -23,8 +23,9 @@ export async function getTestingModeEnabled(): Promise<boolean> {
   }
 }
 
-/** Admin-only (enforced by firestore.rules) — flips Testing Mode from the toggle in
- *  src/components/admin/TestingDataTool.tsx. */
+/** Developer-only (enforced by firestore.rules' isDeveloper()) — flips Testing Mode from the
+ *  toggle in src/components/admin/TestingDataTool.tsx. Not admin-writable on purpose: see
+ *  AdminPage.tsx for why the Testing Data tab itself is hidden from every role but developer. */
 export async function setTestingModeEnabled(enabled: boolean, actor: { name: string }): Promise<void> {
   await setDoc(
     settingsDocRef(),

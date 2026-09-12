@@ -22,6 +22,17 @@ service cloud.firestore {
         && userDoc(request.auth.uid).data.active != false;
     }
 
+    // True only for a signed-in, active user with role "developer" specifically — narrower than
+    // isAdmin() above. Used to lock the Testing Mode toggle (settings/app) to the dedicated
+    // testing account only: a real "admin" account should never be able to flip Testing Mode or
+    // (via the Admin Settings > Testing Data tab, which is itself hidden from non-developers —
+    // see AdminPage.tsx) run the test-data cleanup tool against production.
+    function isDeveloper() {
+      return isSignedIn()
+        && userDoc(request.auth.uid).data.role == 'developer'
+        && userDoc(request.auth.uid).data.active != false;
+    }
+
     // True only for a signed-in, active user with role "payroll" — a strictly view/export-only
     // Duty Roster role (see the /sites block below). Never grant this function's result write
     // access to anything; it exists so read rules can include payroll alongside admin/HQ
@@ -79,7 +90,8 @@ service cloud.firestore {
     // src/services/settings.ts / index.html's state.testingModeEnabled for how it's read.
     match /settings/{docId} {
       allow read: if isActiveUser();
-      allow write: if isAdmin();
+      // Developer-only (not isAdmin()) — see isDeveloper()'s doc comment above.
+      allow write: if isDeveloper();
     }
 
     // ---- Tenders ----
