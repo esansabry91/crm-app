@@ -58,19 +58,29 @@ export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
         .inv-table td, .inv-table th { border: 1px solid #cbd5e1; padding: 4px 8px; }
       `}</style>
 
-      <div className="text-center border-b-2 border-slate-800 pb-3 mb-4">
+      {/* Logo sits at the left, sized to match the height of the company-details column beside
+          it (name through TIN) rather than a fixed pixel cap — height:'100%' on a flex item
+          resolves against the row's cross-size (set by whichever sibling is tallest, here always
+          the text column), with width auto so the logo's own aspect ratio is preserved. */}
+      <div className="flex items-stretch gap-4 border-b-2 border-slate-800 pb-3 mb-4">
         {brand.logoDataUrl && (
-          <img src={brand.logoDataUrl} alt="" className="mx-auto mb-2" style={{ maxHeight: '64px', maxWidth: '240px', objectFit: 'contain' }} />
+          <img
+            src={brand.logoDataUrl}
+            alt=""
+            style={{ height: '100%', width: 'auto', objectFit: 'contain', flexShrink: 0 }}
+          />
         )}
-        <h1 className="text-xl font-bold uppercase">{displayName}</h1>
-        {brand.registrationNo && <p className="text-xs mt-0.5">Company No.: {brand.registrationNo}</p>}
-        {brand.address && <p className="text-xs whitespace-pre-line">{brand.address}</p>}
-        <p className="text-xs">
-          {brand.tel && <>TEL: {brand.tel} </>}
-          {brand.fax && <>FAX: {brand.fax}</>}
-        </p>
-        {brand.serviceTaxNo && <p className="text-xs font-medium">SERVICE TAX NO.: {brand.serviceTaxNo}</p>}
-        {brand.tin && <p className="text-xs font-medium">COMPANY TIN: {brand.tin}</p>}
+        <div className="flex-1 text-center">
+          <h1 className="text-xl font-bold uppercase">{displayName}</h1>
+          {brand.registrationNo && <p className="text-xs mt-0.5">Company No.: {brand.registrationNo}</p>}
+          {brand.address && <p className="text-xs whitespace-pre-line">{brand.address}</p>}
+          <p className="text-xs">
+            {brand.tel && <>TEL: {brand.tel} </>}
+            {brand.fax && <>FAX: {brand.fax}</>}
+          </p>
+          {brand.serviceTaxNo && <p className="text-xs font-medium">SERVICE TAX NO.: {brand.serviceTaxNo}</p>}
+          {brand.tin && <p className="text-xs font-medium">COMPANY TIN: {brand.tin}</p>}
+        </div>
       </div>
 
       <h2 className="text-center text-lg font-bold tracking-wide mb-4">INVOICE</h2>
