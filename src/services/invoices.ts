@@ -25,6 +25,16 @@ function invoicesCollection() {
  *  out as a constant so it's the one place to change if a future contract uses a different one. */
 export const INVOICE_HOURS_PER_SHIFT = 12;
 
+/** Rounds to the nearest cent. Money math in floating point (subTotal * sstRate, in particular)
+ *  routinely lands a fraction of a cent off a "clean" 2-decimal figure — e.g. 1656 * 0.08 can come
+ *  out as 132.48000000000002 instead of exactly 132.48 — so sstAmount/total are always rounded
+ *  before being stored, rather than persisting whatever a float multiplication happened to
+ *  produce. deriveInvoiceStatus below also tolerates a small remainder on top of this, as a
+ *  safety net for invoices saved before this rounding existed. */
+export function roundMoney(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
 /** headcount * days * 12-hour shift * hourly rate — the exact formula the sample invoices this
  *  feature was modeled on come out to. Centralized so the generator form and any future edit
  *  flow compute a saved invoice's line amount identically. */
@@ -137,8 +147,8 @@ type Actor = { uid: string; name: string; role?: Role };
 export async function createInvoice(input: NewInvoiceInput, actor: Actor): Promise<{ id: string; invoiceNo: string }> {
   const now = Date.now();
   const subTotal = sumLineGroups(input.lineGroups);
-  const sstAmount = subTotal * input.sstRate;
-  const total = subTotal + sstAmount;
+  const sstAmount = roundMoney(subTotal * input.sstRate);
+  const total = roundMoney(subTotal + sstAmount);
   const isTestData = await shouldStampTestData(actor.role);
   const year = new Date(`${input.invoiceDate}T00:00:00`).getFullYear() || new Date().getFullYear();
   const counterKey = buildInvoiceCounterKey(input.brandCode, input.branchCode, input.clientAlias);
@@ -259,8 +269,8 @@ export interface NewMigratedInvoiceInput {
 export async function createMigratedInvoice(input: NewMigratedInvoiceInput, actor: Actor): Promise<{ id: string }> {
   const now = Date.now();
   const subTotal = input.subTotal;
-  const sstAmount = subTotal * input.sstRate;
-  const total = subTotal + sstAmount;
+  const sstAmount = roundMoney(subTotal * input.sstRate);
+  const total = roundMoney(subTotal + sstAmount);
   const amountPaid = clampAmountPaid(input.amountPaid, total);
   const status = deriveInvoiceStatus(amountPaid, total);
   const isTestData = await shouldStampTestData(actor.role);
@@ -371,9 +381,15 @@ export function subscribeInvoices(callback: (invoices: Invoice[]) => void): () =
  *  exceed it — see clampAmountPaid, which is always applied first), Partially Paid anywhere in
  *  between. The single source of truth for an invoice's status — it's never set independently of
  *  amountPaid, so "Paid" and "there's still a balance owing" can never disagree with each other. */
+// Half a cent — comfortably bigger than any float-multiplication remainder (see roundMoney),
+// comfortably smaller than a real outstanding amount, so it can never mask an actual partial
+// payment while still treating "paid in full down to the cent" as fully paid regardless of
+// which side of a cent a leftover float fraction happens to fall on.
+const AMOUNT_EPSILON = 0.005;
+
 export function deriveInvoiceStatus(amountPaid: number, total: number): InvoiceStatus {
   if (amountPaid <= 0) return 'unpaid';
-  if (total <= 0 || amountPaid >= total) return 'paid';
+  if (total <= 0 || amountPaid >= total - AMOUNT_EPSILON) return 'paid';
   return 'partial';
 }
 
@@ -568,4 +584,48 @@ export async function diagnoseInvoiceBranches(): Promise<InvoiceBranchDiagnostic
   });
 
   return rows;
+}
+
+export interface BackfillStatusResult {
+  total: number;
+  updated: number;
+}
+
+/**
+ * One-time data fix for invoices whose stored `status` disagrees with what deriveInvoiceStatus
+ * would compute from their own amountPaid/total — the fallout of two bugs fixed together: status
+ * used to be picked independently of amountPaid (see updateInvoiceStatus's doc comment), and
+ * totals computed before roundMoney existed can carry a fraction-of-a-cent float remainder that
+ * used to make an invoice paid in full down to the cent get stuck showing Partially Paid forever
+ * (see deriveInvoiceStatus's AMOUNT_EPSILON comment). Both are self-healing the next time an
+ * invoice is resaved through the Status editor, but this fixes every affected invoice at once
+ * rather than requiring each one to be opened by hand. Safe to run more than once — it only ever
+ * touches invoices whose stored status doesn't match their own amount.
+ */
+export async function backfillInvoiceStatuses(): Promise<BackfillStatusResult> {
+  const invoicesSnap = await getDocs(invoicesCollection());
+
+  const result: BackfillStatusResult = { total: invoicesSnap.size, updated: 0 };
+  let batch = writeBatch(db);
+  let opsInBatch = 0;
+  const commits: Promise<void>[] = [];
+
+  for (const d of invoicesSnap.docs) {
+    const inv = d.data() as Invoice;
+    const correctStatus = deriveInvoiceStatus(inv.amountPaid, inv.total);
+    if (correctStatus === inv.status) continue;
+
+    batch.update(d.ref, { status: correctStatus, updatedAt: Date.now() });
+    result.updated++;
+    opsInBatch++;
+    if (opsInBatch >= 400) {
+      commits.push(batch.commit());
+      batch = writeBatch(db);
+      opsInBatch = 0;
+    }
+  }
+  if (opsInBatch > 0) commits.push(batch.commit());
+  await Promise.all(commits);
+
+  return result;
 }

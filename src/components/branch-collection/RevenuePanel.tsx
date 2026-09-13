@@ -3,8 +3,10 @@ import {
   subscribeInvoices,
   backfillInvoiceBranches,
   diagnoseInvoiceBranches,
+  backfillInvoiceStatuses,
   type BackfillBranchResult,
   type InvoiceBranchDiagnostic,
+  type BackfillStatusResult,
 } from '../../services/invoices';
 import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
@@ -90,6 +92,8 @@ export default function RevenuePanel() {
   const [backfillResult, setBackfillResult] = useState<BackfillBranchResult | null>(null);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
   const [diagnostics, setDiagnostics] = useState<InvoiceBranchDiagnostic[] | null>(null);
+  const [statusFixBusy, setStatusFixBusy] = useState(false);
+  const [statusFixResult, setStatusFixResult] = useState<BackfillStatusResult | null>(null);
 
   useEffect(() => subscribeInvoices(setInvoices), []);
 
@@ -112,6 +116,16 @@ export default function RevenuePanel() {
       setDiagnostics(await diagnoseInvoiceBranches());
     } finally {
       setDiagnosticsBusy(false);
+    }
+  }
+
+  async function runStatusFix() {
+    setStatusFixBusy(true);
+    setStatusFixResult(null);
+    try {
+      setStatusFixResult(await backfillInvoiceStatuses());
+    } finally {
+      setStatusFixBusy(false);
     }
   }
 
@@ -367,6 +381,29 @@ export default function RevenuePanel() {
                   </table>
                 </div>
               )
+            )}
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <button
+              onClick={runStatusFix}
+              disabled={statusFixBusy}
+              className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-60 rounded-lg"
+            >
+              {statusFixBusy ? 'Checking…' : 'Recompute invoice status from amount paid'}
+            </button>
+            <p className="text-xs text-slate-400 mt-2">
+              Fixes any invoice whose status doesn't match its own amount paid — e.g. one stuck
+              showing Partially Paid even though it's been paid in full down to the cent (a
+              rounding-related bug in how totals used to be stored), or an older invoice whose
+              status was once set by hand. Safe to run more than once.
+            </p>
+            {statusFixResult && (
+              <p className="text-xs text-slate-600 mt-2">
+                {statusFixResult.updated === 0
+                  ? `Checked ${statusFixResult.total} invoice(s) — every status already matches its amount paid.`
+                  : `Checked ${statusFixResult.total} invoice(s): ${statusFixResult.updated} had their status corrected.`}
+              </p>
             )}
           </div>
         </div>
