@@ -120,9 +120,10 @@ export default function App() {
           <Route
             path="/quotation-calculator"
             element={
-              // hideFromStaff alone restricts this to exactly admin + branchManager — those are
-              // the only two roles it doesn't bounce to Duty Roster, since dutyStaff and payroll
-              // are the only roles it excludes.
+              // hideFromStaff alone restricts this to admin + branchManager + developer — those
+              // are the only roles it doesn't bounce to Duty Roster, since dutyStaff and payroll
+              // are the only roles it excludes. index.html itself (and firestore.rules) also
+              // allow developer, matching isAdminRole()'s treatment of it as admin-equivalent.
               <ProtectedRoute hideFromStaff>
                 <AppLayout>
                   <QuotationCalculatorPage />

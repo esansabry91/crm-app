@@ -49,9 +49,9 @@ service cloud.firestore {
         && userDoc(request.auth.uid).data.active != false;
     }
 
-    // True only for a signed-in, active user with role "branchManager" — used below to scope
-    // the Quotation Calculator to admin + branchManager only (dutyStaff and payroll get none
-    // of this collection).
+    // True only for a signed-in, active user with role "branchManager" — used below (alongside
+    // isAdmin(), which already covers "developer") to scope the Quotation Calculator to
+    // admin + branchManager + developer (dutyStaff and payroll get none of this collection).
     function isBranchManager() {
       return isSignedIn()
         && userDoc(request.auth.uid).data.role == 'branchManager'

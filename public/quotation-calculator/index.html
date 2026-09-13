@@ -500,7 +500,7 @@ tbody tr:hover td{background:#f8fbfe}
   user (Firebase Auth's persisted session is shared across app instances
   pointed at the same project, in the same browser) so Firestore's security
   rules can see request.auth — no separate Google sign-in inside this page.
-  Only admin and branchManager accounts can do anything here; see
+  Only admin, branchManager, and developer accounts can do anything here; see
   firestore.rules' /quotations block for the real enforcement, and the access
   check in initSync() below for the in-page message shown to anyone else who
   reaches this URL directly.
@@ -1666,12 +1666,17 @@ var unsubscribeQuotes = null;
 // Who's signed in, via the CRM's own session (see the comment block near the top of this file)
 // — no separate sign-in flow inside this page. myRole/myDepartment come from this user's
 // /users/{uid} CRM profile, the same fields firestore.rules checks for the /quotations
-// collection. canUseCalculator mirrors the route gating in App.tsx (admin + branchManager
-// only); isPrivileged mirrors duty-roster's identical flag (admin, or department "HQ" —
-// reaches every branch, like elsewhere in the CRM).
+// collection. canUseCalculator mirrors the route gating in App.tsx (admin + branchManager +
+// developer); isPrivileged mirrors duty-roster's identical flag (admin, developer, or
+// department "HQ" — reaches every branch, like elsewhere in the CRM). isDeveloper mirrors
+// duty-roster's state.isDeveloper: a "developer" account gets full calculator access, but
+// every quotation it saves is auto-tagged isTestData:true (see shouldStampTestData() in
+// src/services/settings.ts for the CRM-side equivalent), so testing under this role can never
+// get mixed up with a real team's saved quotations.
 var myUid = null, myRole = null, myDepartment = null, myName = null;
 var isPrivileged = false;
 var canUseCalculator = false;
+var isDeveloper = false;
 
 function setSyncStatus(mode, text){
  syncMode = mode;
@@ -1800,11 +1805,12 @@ async function initSync(){
   myRole = profile.role || null;
   myDepartment = profile.department || null;
   myName = profile.name || currentUser.email || 'Unknown';
-  isPrivileged = (myRole==='admin' || myDepartment==='HQ');
-  canUseCalculator = (myRole==='admin' || myRole==='branchManager');
+  isPrivileged = (myRole==='admin' || myRole==='developer' || myDepartment==='HQ');
+  canUseCalculator = (myRole==='admin' || myRole==='branchManager' || myRole==='developer');
+  isDeveloper = (myRole==='developer');
   updateAuthUI();
   if(!canUseCalculator){
-   showAccessBlocked('The Quotation Calculator is only available to Admin and Branch Manager accounts. Your account is signed in as "'+(myRole||'unknown role')+'".');
+   showAccessBlocked('The Quotation Calculator is only available to Admin, Branch Manager, and Developer accounts. Your account is signed in as "'+(myRole||'unknown role')+'".');
    fallbackToLocal('Not available for your role.');
    return;
   }
@@ -2010,7 +2016,8 @@ function saveQuotation(){
   state: collectState(),
   branch: branch,
   createdByUid: myUid,
-  createdByName: myName
+  createdByName: myName,
+  isTestData: isDeveloper
  };
  if(syncMode==='live' && dbApi){
   dbApi.collection(QUOTES_COLLECTION).doc(id).set(body).then(function(){
@@ -2152,7 +2159,7 @@ function importQuotesFile(input){
     var writes = [];
     for(var m=0;m<toAdd.length;m++){
      var rec2 = toAdd[m];
-     var body2 = {clientName:rec2.clientName, site:rec2.site, notes:rec2.notes, savedAt:rec2.savedAt, quotedRate:rec2.quotedRate, guardsUsed:rec2.guardsUsed, state:rec2.state, branch:importBranch, createdByUid:myUid, createdByName:myName};
+     var body2 = {clientName:rec2.clientName, site:rec2.site, notes:rec2.notes, savedAt:rec2.savedAt, quotedRate:rec2.quotedRate, guardsUsed:rec2.guardsUsed, state:rec2.state, branch:importBranch, createdByUid:myUid, createdByName:myName, isTestData:isDeveloper};
      writes.push(dbApi.collection(QUOTES_COLLECTION).doc(rec2.id).set(body2));
     }
     Promise.all(writes).then(function(){

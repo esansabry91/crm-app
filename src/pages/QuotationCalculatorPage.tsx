@@ -5,9 +5,11 @@
  * a page ported into React. It shares this CRM's Firebase project and picks up the same
  * signed-in user automatically; see the comment block at the top of index.html for how.
  *
- * Routing already restricts this page to admin + branchManager (see the /quotation-calculator
- * route in App.tsx); index.html itself re-checks the signed-in user's role before showing the
- * calculator, and firestore.rules is the actual enforcement layer for the saved-quotations data.
+ * Routing already restricts this page to admin + branchManager + developer (see the
+ * /quotation-calculator route in App.tsx, and isAdminRole() in src/types.ts for why developer
+ * counts as admin-equivalent everywhere); index.html itself re-checks the signed-in user's role
+ * before showing the calculator, and firestore.rules is the actual enforcement layer for the
+ * saved-quotations data (isAdmin() there already covers developer — see its own doc comment).
  */
 export default function QuotationCalculatorPage() {
   return (
