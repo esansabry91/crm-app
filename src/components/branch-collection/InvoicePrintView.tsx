@@ -1,5 +1,5 @@
 import { amountToRinggitWords, cardinalWordsLower } from '../../utils/numberToWords';
-import type { Brand, InvoiceLineGroup } from '../../types';
+import type { Brand, InvoiceLineGroup, InvoiceStatus } from '../../types';
 
 export interface InvoicePrintData {
   brand: Brand;
@@ -22,6 +22,14 @@ export interface InvoicePrintData {
    *  people/titles depending on which branch office issued the invoice. */
   signatoryName?: string;
   signatoryTitle?: string;
+  /** When 'void', a cancellation banner is shown instead of the normal totals being trusted at
+   *  face value — see voidInvoice()'s doc comment in services/invoices.ts. Optional/untyped-wide
+   *  here (rather than required) so a caller building a print preview before an invoice has ever
+   *  been saved (InvoiceGenerator) doesn't need to pass a status that doesn't exist yet. */
+  status?: InvoiceStatus;
+  voidedAt?: number;
+  voidedByName?: string;
+  voidReason?: string;
 }
 
 function formatMoney(n: number): string {
@@ -43,12 +51,20 @@ function formatDate(iso: string): string {
  * already-saved invoice from the Invoices list — this component never writes anything, it only
  * renders whatever `data` it's given.
  */
+function formatVoidDate(ts: number | undefined): string {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
   const { brand } = data;
   const displayName = brand.legalName || brand.name;
+  const isVoid = data.status === 'void';
 
   return (
-    <div className="bg-white text-slate-900 mx-auto" style={{ maxWidth: '850px', fontSize: '13px' }}>
+    <div className="bg-white text-slate-900 mx-auto" style={{ maxWidth: '850px', fontSize: '13px', position: 'relative' }}>
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -57,6 +73,52 @@ export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
         @page { margin: 12mm; }
         .inv-table td, .inv-table th { border: 1px solid #cbd5e1; padding: 4px 8px; }
       `}</style>
+
+      {isVoid && (
+        <>
+          {/* Large rotated watermark over the whole invoice — visible on screen and when printed
+              (no .no-print class), so a voided invoice can never be mistaken for a live one even
+              from a printed/PDF copy passed around outside the app. */}
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              zIndex: 1,
+              overflow: 'hidden',
+            }}
+          >
+            <span
+              style={{
+                fontSize: '120px',
+                fontWeight: 800,
+                color: 'rgba(190, 18, 60, 0.18)',
+                transform: 'rotate(-28deg)',
+                letterSpacing: '0.1em',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              VOID
+            </span>
+          </div>
+          <div className="border-2 border-rose-600 bg-rose-50 text-rose-800 rounded-lg px-4 py-2 mb-4" style={{ position: 'relative', zIndex: 2 }}>
+            <p className="text-sm font-bold">THIS INVOICE HAS BEEN VOIDED — NOT A VALID DEMAND FOR PAYMENT</p>
+            <p className="text-xs mt-0.5">
+              {[
+                data.voidedByName ? `Voided by ${data.voidedByName}` : null,
+                formatVoidDate(data.voidedAt) ? `on ${formatVoidDate(data.voidedAt)}` : null,
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              {data.voidReason ? ` — ${data.voidReason}` : ''}
+            </p>
+          </div>
+        </>
+      )}
 
       {/* Logo sits at the left, vertically centered against the company-details column beside
           it. Capped at a fixed height/width (rather than stretched to the column's own height,

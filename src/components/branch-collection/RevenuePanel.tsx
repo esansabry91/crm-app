@@ -146,6 +146,10 @@ export default function RevenuePanel() {
   const filtered = useMemo(
     () =>
       invoices
+        // A voided invoice was wrongly generated and cancelled — see voidInvoice()'s doc comment
+        // in services/invoices.ts — so it never counted as real revenue and is dropped here,
+        // ahead of every rollup below (byMonth/overall) that builds on `filtered`.
+        .filter((inv) => inv.status !== 'void')
         .filter((inv) => !brandFilter || inv.brandId === brandFilter)
         .filter(
           (inv) =>

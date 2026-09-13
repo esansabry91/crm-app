@@ -76,6 +76,17 @@ service cloud.firestore {
       return userDoc(request.auth.uid).data.department;
     }
 
+    // The exact set of fields updateInvoiceStatus() ever writes — Finance's /invoices update is
+    // rejected if it touches anything outside this set (in particular, `status` becoming 'void'
+    // is caught here too, since 'status' is only allowed when the new value isn't 'void') — see
+    // the /invoices update rule below, and voidInvoice()/updateInvoiceContent() in
+    // services/invoices.ts for what Admin/Branch Manager are allowed to do instead.
+    function financeUpdateOnlyTouches() {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      return affected.hasOnly(['status', 'amountPaid', 'paidDate', 'paymentLog', 'updatedAt'])
+        && request.resource.data.status != 'void';
+    }
+
     // ---- Team member profiles ----
     // Staff can read only their own profile; admins can read/write everyone's.
     // Nobody but an admin can create or change a profile — this is what stops a staff
@@ -107,7 +118,13 @@ service cloud.firestore {
       // Finance can update (record payments / change status on an existing invoice) but never
       // create — see isFinance()'s doc comment above for why the two rules deliberately differ.
       allow create: if isActiveUser() && (isAdmin() || isBranchManager());
-      allow update: if isActiveUser() && (isAdmin() || isBranchManager() || isFinance());
+      // Finance is restricted to the fields updateInvoiceStatus() actually writes (recording a
+      // payment): it can never void a wrongly-generated invoice or edit its content (line items,
+      // client details, etc — see updateInvoiceContent()/voidInvoice() in services/invoices.ts),
+      // both of which stay Admin/Developer/Branch Manager only, matching who can create one in
+      // the first place. financeUpdateOnlyTouches() above is what enforces that split.
+      allow update: if isActiveUser()
+        && (isAdmin() || isBranchManager() || (isFinance() && financeUpdateOnlyTouches()));
       allow delete: if isAdmin();
     }
 

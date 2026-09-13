@@ -84,7 +84,10 @@ export default function DebtorList() {
   const allOutstanding = useMemo(
     () =>
       filtered
-        .filter((inv) => inv.status !== 'paid')
+        // A voided invoice was never really owed — see voidInvoice()'s doc comment in
+        // services/invoices.ts — so it's dropped here alongside already-paid ones rather than
+        // showing up as a phantom debt forever.
+        .filter((inv) => inv.status !== 'paid' && inv.status !== 'void')
         .map((inv) => ({ inv, overdue: daysOverdue(inv), balance: inv.total - inv.amountPaid, bucket: bucketLabel(daysOverdue(inv)) }))
         .sort((a, b) => b.overdue - a.overdue),
     [filtered]
@@ -105,7 +108,12 @@ export default function DebtorList() {
   // today (that's what `filtered` is for; `allOutstanding`/`outstanding` above have already
   // dropped paid invoices and don't carry payment history the trend needs).
   const outstandingTrend = useMemo(
-    () => computeOutstandingTrend(filtered).map((p) => ({ key: p.monthKey, label: monthLabel(p.monthKey), outstanding: p.outstanding })),
+    () =>
+      computeOutstandingTrend(filtered.filter((inv) => inv.status !== 'void')).map((p) => ({
+        key: p.monthKey,
+        label: monthLabel(p.monthKey),
+        outstanding: p.outstanding,
+      })),
     [filtered]
   );
 

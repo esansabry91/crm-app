@@ -439,6 +439,80 @@ export async function updateInvoiceStatus(
   await updateDoc(doc(db, 'invoices', id), updates);
 }
 
+/**
+ * Cancels a wrongly-generated invoice in place — sets status to 'void' and records who/when/why,
+ * but never deletes the doc or touches invoiceNo/lineGroups/total, so the invoice's number stays
+ * spent (numbering is never reused/reset — see buildInvoiceCounterKey's doc comment) and the
+ * original figures remain on record for audit purposes. A voided invoice is excluded from the
+ * Debtor List's outstanding figures and the Revenue tab's totals (see their own `filtered`
+ * memos), can't be voided again, and can no longer have its content edited or a payment recorded
+ * (see updateInvoiceContent()/updateInvoiceStatus() and firestore.rules' financeUpdateOnlyTouches
+ * for how that's enforced for a Finance-role account; Admin/Branch Manager are trusted to check
+ * an invoice's current status client-side before calling either).
+ */
+export async function voidInvoice(
+  id: string,
+  reason: string,
+  actor: { uid: string; name: string }
+): Promise<void> {
+  await updateDoc(doc(db, 'invoices', id), {
+    status: 'void',
+    voidedAt: Date.now(),
+    voidedByUid: actor.uid,
+    voidedByName: actor.name,
+    voidReason: reason.trim(),
+    updatedAt: Date.now(),
+  });
+}
+
+/** Fields a "limited edit" of an already-saved invoice may change — deliberately excludes
+ *  invoiceNo (numbering is never renumbered after the fact), brandId/siteId/tenderId (those pick
+ *  which letterhead/counter the invoice belongs to, not something a correction should move), and
+ *  billingMonth/billingMonthKey (which month's Revenue rollup this counts toward). Everything
+ *  else that can be wrong on a freshly-generated invoice — client details, dates, references, and
+ *  the line items themselves — is here. */
+export interface InvoiceEditInput {
+  clientName: string;
+  clientAddress?: string;
+  attnName?: string;
+  invoiceDate: string;
+  contractRef?: string;
+  quotationNo?: string;
+  paymentTermsDays: number;
+  sstRate: number;
+  lineGroups: InvoiceLineGroup[];
+}
+
+/**
+ * Applies a limited content edit to an already-saved invoice, recomputing subTotal/sstAmount/
+ * total from the edited line items exactly the way createInvoice() derives them the first time
+ * (see sumLineGroups/roundMoney) so an edited invoice's totals never drift from what its own line
+ * items add up to. Callers are expected to only offer this for an invoice that's still 'unpaid'
+ * and not 'void' (see InvoiceList's Edit gating) — enforced there rather than here/in rules,
+ * since by the time an Admin/Branch Manager reaches this function they're already trusted with
+ * the invoice's full content, same as at creation time.
+ */
+export async function updateInvoiceContent(id: string, input: InvoiceEditInput): Promise<void> {
+  const subTotal = roundMoney(sumLineGroups(input.lineGroups));
+  const sstAmount = roundMoney(subTotal * input.sstRate);
+  const total = roundMoney(subTotal + sstAmount);
+  await updateDoc(doc(db, 'invoices', id), {
+    clientName: input.clientName.trim(),
+    clientAddress: input.clientAddress?.trim() || '',
+    attnName: input.attnName?.trim() || '',
+    invoiceDate: input.invoiceDate,
+    contractRef: input.contractRef?.trim() || '',
+    quotationNo: input.quotationNo?.trim() || '',
+    paymentTermsDays: input.paymentTermsDays,
+    sstRate: input.sstRate,
+    lineGroups: input.lineGroups,
+    subTotal,
+    sstAmount,
+    total,
+    updatedAt: Date.now(),
+  });
+}
+
 export interface BackfillBranchResult {
   total: number;
   updated: number;

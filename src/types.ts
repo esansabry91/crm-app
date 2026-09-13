@@ -418,7 +418,12 @@ export interface InvoiceLineGroup {
   rows: InvoiceLineRow[];
 }
 
-export type InvoiceStatus = 'unpaid' | 'partial' | 'paid';
+/** 'void' marks an invoice that was wrongly generated and cancelled — see voidInvoice() in
+ *  services/invoices.ts. A voided invoice keeps its invoiceNo (numbering is never reused/reset)
+ *  and stays visible in the Invoices list for audit purposes, but is excluded from the Debtor
+ *  List's outstanding figures and the Revenue tab's totals, and can no longer be edited or have
+ *  payments recorded against it. */
+export type InvoiceStatus = 'unpaid' | 'partial' | 'paid' | 'void';
 
 /**
  * A single monthly invoice generated from the Branch Collection tab. `brandId`/`brandName`
@@ -507,4 +512,11 @@ export interface Invoice {
    *  than one assigned by the running counter. See createMigratedInvoice() in services/invoices.ts.
    *  Absent (not false) on every normal invoice. */
   isMigrated?: boolean;
+  /** Set only when status === 'void' — see voidInvoice() in services/invoices.ts. Preserved
+   *  indefinitely as the audit trail for why a wrongly-generated invoice was cancelled instead of
+   *  deleted. */
+  voidedAt?: number;
+  voidedByUid?: string;
+  voidedByName?: string;
+  voidReason?: string;
 }
