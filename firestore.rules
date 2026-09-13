@@ -178,7 +178,7 @@ service cloud.firestore {
       }
 
       // Non-owners can additionally update JUST the Active Project detail fields (location,
-      // state, city, postcode, contact person, guards deployed, tender doc number, close-out
+      // state, city, postcode, contact person, guards deployed, tender doc number/PDF, close-out
       // status) — PLUS, now, contractEnd/tenderValue for a straight renewal (see renewContract()
       // in services/tenders.ts and RenewContractModal.tsx) — on a Won tender they can see in
       // Active Projects — branch-mates in its activeBranch, or anyone in HQ — mirroring the read
@@ -197,7 +197,7 @@ service cloud.firestore {
             resource.data.stage == 'Won'
             && (resource.data.activeBranch == myDepartment() || myDepartment() == 'HQ')
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['location', 'state', 'city', 'postcode', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'clientAlias', 'clientAddress', 'guardRateMode', 'guardRate', 'guardRatePositions', 'closedOut', 'closedOutAt', 'contractEnd', 'tenderValue', 'updatedAt'])
+                 .hasOnly(['location', 'state', 'city', 'postcode', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'tenderDocumentKey', 'tenderDocumentFileId', 'tenderDocumentName', 'tenderDocumentSize', 'tenderDocumentUploadedAt', 'clientAlias', 'clientAddress', 'guardRateMode', 'guardRate', 'guardRatePositions', 'closedOut', 'closedOutAt', 'contractEnd', 'tenderValue', 'updatedAt'])
           )
           // Accepting a pending reassignment (see Tender.pendingReassignment and
           // acceptReassignment() in services/tenders.ts) — only the Branch Manager (not

@@ -1,6 +1,12 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import type { Tender } from '../../types';
 import { updateActiveProjectDetails } from '../../services/tenders';
+import {
+  deleteTenderDocument,
+  openTenderDocument,
+  uploadTenderDocument,
+  type TenderDocumentInfo,
+} from '../../services/tenderDocuments';
 
 interface Props {
   open: boolean;
@@ -49,6 +55,15 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Tender document (PDF) upload — deliberately independent of the Save button below: it
+  // uploads/deletes immediately via the Worker (see services/tenderDocuments.ts), which writes
+  // straight to Firestore itself, rather than being staged here and only sent on Save like every
+  // other field in this form.
+  const [docInfo, setDocInfo] = useState<TenderDocumentInfo | null>(null);
+  const [docBusy, setDocBusy] = useState<'idle' | 'uploading' | 'opening' | 'deleting'>('idle');
+  const [docError, setDocError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (!open || !tender) return;
     setLocation(tender.location || '');
@@ -58,6 +73,16 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     setContactPerson(tender.contactPerson || '');
     setGuardsDeployed(tender.guardsDeployed != null ? String(tender.guardsDeployed) : '');
     setTenderDocNumber(tender.tenderDocNumber || '');
+    setDocInfo(
+      tender.tenderDocumentName && tender.tenderDocumentUploadedAt
+        ? {
+            tenderDocumentName: tender.tenderDocumentName,
+            tenderDocumentSize: tender.tenderDocumentSize || 0,
+            tenderDocumentUploadedAt: tender.tenderDocumentUploadedAt,
+          }
+        : null
+    );
+    setDocError(null);
     setClientAlias(tender.clientAlias || '');
     setClientAddress(tender.clientAddress || '');
     setRateMode(tender.guardRateMode === 'multiple' ? 'multiple' : 'same');
@@ -71,6 +96,50 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   }, [open, tender]);
 
   if (!open || !tender) return null;
+
+  const handleUploadDocument = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file later (e.g. after a failed upload)
+    if (!file || !tender) return;
+    setDocError(null);
+    setDocBusy('uploading');
+    try {
+      const info = await uploadTenderDocument(tender.id, file);
+      setDocInfo(info);
+    } catch (err) {
+      setDocError(err instanceof Error ? err.message : 'Could not upload the document.');
+    } finally {
+      setDocBusy('idle');
+    }
+  };
+
+  const handleOpenDocument = async () => {
+    if (!tender) return;
+    setDocError(null);
+    setDocBusy('opening');
+    try {
+      await openTenderDocument(tender.id);
+    } catch (err) {
+      setDocError(err instanceof Error ? err.message : 'Could not open the document.');
+    } finally {
+      setDocBusy('idle');
+    }
+  };
+
+  const handleDeleteDocument = async () => {
+    if (!tender) return;
+    if (!window.confirm('Remove the uploaded tender document? This cannot be undone.')) return;
+    setDocError(null);
+    setDocBusy('deleting');
+    try {
+      await deleteTenderDocument(tender.id);
+      setDocInfo(null);
+    } catch (err) {
+      setDocError(err instanceof Error ? err.message : 'Could not delete the document.');
+    } finally {
+      setDocBusy('idle');
+    }
+  };
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
@@ -245,6 +314,58 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
             />
           </Field>
 
+          <Field label="Tender Document (PDF)">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf"
+              onChange={handleUploadDocument}
+              className="hidden"
+            />
+            {docInfo ? (
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleOpenDocument}
+                  disabled={docBusy !== 'idle'}
+                  className="text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-60 truncate max-w-[180px]"
+                  title={docInfo.tenderDocumentName}
+                >
+                  📄 {docInfo.tenderDocumentName}
+                </button>
+                <span className="text-[11px] text-slate-400 whitespace-nowrap">
+                  {formatFileSize(docInfo.tenderDocumentSize)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={docBusy !== 'idle'}
+                  className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-60"
+                >
+                  {docBusy === 'uploading' ? 'Replacing…' : 'Replace'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteDocument}
+                  disabled={docBusy !== 'idle'}
+                  className="text-xs font-medium text-rose-500 hover:text-rose-600 disabled:opacity-60"
+                >
+                  {docBusy === 'deleting' ? 'Removing…' : 'Remove'}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={docBusy !== 'idle'}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-slate-600 border-slate-200 hover:bg-slate-50 disabled:opacity-60"
+              >
+                {docBusy === 'uploading' ? 'Uploading…' : '+ Upload PDF'}
+              </button>
+            )}
+            {docError && <p className="text-xs text-rose-600 mt-1">{docError}</p>}
+          </Field>
+
           <Field label="Client Alias / Short Code (for invoice numbers)">
             <input
               value={clientAlias}
@@ -389,4 +510,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {children}
     </label>
   );
+}
+
+function formatFileSize(bytes: number): string {
+  if (!bytes) return '';
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

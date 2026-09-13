@@ -206,6 +206,20 @@ export interface Tender {
   contactPerson?: string; // on-site or client contact (free text: name, phone, email, etc.)
   guardsDeployed?: number; // number of security guards currently deployed
   tenderDocNumber?: string; // official tender submission document number/ID
+  /**
+   * The uploaded tender document PDF (see ProjectDetailsModal's upload widget), stored in
+   * Backblaze B2 — never a public URL. `tenderDocumentKey`/`tenderDocumentFileId` are B2's own
+   * identifiers (used by worker/index.ts to fetch/delete the file); the frontend never talks to
+   * B2 directly, only to the /api/tenders/:id/document Worker route, which re-checks Firestore
+   * permissions (via this SAME firestore.rules update rule) before touching B2. All four fields
+   * are set/cleared together (all five, not just the four named above) — see
+   * firestorePatchTenderDocument() in worker/index.ts.
+   */
+  tenderDocumentKey?: string;
+  tenderDocumentFileId?: string;
+  tenderDocumentName?: string; // original filename, for display only
+  tenderDocumentSize?: number; // bytes
+  tenderDocumentUploadedAt?: number; // epoch millis, same convention as updatedAt
   /** Short code identifying the client on an auto-generated invoice number (e.g. "MDEC") — see
    *  sanitizeInvoiceCode()'s doc comment in services/invoices.ts. Falls back to `clientName`
    *  when unset. Also part of the same widened Active Project detail fields as tenderDocNumber

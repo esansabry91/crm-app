@@ -8,9 +8,33 @@
 name = "crm-app"
 compatibility_date = "2026-01-01"
 
+# The one backend endpoint the app has: tender-document upload/download/delete, so a Backblaze
+# B2 secret key never has to live in browser JS. See worker/SETUP.md for the one-time account
+# setup this depends on. `run_worker_first` below scopes this to /api/* only — every other
+# request (the whole React app) still goes straight to static asset serving, unchanged.
+main = "./worker/index.ts"
+
 [assets]
 directory = "./dist"
 # Client-side routed SPA (React Router-less, but still path-based nav) — any
 # path with no matching static file falls back to index.html instead of a
 # raw 404, equivalent to what public/_redirects did for classic Pages.
 not_found_handling = "single-page-application"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+# Cache only (Google's signing-key JWKS, our Backblaze auth token) — never a source of truth.
+# `id` is created once by you via `npx wrangler kv namespace create DOC_CACHE` — see worker/SETUP.md.
+[[kv_namespaces]]
+binding = "DOC_CACHE"
+id = "3954be94503148a887372ea64ab2d08c"
+
+[vars]
+# Same Firebase project the frontend uses (see .env's VITE_FIREBASE_PROJECT_ID) — used only to
+# check the `aud`/`iss` claims on a Firebase ID token, not a secret.
+FIREBASE_PROJECT_ID = "ipsb-crm"
+# Not secret — just identifiers for which Backblaze B2 bucket to use. Fill in from the bucket you
+# create in worker/SETUP.md step 1. B2_KEY_ID and B2_APPLICATION_KEY are the actual secrets —
+# those are set with `npx wrangler secret put`, never written here.
+B2_BUCKET_ID = "bb167c392ff898aca5070717"
+B2_BUCKET_NAME = "ipsb-crm-tender-docs"
