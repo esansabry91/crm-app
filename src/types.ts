@@ -15,8 +15,17 @@
  * lives in public/duty-roster/index.html (state.isPayroll / the "readonly-mode" body class) and
  * in firestore.rules (isPayroll() is read-only everywhere); this Role value is just what routes
  * an account into that mode.
+ *
+ * 'finance' is Branch Collection-only — see hideFromFinance in ProtectedRoute/App.tsx and the
+ * nav gating in AppLayout — and even within Branch Collection it only reaches the Invoices,
+ * Debtor List and Revenue tabs (see BranchCollectionPage.tsx); it never sees Generate Invoice,
+ * so it can't create a new invoice, and RevenuePanel's admin/branchManager-only Data
+ * maintenance card stays out of reach the same way. It CAN record payments and edit an
+ * existing invoice's status/amount paid in the Invoices tab, same as branchManager — see
+ * isFinance() in firestore.rules, which is added alongside isBranchManager() to the
+ * /invoices update rule but deliberately left out of the create rule.
  */
-export type Role = 'admin' | 'branchManager' | 'dutyStaff' | 'payroll' | 'developer';
+export type Role = 'admin' | 'branchManager' | 'dutyStaff' | 'payroll' | 'developer' | 'finance';
 
 /**
  * True for any role that should get full administrative access throughout the app — currently

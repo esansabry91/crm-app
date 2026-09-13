@@ -8,6 +8,7 @@ export default function ProtectedRoute({
   adminOnly = false,
   hideFromStaff = false,
   hidePayrollOnly = false,
+  hideFromFinance = false,
 }: {
   children: ReactNode;
   adminOnly?: boolean;
@@ -24,6 +25,13 @@ export default function ProtectedRoute({
    * Bank carries the same read/write-affecting data, so it stays out of reach the same way.
    */
   hidePayrollOnly?: boolean;
+  /**
+   * The "Finance" role can only ever reach Branch Collection — every other route (including
+   * Duty Roster and Guard Bank, which have no hideFromStaff of their own since dutyStaff/payroll
+   * need those) passes this so a Finance account bounces straight there instead of landing
+   * wherever this route would show. See the Role doc comment in types.ts.
+   */
+  hideFromFinance?: boolean;
 }) {
   const { firebaseUser, profile, loading } = useAuth();
 
@@ -64,6 +72,10 @@ export default function ProtectedRoute({
 
   if (hidePayrollOnly && profile?.role === 'payroll') {
     return <Navigate to="/duty-roster" replace />;
+  }
+
+  if (hideFromFinance && profile?.role === 'finance') {
+    return <Navigate to="/branch-collection" replace />;
   }
 
   if (adminOnly && !isAdminRole(profile?.role)) {

@@ -16,9 +16,12 @@ import BranchCollectionPage from './pages/BranchCollectionPage';
 import NewTenderWatcher from './components/notifications/NewTenderWatcher';
 import TenderAssignedWatcher from './components/notifications/TenderAssignedWatcher';
 
-/** A "Staff" or "Payroll" account can only ever reach Duty Roster; everyone else's home is Pipeline. */
+/** A "Staff" or "Payroll" account can only ever reach Duty Roster, a "Finance" account can only
+ *  ever reach Branch Collection; everyone else's home is Pipeline. */
 function defaultRouteFor(role: string | undefined): string {
-  return role === 'dutyStaff' || role === 'payroll' ? '/duty-roster' : '/pipeline';
+  if (role === 'dutyStaff' || role === 'payroll') return '/duty-roster';
+  if (role === 'finance') return '/branch-collection';
+  return '/pipeline';
 }
 
 function LoginRoute() {
@@ -50,7 +53,7 @@ export default function App() {
           <Route
             path="/pipeline"
             element={
-              <ProtectedRoute hideFromStaff>
+              <ProtectedRoute hideFromStaff hideFromFinance>
                 <AppLayout>
                   <PipelinePage />
                 </AppLayout>
@@ -60,7 +63,7 @@ export default function App() {
           <Route
             path="/analysis"
             element={
-              <ProtectedRoute hideFromStaff>
+              <ProtectedRoute hideFromStaff hideFromFinance>
                 <AppLayout>
                   <AnalysisPage />
                 </AppLayout>
@@ -70,7 +73,7 @@ export default function App() {
           <Route
             path="/active-projects"
             element={
-              <ProtectedRoute hideFromStaff>
+              <ProtectedRoute hideFromStaff hideFromFinance>
                 <AppLayout>
                   <ActiveProjectsPage />
                 </AppLayout>
@@ -80,7 +83,7 @@ export default function App() {
           <Route
             path="/past-projects"
             element={
-              <ProtectedRoute hideFromStaff>
+              <ProtectedRoute hideFromStaff hideFromFinance>
                 <AppLayout>
                   <PastProjectsPage />
                 </AppLayout>
@@ -90,7 +93,7 @@ export default function App() {
           <Route
             path="/archive"
             element={
-              <ProtectedRoute hideFromStaff>
+              <ProtectedRoute hideFromStaff hideFromFinance>
                 <AppLayout>
                   <ArchivePage />
                 </AppLayout>
@@ -100,7 +103,7 @@ export default function App() {
           <Route
             path="/duty-roster"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute hideFromFinance>
                 <AppLayout>
                   <DutyRosterPage />
                 </AppLayout>
@@ -110,7 +113,7 @@ export default function App() {
           <Route
             path="/guard-bank"
             element={
-              <ProtectedRoute hidePayrollOnly>
+              <ProtectedRoute hidePayrollOnly hideFromFinance>
                 <AppLayout>
                   <GuardBankPage />
                 </AppLayout>
@@ -124,7 +127,9 @@ export default function App() {
               // are the only roles it doesn't bounce to Duty Roster, since dutyStaff and payroll
               // are the only roles it excludes. index.html itself (and firestore.rules) also
               // allow developer, matching isAdminRole()'s treatment of it as admin-equivalent.
-              <ProtectedRoute hideFromStaff>
+              // hideFromFinance keeps Finance out too, same as every other non-Branch-Collection
+              // route.
+              <ProtectedRoute hideFromStaff hideFromFinance>
                 <AppLayout>
                   <QuotationCalculatorPage />
                 </AppLayout>
@@ -134,7 +139,7 @@ export default function App() {
           <Route
             path="/admin"
             element={
-              <ProtectedRoute adminOnly hideFromStaff>
+              <ProtectedRoute adminOnly hideFromStaff hideFromFinance>
                 <AppLayout>
                   <AdminPage />
                 </AppLayout>

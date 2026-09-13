@@ -43,6 +43,19 @@ service cloud.firestore {
         && userDoc(request.auth.uid).data.active != false;
     }
 
+    // True only for a signed-in, active user with role "finance" — a Branch-Collection-only
+    // role restricted client-side to the Invoices/Debtor List/Revenue tabs (see the Role doc
+    // comment in src/types.ts and the route gating in App.tsx/ProtectedRoute.tsx). Granted
+    // alongside isBranchManager() on /invoices' UPDATE rule only, never its create rule — it
+    // can record payments on an existing invoice the same way a Branch Manager can, but can
+    // never create a new one (Generate Invoice is hidden from it in BranchCollectionPage.tsx,
+    // and this is the rule that actually enforces that rather than just hiding the tab).
+    function isFinance() {
+      return isSignedIn()
+        && userDoc(request.auth.uid).data.role == 'finance'
+        && userDoc(request.auth.uid).data.active != false;
+    }
+
     // True for any signed-in user whose profile exists and is still active (staff or admin).
     function isActiveUser() {
       return isSignedIn()
@@ -84,13 +97,17 @@ service cloud.firestore {
 
     // ---- Branch Collection (billing / invoicing) ----
     // Financial records — readable by any active non-Payroll user (Payroll's Duty Roster access
-    // is strictly view/export and has nothing to do with billing), but only Admin/Developer or a
-    // Branch Manager can create or change one. Never Payroll, never dutyStaff/Support-only roles
-    // (both already never reach this collection anyway — see AppLayout.tsx/ProtectedRoute's
-    // hideFromStaff gating on the Branch Collection tab).
+    // is strictly view/export and has nothing to do with billing). Only Admin/Developer or a
+    // Branch Manager can create one; Finance can additionally update an existing one (record
+    // payments) but never create — see isFinance()'s doc comment above. Never Payroll, never
+    // dutyStaff/Support-only roles (both already never reach this collection anyway — see
+    // AppLayout.tsx/ProtectedRoute's hideFromStaff gating on the Branch Collection tab).
     match /invoices/{invoiceId} {
       allow read: if isActiveUser() && !isPayroll();
-      allow create, update: if isActiveUser() && (isAdmin() || isBranchManager());
+      // Finance can update (record payments / change status on an existing invoice) but never
+      // create — see isFinance()'s doc comment above for why the two rules deliberately differ.
+      allow create: if isActiveUser() && (isAdmin() || isBranchManager());
+      allow update: if isActiveUser() && (isAdmin() || isBranchManager() || isFinance());
       allow delete: if isAdmin();
     }
 

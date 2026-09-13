@@ -61,7 +61,7 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {profile?.role !== 'dutyStaff' && profile?.role !== 'payroll' && (
+        {profile?.role !== 'dutyStaff' && profile?.role !== 'payroll' && profile?.role !== 'finance' && (
           <>
             <NavLink to="/pipeline" className={navItemClass} onClick={onNavigate}>
               <span aria-hidden>🗂️</span> Pipeline
@@ -107,6 +107,11 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
             <span aria-hidden>🗓️</span> Duty Roster
           </NavLink>
         )}
+        {profile?.role === 'finance' && (
+          <NavLink to="/branch-collection" className={navItemClass} onClick={onNavigate}>
+            <span aria-hidden>🧾</span> Branch Collection
+          </NavLink>
+        )}
         {isAdminRole(profile?.role) && (
           <NavLink to="/admin" className={navItemClass} onClick={onNavigate}>
             <span aria-hidden>⚙️</span> Admin Settings
@@ -125,7 +130,9 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
                 ? 'Staff'
                 : profile?.role === 'payroll'
                   ? 'Payroll'
-                  : 'Branch Manager'}{' '}
+                  : profile?.role === 'finance'
+                    ? 'Finance'
+                    : 'Branch Manager'}{' '}
           ·{' '}
           {profile?.department}
         </p>
