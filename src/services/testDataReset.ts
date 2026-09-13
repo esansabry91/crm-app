@@ -8,6 +8,7 @@ export interface TestDataResetResult {
   months: number;
   guards: number;
   bufferGuards: number;
+  invoices: number;
   guardsReleased: number;
 }
 
@@ -16,6 +17,7 @@ export interface TestDataCounts {
   sites: number;
   guards: number;
   bufferGuards: number;
+  invoices: number;
 }
 
 /**
@@ -25,17 +27,19 @@ export interface TestDataCounts {
  * since a stale count here would understate exactly what's about to be permanently deleted.
  */
 export async function getTestDataCounts(): Promise<TestDataCounts> {
-  const [tendersSnap, sitesSnap, guardsSnap, bufferSnap] = await Promise.all([
+  const [tendersSnap, sitesSnap, guardsSnap, bufferSnap, invoicesSnap] = await Promise.all([
     getDocs(query(collection(db, 'tenders'), where('isTestData', '==', true))),
     getDocs(query(collection(db, 'sites'), where('isTestData', '==', true))),
     getDocs(query(collection(db, 'guards'), where('isTestData', '==', true))),
     getDocs(query(collection(db, 'bufferGuards'), where('isTestData', '==', true))),
+    getDocs(query(collection(db, 'invoices'), where('isTestData', '==', true))),
   ]);
   return {
     tenders: tendersSnap.docs.length,
     sites: sitesSnap.docs.length,
     guards: guardsSnap.docs.length,
     bufferGuards: bufferSnap.docs.length,
+    invoices: invoicesSnap.docs.length,
   };
 }
 
@@ -114,11 +118,18 @@ function throwIfAny(failures: OpFailure[]): void {
  * signed-in admin's own browser session instead of a separate terminal sign-in.
  */
 export async function resetTestData(): Promise<TestDataResetResult> {
-  const [tendersSnap, sitesSnap, guardsSnap, bufferSnap] = await Promise.all([
+  const [tendersSnap, sitesSnap, guardsSnap, bufferSnap, invoicesSnap] = await Promise.all([
     taggedRead('tenders (isTestData query)', getDocs(query(collection(db, 'tenders'), where('isTestData', '==', true)))),
     taggedRead('sites (isTestData query)', getDocs(query(collection(db, 'sites'), where('isTestData', '==', true)))),
     taggedRead('guards (isTestData query)', getDocs(query(collection(db, 'guards'), where('isTestData', '==', true)))),
     taggedRead('bufferGuards (isTestData query)', getDocs(query(collection(db, 'bufferGuards'), where('isTestData', '==', true)))),
+    // Deliberately does NOT also touch /invoiceCounters — a counter is shared per
+    // brand+branch+client, and if any REAL (non-test) invoice still uses that exact combination,
+    // resetting its running number back down risks a future real invoice reusing a number that
+    // real one already has. The cost of leaving a test-only counter's lastNumber sitting unused
+    // forever is purely cosmetic (a gap in a sequence nobody prints); a duplicate invoice number
+    // is not.
+    taggedRead('invoices (isTestData query)', getDocs(query(collection(db, 'invoices'), where('isTestData', '==', true)))),
   ]);
 
   const testTenderIds = new Set(tendersSnap.docs.map((d) => d.id));
@@ -197,6 +208,10 @@ export async function resetTestData(): Promise<TestDataResetResult> {
     bufferSnap.docs.map((d) => d.ref),
     failures
   );
+  const invoicesDeleted = await deleteEach(
+    invoicesSnap.docs.map((d) => d.ref),
+    failures
+  );
 
   throwIfAny(failures);
 
@@ -207,6 +222,7 @@ export async function resetTestData(): Promise<TestDataResetResult> {
     months: monthsDeleted,
     guards: guardsDeleted,
     bufferGuards: bufferDeleted,
+    invoices: invoicesDeleted,
     guardsReleased: guardsToRelease.length,
   };
 }

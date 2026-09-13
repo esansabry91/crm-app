@@ -168,7 +168,7 @@ export default function TestingDataTool() {
         e.message = `[reading current counts] ${e.message}`;
         throw e;
       }
-      const total = counts.tenders + counts.sites + counts.guards + counts.bufferGuards;
+      const total = counts.tenders + counts.sites + counts.guards + counts.bufferGuards + counts.invoices;
       if (total === 0) {
         setResetMessage({ text: 'Nothing is currently tagged as test data — nothing to delete.', isError: false });
         return;
@@ -178,8 +178,10 @@ export default function TestingDataTool() {
           `- ${counts.tenders} tender(s), plus their history logs\n` +
           `- ${counts.sites} Duty Roster site(s), plus their schedule data\n` +
           `- ${counts.guards} Guard Bank guard(s)\n` +
-          `- ${counts.bufferGuards} buffer guard(s)\n\n` +
-          `Any real guard still deployed at a test site will be released back to the Guard Pool first. This cannot be undone.`
+          `- ${counts.bufferGuards} buffer guard(s)\n` +
+          `- ${counts.invoices} Branch Collection invoice(s)\n\n` +
+          `Any real guard still deployed at a test site will be released back to the Guard Pool first. This cannot be undone. ` +
+          `(This does not reset invoice numbering — a brand/branch/client's running sequence is left as-is so a future real invoice never risks reusing a number.)`
       );
       if (!confirmed) return;
       const typed = window.prompt('Type DELETE (all caps) to confirm, or Cancel to back out:');
@@ -191,7 +193,7 @@ export default function TestingDataTool() {
       setResetMessage({
         text:
           `Deleted ${result.tenders} tender(s), ${result.history} history entrie(s), ${result.sites} site(s), ` +
-          `${result.months} schedule record(s), ${result.guards} guard(s), and ${result.bufferGuards} buffer guard(s).` +
+          `${result.months} schedule record(s), ${result.guards} guard(s), ${result.bufferGuards} buffer guard(s), and ${result.invoices} invoice(s).` +
           (result.guardsReleased > 0 ? ` Released ${result.guardsReleased} real guard(s) back to the Guard Pool.` : ''),
         isError: false,
       });
@@ -242,9 +244,12 @@ export default function TestingDataTool() {
             <h3 className="text-sm font-semibold text-slate-800">Currently tagged as test data</h3>
             <p className="text-xs text-slate-400 mt-0.5 max-w-2xl">
               {taggedCount} record{taggedCount === 1 ? '' : 's'} across tenders, sites, guards and
-              buffer guards. Deleting is permanent — each tender's history log and each site's
-              schedule data goes with it, and any real guard still deployed at a test site is
-              released back to the Guard Pool first.
+              buffer guards (this count doesn't include Branch Collection invoices, which the
+              button below still deletes — see it for the up-to-date total across everything,
+              invoices included). Deleting is permanent — each tender's history log and each
+              site's schedule data goes with it, any real guard still deployed at a test site is
+              released back to the Guard Pool first, and invoice numbering sequences are left
+              untouched so a future real invoice never risks reusing a number.
             </p>
           </div>
           <button

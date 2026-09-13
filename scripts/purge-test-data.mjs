@@ -200,14 +200,18 @@ function askHidden(promptText) {
  * full story on when and why to run this.
  */
 async function runTestDataPurge(db, ask) {
-  console.log('Scanning for everything tagged isTestData across tenders, sites, guards and buffer guards...\n');
+  console.log('Scanning for everything tagged isTestData across tenders, sites, guards, buffer guards and invoices...\n');
 
-  let tendersSnap, sitesSnap, guardsSnap, bufferSnap;
+  let tendersSnap, sitesSnap, guardsSnap, bufferSnap, invoicesSnap;
   try {
     tendersSnap = await getDocs(query(collection(db, 'tenders'), where('isTestData', '==', true)));
     sitesSnap = await getDocs(query(collection(db, 'sites'), where('isTestData', '==', true)));
     guardsSnap = await getDocs(query(collection(db, 'guards'), where('isTestData', '==', true)));
     bufferSnap = await getDocs(query(collection(db, 'bufferGuards'), where('isTestData', '==', true)));
+    // Deliberately does NOT also touch /invoiceCounters -- see src/services/testDataReset.ts's
+    // matching comment: a counter is shared per brand+branch+client, and resetting one that a
+    // real (non-test) invoice still uses risks a future real invoice reusing a number.
+    invoicesSnap = await getDocs(query(collection(db, 'invoices'), where('isTestData', '==', true)));
   } catch (err) {
     if (err.code === 'permission-denied') {
       console.error(
@@ -266,6 +270,7 @@ async function runTestDataPurge(db, ask) {
   console.log(`  - ${sitesSnap.docs.length} Duty Roster site(s), plus ${monthDocsToDelete.length} month/schedule record(s) under them`);
   console.log(`  - ${guardsSnap.docs.length} Guard Bank guard(s)`);
   console.log(`  - ${bufferSnap.docs.length} buffer guard(s)`);
+  console.log(`  - ${invoicesSnap.docs.length} Branch Collection invoice(s) (invoice numbering sequences are left untouched)`);
   if (guardsToRelease.length > 0) {
     console.log(
       `\nIt will also release ${guardsToRelease.length} real (non-test) guard(s) currently deployed at a test site back to the Guard Pool, so they don't end up pointing at a deleted site.`
@@ -281,7 +286,8 @@ async function runTestDataPurge(db, ask) {
     sitesSnap.docs.length +
     monthDocsToDelete.length +
     guardsSnap.docs.length +
-    bufferSnap.docs.length;
+    bufferSnap.docs.length +
+    invoicesSnap.docs.length;
   if (totalToDelete === 0) {
     console.log('Nothing is currently tagged as test data - nothing to delete.');
     return;
@@ -321,6 +327,7 @@ async function runTestDataPurge(db, ask) {
   totalDeleted += await deleteEach(sitesSnap.docs.map((d) => d.ref), failures);
   totalDeleted += await deleteEach(guardsSnap.docs.map((d) => d.ref), failures);
   totalDeleted += await deleteEach(bufferSnap.docs.map((d) => d.ref), failures);
+  totalDeleted += await deleteEach(invoicesSnap.docs.map((d) => d.ref), failures);
 
   console.log(
     `\nDone - deleted ${totalDeleted} document(s) and released ${guardsToRelease.length} real guard(s) back to the Guard Pool.`
