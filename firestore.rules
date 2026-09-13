@@ -333,13 +333,18 @@ service cloud.firestore {
                .hasOnly(['branch', 'tenderId', 'archived', 'archivedAt', 'updatedAt'])
         )
       );
-      // Deleting a site through the console has been removed entirely — for every role,
+      // Manual deletion through the console UI has been removed entirely — for every role,
       // including admin/HQ (see applyRoleUiLockdown()'s comment in public/duty-roster/index.html
-      // for why: a site's lifecycle is already fully automatic, driven by the linked tender).
-      // The button, its click handler, and deleteSite() itself are all gone client-side; this is
-      // the actual enforcement layer, so the capability can't come back just by someone
-      // resurrecting the client-side code.
-      allow delete: if false;
+      // for why: a site's lifecycle is already fully automatic, driven by the linked tender). The
+      // button, its click handler, and deleteSite() itself are all gone client-side.
+      //
+      // The one narrow exception: resetTestData() (services/testDataReset.ts, called from
+      // TestingDataTool.tsx's "Delete all test data" button, developer-only per AdminPage.tsx)
+      // batch-deletes sites alongside tenders/guards/history — ALL tagged isTestData:true — as
+      // part of routine sandbox cleanup. A blanket `if false` here broke that tool too (a denied
+      // delete on any one doc fails the whole batch), so this only reopens the door for that
+      // exact case: a developer account deleting a site already tagged as test data.
+      allow delete: if isDeveloper() && resource.data.get('isTestData', false) == true;
 
       match /months/{monthKey} {
         allow read: if isActiveUser()
