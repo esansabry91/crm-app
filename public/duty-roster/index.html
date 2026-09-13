@@ -5373,7 +5373,22 @@
   // seed one sample site so the app isn't blank on first load. Explicitly unassigned
   // (branch: null, not just omitted) so it's both visible to everyone and a valid match for
   // the `where("branch","==",null)` query non-privileged users run below.
+  //
+  // Only ever does this ONCE per project, guarded by settings/app.demoSiteSeeded -- without that,
+  // this refires every single time a branch's sites read back empty, which includes right after
+  // "Delete all test data" purges every isTestData:true site (this seed's own site included):
+  // the very next Duty Roster page load would see zero reachable sites again and recreate a
+  // fresh "Site 1" right back into Firestore, forever. The marker is set best-effort (settings/app
+  // is developer-write-only in firestore.rules) -- the one account that can actually trigger this
+  // loop today (repeated test-data purges) is always a developer account, so this covers the real
+  // case; a genuinely fresh project's very first-ever user being a non-developer, non-admin
+  // account is an edge case this won't cover, and it'll just keep re-seeding for them exactly as
+  // it always has.
   async function migrateOrSeed(){
+    const alreadySeeded = await dbHandle.doc("settings/app").get()
+      .then(snap => !!(snap.exists && snap.data().demoSiteSeeded), () => false);
+    if(alreadySeeded) return;
+
     const id = newId("site");
     const cfg = makeSampleConfig();
     cfg.id = id; cfg.name = "Site 1"; cfg.branch = null; cfg.createdAt = nowIso();
@@ -5382,6 +5397,7 @@
     // scenario where an auto-seeded demo site is genuine data.
     cfg.isTestData = true;
     await dbHandle.doc("sites/"+id).set(cfg).catch(()=>{});
+    await dbHandle.doc("settings/app").set({ demoSiteSeeded: true }, { merge: true }).catch(()=>{});
   }
 
   function bootLocalFallback(){
