@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { subscribeInvoices, updateInvoiceStatus } from '../../services/invoices';
 import { useBrands } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
@@ -96,8 +96,18 @@ export default function InvoiceList() {
   const { brands } = useBrands();
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [brandFilter, setBrandFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<InvoiceStatus | ''>('');
 
   useEffect(() => subscribeInvoices(setInvoices), []);
+
+  const filteredInvoices = useMemo(
+    () =>
+      invoices
+        .filter((inv) => !brandFilter || inv.brandId === brandFilter)
+        .filter((inv) => !statusFilter || inv.status === statusFilter),
+    [invoices, brandFilter, statusFilter]
+  );
 
   const viewing = invoices.find((i) => i.id === viewingId) || null;
 
@@ -139,9 +149,44 @@ export default function InvoiceList() {
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5">
-      <h3 className="text-sm font-semibold text-slate-800 mb-3">Invoices ({invoices.length})</h3>
+      <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
+        <h3 className="text-sm font-semibold text-slate-800">Invoices ({filteredInvoices.length})</h3>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input text-sm">
+          <option value="">All brands</option>
+          {brands.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as InvoiceStatus | '')}
+          className="input text-sm"
+        >
+          <option value="">All statuses</option>
+          <option value="unpaid">Unpaid</option>
+          <option value="partial">Partially Paid</option>
+          <option value="paid">Paid</option>
+        </select>
+        {(brandFilter || statusFilter) && (
+          <button
+            onClick={() => {
+              setBrandFilter('');
+              setStatusFilter('');
+            }}
+            className="text-xs text-slate-500 hover:underline"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
       <div className="space-y-2">
-        {invoices.map((inv) => (
+        {filteredInvoices.map((inv) => (
           <div key={inv.id} className="border border-slate-100 rounded-lg p-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
@@ -155,6 +200,10 @@ export default function InvoiceList() {
                   <p className="text-xs text-emerald-600 mt-0.5">
                     Last paid: RM {lastPayment(inv)!.amount.toFixed(2)}
                     {lastPayment(inv)!.date && ` on ${formatShortDate(lastPayment(inv)!.date)}`}
+                    {' · '}
+                    <span className={inv.total - inv.amountPaid > 0 ? 'text-amber-600' : 'text-slate-400'}>
+                      Balance: RM {(inv.total - inv.amountPaid).toFixed(2)}
+                    </span>
                   </p>
                 )}
               </div>
@@ -177,7 +226,11 @@ export default function InvoiceList() {
             {editingId === inv.id && <StatusEditor invoice={inv} onClose={() => setEditingId(null)} />}
           </div>
         ))}
-        {invoices.length === 0 && <p className="text-xs text-slate-400">No invoices generated yet.</p>}
+        {filteredInvoices.length === 0 && (
+          <p className="text-xs text-slate-400">
+            {invoices.length === 0 ? 'No invoices generated yet.' : 'No invoices match these filters.'}
+          </p>
+        )}
       </div>
     </div>
   );
