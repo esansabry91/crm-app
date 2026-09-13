@@ -333,7 +333,13 @@ service cloud.firestore {
                .hasOnly(['branch', 'tenderId', 'archived', 'archivedAt', 'updatedAt'])
         )
       );
-      allow delete: if isActiveUser() && !isPayroll() && canReachSite(resource.data);
+      // Deleting a site through the console has been removed entirely — for every role,
+      // including admin/HQ (see applyRoleUiLockdown()'s comment in public/duty-roster/index.html
+      // for why: a site's lifecycle is already fully automatic, driven by the linked tender).
+      // The button, its click handler, and deleteSite() itself are all gone client-side; this is
+      // the actual enforcement layer, so the capability can't come back just by someone
+      // resurrecting the client-side code.
+      allow delete: if false;
 
       match /months/{monthKey} {
         allow read: if isActiveUser()

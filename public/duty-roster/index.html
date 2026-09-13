@@ -25,13 +25,25 @@
 <script src="firebase-config.js"></script>
 <!-- Powers the "Export to Excel" button (Roster tab). Loaded from a CDN, so
      that button needs an internet connection to work; everything else in
-     the app keeps working without it. -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+     the app keeps working without it.
+     xlsx-js-style rather than plain SheetJS/xlsx: same API (XLSX.utils.aoa_to_sheet,
+     XLSX.writeFile, etc. — a drop-in replacement), but it additionally lets a cell carry a
+     `.s` style object (fill/font/border), which the community "xlsx" build silently ignores
+     on write. That's what applyRosterSheetStyling() below needs to make the exported Roster
+     sheet's cells match the on-screen grid's colors (see table.gt's CSS rules). -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <style>
   /* System font stacks only — no external stylesheet. A render-blocking
      cross-origin font request was leaving this page blank/unresponsive
      for many seconds (or longer) on slower or restricted networks. */
+  /* Fixed at light theme deliberately — this console used to follow the OS/browser's
+     prefers-color-scheme (with an unused :root[data-theme="dark"] override that nothing ever
+     set), which meant it silently rendered in a black/dark palette whenever someone's system
+     was in dark mode, unrelated to anything they chose inside this app. color-scheme:light
+     below also keeps native controls (date pickers, the branch/site <select>s, scrollbars)
+     from rendering with dark chrome even when the OS prefers dark. */
   :root{
+    color-scheme: light;
     --bg:#F6F7F5;
     --surface:#FFFFFF;
     --surface-2:#EEF1EE;
@@ -52,52 +64,6 @@
     --shift-c:#FBF0D9; --shift-c-ink:#5C4413;
     --shift-d:#F6E4FA; --shift-d-ink:#5A2D63;
     --shadow: 0 1px 2px rgba(20,30,26,0.06), 0 4px 14px rgba(20,30,26,0.05);
-  }
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){
-      --bg:#101512;
-      --surface:#171E1B;
-      --surface-2:#1E2622;
-      --ink:#E8EDEA;
-      --muted:#94A19A;
-      --line:#2A332E;
-      --accent:#56B79A;
-      --accent-ink:#0B1512;
-      --accent-soft:#1C332C;
-      --good:#4FBE7C;
-      --good-soft:#173226;
-      --warn:#D6A54B;
-      --warn-soft:#332911;
-      --critical:#E2685C;
-      --critical-soft:#3A1F1C;
-      --shift-a:#1E3350; --shift-a-ink:#BFE0FF;
-      --shift-b:#1E3A28; --shift-b-ink:#B9F0C9;
-      --shift-c:#4A3B14; --shift-c-ink:#F5DE9E;
-      --shift-d:#3B2440; --shift-d-ink:#EFC9F7;
-      --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.35);
-    }
-  }
-  :root[data-theme="dark"]{
-    --bg:#101512;
-    --surface:#171E1B;
-    --surface-2:#1E2622;
-    --ink:#E8EDEA;
-    --muted:#94A19A;
-    --line:#2A332E;
-    --accent:#56B79A;
-    --accent-ink:#0B1512;
-    --accent-soft:#1C332C;
-    --good:#4FBE7C;
-    --good-soft:#173226;
-    --warn:#D6A54B;
-    --warn-soft:#332911;
-    --critical:#E2685C;
-    --critical-soft:#3A1F1C;
-    --shift-a:#1E3350; --shift-a-ink:#BFE0FF;
-    --shift-b:#1E3A28; --shift-b-ink:#B9F0C9;
-    --shift-c:#4A3B14; --shift-c-ink:#F5DE9E;
-    --shift-d:#3B2440; --shift-d-ink:#EFC9F7;
-    --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.35);
   }
 
   *{ box-sizing:border-box; }
@@ -329,7 +295,6 @@
     <span class="small" id="siteBranchBadge" style="color:var(--muted, #64748b);"></span>
     <button class="btn sm" id="newSiteBtn" type="button">+ New site</button>
     <button class="btn sm" id="renameSiteBtn" type="button">Rename</button>
-    <button class="btn sm danger" id="deleteSiteBtn" type="button">Delete site</button>
   </div>
 
   <div class="tabs" role="tablist">
@@ -2159,6 +2124,15 @@
     return rows;
   }
 
+  // Returns { rows, meta, weekendCols } — `rows` is the same plain guards-by-days grid always
+  // handed to XLSX.utils.aoa_to_sheet(), and `meta`/`weekendCols` are the extra per-cell
+  // bookkeeping applyRosterSheetStyling() needs to recolor the exported sheet to match what
+  // renderRosterGrid() shows on screen (see that function's own dayMaps, which this mirrors —
+  // including the `flagged` rest-day lookup it does that the old export-only version of this
+  // function never captured). `meta[guardIdx][dayIdx]` is one of:
+  //   {kind:"off"}                     — a plain, unassigned rest day
+  //   {kind:"leave", covered:boolean}  — ABS/MC/UPL/SUP/LV, `covered` when someone's covering
+  //   {kind:"shift", letter, flagged}  — on shift; `flagged` when auto-assigned on a rest day
   function rosterGridExportRows(y, m, result){
     const site = currentConfig().site;
     const nDays = result.days.length;
@@ -2169,7 +2143,9 @@
       day.assignments.forEach((slots, stIdx) => {
         slots.forEach((guardId, slotIdx) => {
           if(!guardId) return;
-          map.set(guardId, { stIdx, slot: slotIdx });
+          const sd = shiftDefs[stIdx];
+          const flag = result.flags.find(f => f.date===day.dateStr && f.shiftId===(sd?sd.id:"shift"+stIdx) && f.slot===slotIdx && f.restDay);
+          map.set(guardId, { stIdx, slot: slotIdx, flagged: !!flag });
         });
       });
       return map;
@@ -2188,30 +2164,127 @@
     }
 
     const guards = currentConfig().guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
+    const weekendCols = result.days.map(day => isWeekend(day.y, day.m, day.d));
 
     const header = ["Guard"]
       .concat(result.days.map(day => `${day.d} ${weekdayShort(day.y, day.m, day.d)}`))
       .concat(["Shifts", "Rest days"]);
     const rows = [header];
+    const meta = [];
 
     guards.forEach(g => {
       const row = [g.name];
+      const metaRow = [];
       dayMaps.forEach((map, dayIdx) => {
         const a = map.get(g.id);
         if(!a){
           const leaveEntry = dayLeaveMaps[dayIdx].get(g.id);
-          if(!leaveEntry){ row.push("OFF"); return; }
+          if(!leaveEntry){ row.push("OFF"); metaRow.push({kind:"off"}); return; }
           const covering = coveringGuardNameFor(currentMonthState(), leaveEntry);
           row.push(leaveAbbrev(leaveEntry.reason || "Leave") + (covering ? ` (covered by ${covering})` : ""));
+          metaRow.push({kind:"leave", covered: !!covering});
         } else {
           row.push(`${SHIFT_LETTERS[a.stIdx % SHIFT_LETTERS.length]} P${a.slot+1}`);
+          metaRow.push({kind:"shift", letter: SHIFT_LETTERS[a.stIdx % SHIFT_LETTERS.length], flagged: a.flagged});
         }
       });
       const worked = result.totalShifts[g.id] || 0;
       row.push(worked, nDays - worked);
       rows.push(row);
+      meta.push(metaRow);
     });
-    return rows;
+    return { rows, meta, weekendCols };
+  }
+
+  // Recolors and resizes the "Roster" sheet's worksheet object in place, using the `meta`/
+  // `weekendCols` rosterGridExportRows() returned alongside its rows, so the exported file reads
+  // like the on-screen roster grid (table.gt's CSS, above) instead of a flat black-and-white
+  // sheet. Requires a style-capable XLSX build (see the script tag near the top of this file for
+  // why plain SheetJS/xlsx can't do this) — callers should skip this entirely if that ever isn't
+  // the case, same as the typeof XLSX==="undefined" guard export buttons already have.
+  //
+  // Colors are the same hex values as this file's :root CSS variables (light theme only — see
+  // the "Fixed at light theme" comment near the top of this file), copied here rather than read
+  // from the DOM because a worksheet cell's `.s` needs a literal hex string, not a CSS var.
+  function applyRosterSheetStyling(ws, meta, weekendCols){
+    const GREY_LINE = "DCE3DE";       // --line
+    const SURFACE_2 = "EEF1EE";       // --surface-2 (header row / totals columns)
+    const SURFACE   = "FFFFFF";       // --surface (Guard column)
+    const MUTED     = "5C665F";       // --muted (OFF text)
+    const ACCENT     = "2F6F5E";      // --accent (weekend header text / "covered" ring)
+    const ACCENT_SOFT = "DEEBE5";     // --accent-soft (weekend header fill)
+    const WARN       = "9A6A15";      // --warn (leave text / rest-day-flag ring)
+    const WARN_SOFT   = "F7ECD8";     // --warn-soft (leave fill)
+    const SHIFT_FILL = { A:"DCEAFB", B:"E1F3E6", C:"FBF0D9", D:"F6E4FA" };
+    const SHIFT_INK  = { A:"1B3A5C", B:"1E4F2E", C:"5C4413", D:"5A2D63" };
+
+    const thinBorder = (color) => {
+      const side = { style: "thin", color: { rgb: color } };
+      return { top: side, bottom: side, left: side, right: side };
+    };
+    const ringBorder = (color) => {
+      const side = { style: "medium", color: { rgb: color } };
+      return { top: side, bottom: side, left: side, right: side };
+    };
+
+    const nGuardRows = meta.length;
+    const nDays = weekendCols.length; // columns: 0=Guard, 1..nDays=days, nDays+1=Shifts, nDays+2=Rest days
+
+    // Column widths — narrow day columns (just enough for "B P1" / "UPL" / "SUP"), a wider
+    // Guard name column, and slightly wider Shifts/Rest days columns for their header text.
+    ws["!cols"] = [{ wch: 16 }]
+      .concat(Array.from({ length: nDays }, () => ({ wch: 7 })))
+      .concat([{ wch: 9 }, { wch: 11 }]);
+
+    const setCell = (r, cIdx, style) => {
+      const ref = XLSX.utils.encode_cell({ r, c: cIdx });
+      const cell = ws[ref];
+      if(cell) cell.s = Object.assign({}, cell.s, style);
+    };
+
+    // Header row (r=0).
+    setCell(0, 0, { font: { bold: true }, fill: { fgColor: { rgb: SURFACE } }, border: thinBorder(GREY_LINE) });
+    for(let d = 0; d < nDays; d++){
+      const wknd = weekendCols[d];
+      setCell(0, d + 1, {
+        font: { bold: true, color: { rgb: wknd ? ACCENT : MUTED } },
+        fill: { fgColor: { rgb: wknd ? ACCENT_SOFT : SURFACE_2 } },
+        alignment: { horizontal: "center" },
+        border: thinBorder(GREY_LINE),
+      });
+    }
+    setCell(0, nDays + 1, { font: { bold: true }, fill: { fgColor: { rgb: SURFACE_2 } }, border: thinBorder(GREY_LINE) });
+    setCell(0, nDays + 2, { font: { bold: true }, fill: { fgColor: { rgb: SURFACE_2 } }, border: thinBorder(GREY_LINE) });
+
+    // Data rows (r=1..nGuardRows).
+    for(let g = 0; g < nGuardRows; g++){
+      const r = g + 1;
+      setCell(r, 0, { font: { bold: true }, fill: { fgColor: { rgb: SURFACE } }, border: thinBorder(GREY_LINE) });
+      const metaRow = meta[g];
+      for(let d = 0; d < nDays; d++){
+        const cellMeta = metaRow[d] || { kind: "off" };
+        const base = { alignment: { horizontal: "center" }, border: thinBorder(GREY_LINE) };
+        if(cellMeta.kind === "shift"){
+          const fill = SHIFT_FILL[cellMeta.letter] || SHIFT_FILL.A;
+          const ink = SHIFT_INK[cellMeta.letter] || SHIFT_INK.A;
+          setCell(r, d + 1, Object.assign(base, {
+            fill: { fgColor: { rgb: fill } },
+            font: { color: { rgb: ink } },
+            border: cellMeta.flagged ? ringBorder(WARN) : thinBorder(GREY_LINE),
+          }));
+        } else if(cellMeta.kind === "leave"){
+          setCell(r, d + 1, Object.assign(base, {
+            fill: { fgColor: { rgb: WARN_SOFT } },
+            font: { bold: true, color: { rgb: WARN } },
+            border: cellMeta.covered ? ringBorder(ACCENT) : thinBorder(GREY_LINE),
+          }));
+        } else {
+          setCell(r, d + 1, Object.assign(base, { font: { color: { rgb: MUTED } } }));
+        }
+      }
+      setCell(r, nDays + 1, { font: { bold: true }, fill: { fgColor: { rgb: SURFACE_2 } }, alignment: { horizontal: "center" }, border: thinBorder(GREY_LINE) });
+      setCell(r, nDays + 2, { font: { bold: true }, fill: { fgColor: { rgb: SURFACE_2 } }, alignment: { horizontal: "center" }, border: thinBorder(GREY_LINE) });
+    }
   }
 
   // `incoming`, when passed, is a {homeGuardId: [{dateStr,hours}, ...]} map from
@@ -2426,7 +2499,15 @@
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(guardsExportRows()), "Guards");
     const sheetName = monthLabel(y, m).slice(0, 31);
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rosterGridExportRows(y, m, result)), sheetName);
+    const rosterExport = rosterGridExportRows(y, m, result);
+    const rosterWs = XLSX.utils.aoa_to_sheet(rosterExport.rows);
+    // Recolor/resize the sheet to match the on-screen roster grid — see
+    // applyRosterSheetStyling()'s own comment for why this needs a style-capable XLSX build.
+    // Best-effort: an export should never fail just because coloring did, so a styling bug
+    // degrades to a plain (but still correct) uncolored sheet rather than blocking the download.
+    try{ applyRosterSheetStyling(rosterWs, rosterExport.meta, rosterExport.weekendCols); }
+    catch(err){ console.error("Roster sheet styling failed — exporting without colors.", err); }
+    XLSX.utils.book_append_sheet(wb, rosterWs, sheetName);
     // Combined column: whatever "Refresh combined hours" last loaded for this site/month, or
     // blank if that's never been clicked — see summaryReportExportRows()'s own comment.
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryReportExportRows(y, m, config, monthState, result, currentCombinedHours())), "Summary Report");
@@ -4203,22 +4284,6 @@
       }
     });
   });
-  $("#deleteSiteBtn").addEventListener("click", () => {
-    if(state.sites.length <= 1){ openAlertModal("Can't delete", "You need at least one site — add another before deleting this one."); return; }
-    const site = state.sites.find(s => s.id === state.currentSiteId);
-    openConfirmModal({
-      title: "Delete site",
-      message: `Delete "${site ? site.name : "this site"}" and all of its guards, roster history and settings? This cannot be undone.`,
-      okLabel: "Delete",
-      danger: true,
-      onConfirm: () => {
-        const name = site ? site.name : "site";
-        deleteSite(state.currentSiteId);
-        showToast(`Deleted "${name}".`);
-      }
-    });
-  });
-
   $$(".vt").forEach(btn => {
     btn.addEventListener("click", () => {
       state.rosterViewMode = btn.getAttribute("data-view");
@@ -4839,17 +4904,6 @@
     render();
   }
 
-  function deleteSite(id){
-    const idx = state.sites.findIndex(s => s.id === id);
-    if(idx === -1 || state.sites.length <= 1) return;
-    state.sites.splice(idx, 1);
-    delete state.configsCache[id];
-    Object.keys(state.monthsCache).forEach(k => { if(k.indexOf(id+"::") === 0) delete state.monthsCache[k]; });
-    if(dbHandle) dbHandle.doc("sites/"+id).delete().catch(()=>{});
-    const next = state.sites[0];
-    switchSite(next.id);
-  }
-
   function renderSiteSelect(){
     const sel = $("#siteSelect");
     if(!sel) return;
@@ -4892,11 +4946,9 @@
         sel.value = visibleSites[0].id;
       }
     }
-    const delBtn = $("#deleteSiteBtn");
-    if(delBtn) delBtn.disabled = state.sites.length <= 1;
     // Re-applied here (already called once at the top of this function, for the branch-filter
-    // dropdown) because Rename/Delete's visibility depends on which site is CURRENTLY selected,
-    // and the switchSite() call above — for the "the site we were on just dropped out of the
+    // dropdown) because Rename's visibility depends on which site is CURRENTLY selected, and
+    // the switchSite() call above — for the "the site we were on just dropped out of the
     // filtered list" case — can change that partway through this function.
     applyRoleUiLockdown();
     renderSiteBranchControl();
@@ -4928,7 +4980,6 @@
     const filterSel = $("#branchFilter");
     const newBtn = $("#newSiteBtn");
     const renameBtn = $("#renameSiteBtn");
-    const delBtn = $("#deleteSiteBtn");
     if(!filterSel) return;
     if(state.isPayroll || state.isPrivileged){
       if(filterLabel) filterLabel.hidden = false;
@@ -4941,9 +4992,11 @@
       if(filterLabel) filterLabel.hidden = true;
       filterSel.hidden = true;
     }
-    // New/Rename/Delete are hidden for EVERYONE now, including Admin/HQ. Sites are created and
-    // named entirely by the Won-tender pipeline (see the ?tenderId= deep link handling and
-    // createSite()'s tenderId param) and follow that tender's lifecycle automatically (see
+    // New/Rename are hidden for EVERYONE now, including Admin/HQ, and Delete has been removed
+    // outright (button, handler, and deleteSite() itself all gone — see firestore.rules' /sites
+    // delete rule, which now denies it for every role too). Sites are created and named entirely
+    // by the Won-tender pipeline (see the ?tenderId= deep link handling and createSite()'s
+    // tenderId param) and follow that tender's lifecycle automatically (see
     // setLinkedSitesArchived() in the CRM's tenders.ts, called on close-out/reopen) — there's no
     // remaining case where hand-creating, renaming, or deleting a site through this console is
     // the right move, for any role. Admin/HQ/Payroll still see every branch's sites (via
@@ -4951,12 +5004,6 @@
     // them) — this only removes the ability to mutate the site list, not visibility into it.
     if(newBtn) newBtn.hidden = true;
     if(renameBtn) renameBtn.hidden = true;
-    // TEMPORARY: Delete site left visible to clean up a stray "Site 1" demo site that got
-    // permanently seeded into Firestore by the migrateOrSeed() race condition fixed elsewhere in
-    // this file (see initDb()'s initialReadFailed tracking). Revert this one line back to
-    // `if(delBtn) delBtn.hidden = true;` once that cleanup is done -- New/Rename/Delete are
-    // otherwise meant to stay hidden for everyone, per the comment above.
-    if(delBtn) delBtn.hidden = false;
   }
 
   // Read-only for everyone who sees it — a site's branch is set once, automatically, by the
