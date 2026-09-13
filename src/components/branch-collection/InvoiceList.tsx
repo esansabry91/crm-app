@@ -40,8 +40,12 @@ function StatusEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => v
       </select>
       <input
         type="number"
-        value={amountPaid}
-        onChange={(e) => setAmountPaid(Number(e.target.value) || 0)}
+        value={amountPaid === 0 ? '' : amountPaid}
+        onFocus={(e) => e.target.select()}
+        onChange={(e) => {
+          const raw = e.target.value.replace(/^0+(?=\d)/, '');
+          setAmountPaid(raw === '' ? 0 : Number(raw) || 0);
+        }}
         className="input w-32"
         placeholder="Amount paid (RM)"
       />
