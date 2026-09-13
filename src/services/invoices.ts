@@ -3,11 +3,13 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   runTransaction,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { shouldStampTestData } from './settings';
@@ -241,4 +243,79 @@ export async function updateInvoiceStatus(
     });
   }
   await updateDoc(doc(db, 'invoices', id), updates);
+}
+
+export interface BackfillBranchResult {
+  total: number;
+  updated: number;
+  skippedNoSite: number;
+  /** Of `updated`, how many got a branchName filled in but no branchId (the site's branch name
+   *  didn't match any current Branch record) — still won't surface under a branch filter, same
+   *  as a brand-new invoice would behave in that situation. */
+  updatedNameOnly: number;
+}
+
+/**
+ * One-time data fix for invoices saved before branchId/branchName existed on the Invoice doc
+ * (added alongside the Debtor List's branch filter) — without it, an older invoice silently
+ * drops out of any branch-filtered view (Revenue tab, Debtor List) even though "All branches"
+ * still shows it fine, since only the branchId equality check excludes it.
+ *
+ * For every invoice missing branchId, looks up its siteId in the Duty Roster `sites` collection
+ * to read that site's `branch` name, then matches it against the `branches` collection the same
+ * way InvoiceGenerator does for new invoices (see matchedBranch there). Invoices with no siteId,
+ * or whose site's branch name doesn't match any current Branch record, get branchName set from
+ * the site's raw branch string where available (for display) but branchId stays unset — same as
+ * how a new invoice behaves in that situation, so branch-filtering still won't surface them, but
+ * nothing about them looks broken either. Never touches an invoice that already has a branchId.
+ */
+export async function backfillInvoiceBranches(): Promise<BackfillBranchResult> {
+  const [invoicesSnap, sitesSnap, branchesSnap] = await Promise.all([
+    getDocs(invoicesCollection()),
+    getDocs(collection(db, 'sites')),
+    getDocs(collection(db, 'branches')),
+  ]);
+
+  const siteBranchById = new Map<string, string>();
+  sitesSnap.forEach((d) => {
+    const branch = (d.data() as { branch?: string }).branch;
+    if (branch) siteBranchById.set(d.id, branch);
+  });
+  const branchByName = new Map<string, string>();
+  branchesSnap.forEach((d) => {
+    const name = (d.data() as { name?: string }).name;
+    if (name) branchByName.set(name, d.id);
+  });
+
+  const result: BackfillBranchResult = { total: 0, updated: 0, skippedNoSite: 0, updatedNameOnly: 0 };
+  let batch = writeBatch(db);
+  let opsInBatch = 0;
+  const commits: Promise<void>[] = [];
+
+  for (const d of invoicesSnap.docs) {
+    const inv = d.data() as Invoice;
+    if (inv.branchId) continue; // already backfilled or created after branchId existed
+    result.total++;
+
+    const siteBranchName = inv.siteId ? siteBranchById.get(inv.siteId) : undefined;
+    if (!siteBranchName) {
+      result.skippedNoSite++;
+      continue;
+    }
+    const branchId = branchByName.get(siteBranchName) || null;
+    if (!branchId) result.updatedNameOnly++;
+
+    batch.update(d.ref, { branchId, branchName: siteBranchName });
+    result.updated++;
+    opsInBatch++;
+    if (opsInBatch >= 400) {
+      commits.push(batch.commit());
+      batch = writeBatch(db);
+      opsInBatch = 0;
+    }
+  }
+  if (opsInBatch > 0) commits.push(batch.commit());
+  await Promise.all(commits);
+
+  return result;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { subscribeInvoices } from '../../services/invoices';
+import { subscribeInvoices, backfillInvoiceBranches, type BackfillBranchResult } from '../../services/invoices';
 import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
 import { isAdminRole } from '../../types';
@@ -74,8 +74,21 @@ export default function RevenuePanel() {
   const [brandFilter, setBrandFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
   const [granularity, setGranularity] = useState<Granularity>('monthly');
+  const [backfillBusy, setBackfillBusy] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<BackfillBranchResult | null>(null);
 
   useEffect(() => subscribeInvoices(setInvoices), []);
+
+  async function runBackfill() {
+    setBackfillBusy(true);
+    setBackfillResult(null);
+    try {
+      const result = await backfillInvoiceBranches();
+      setBackfillResult(result);
+    } finally {
+      setBackfillBusy(false);
+    }
+  }
 
   const effectiveBranchFilter = canFilterByBranch ? branchFilter : '';
 
@@ -248,6 +261,39 @@ export default function RevenuePanel() {
           </table>
         </div>
       </div>
+
+      {canFilterByBranch && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h3 className="text-sm font-semibold text-slate-800 mb-1">Data maintenance</h3>
+          <p className="text-xs text-slate-400 mb-3">
+            Invoices saved before the branch filter existed have no branchId, so they're excluded
+            whenever a specific branch is selected here or in the Debtor List (they still show up
+            fine under "All branches"). This looks up each such invoice's site to fill in its
+            branch — safe to run more than once, it only touches invoices still missing branchId.
+          </p>
+          <button
+            onClick={runBackfill}
+            disabled={backfillBusy}
+            className="px-3 py-2 text-sm font-medium text-white bg-slate-700 hover:bg-slate-800 disabled:opacity-60 rounded-lg"
+          >
+            {backfillBusy ? 'Backfilling…' : 'Backfill branch data for older invoices'}
+          </button>
+          {backfillResult && (
+            <p className="text-xs text-slate-600 mt-2">
+              {backfillResult.total === 0
+                ? 'Nothing to backfill — every invoice already has a branch.'
+                : `Checked ${backfillResult.total} invoice(s) missing branch data: ${backfillResult.updated} updated` +
+                  (backfillResult.updatedNameOnly > 0
+                    ? ` (${backfillResult.updatedNameOnly} got a branch name but no matching Branch record, so they still won't show under a specific branch filter)`
+                    : '') +
+                  (backfillResult.skippedNoSite > 0
+                    ? `, ${backfillResult.skippedNoSite} skipped (no linked site to derive a branch from)`
+                    : '') +
+                  '.'}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
