@@ -75,6 +75,9 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
             <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
               <span aria-hidden>🗓️</span> Duty Roster
             </NavLink>
+            <NavLink to="/branch-collection" className={navItemClass} onClick={onNavigate}>
+              <span aria-hidden>🧾</span> Branch Collection
+            </NavLink>
             <NavLink to="/guard-bank" className={navItemClass} onClick={onNavigate}>
               <span aria-hidden>🛡️</span> Guard Bank
             </NavLink>
@@ -86,9 +89,6 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
             </NavLink>
             <NavLink to="/quotation-calculator" className={navItemClass} onClick={onNavigate}>
               <span aria-hidden>🧮</span> Quotation Calculator
-            </NavLink>
-            <NavLink to="/branch-collection" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🧾</span> Branch Collection
             </NavLink>
           </>
         )}
