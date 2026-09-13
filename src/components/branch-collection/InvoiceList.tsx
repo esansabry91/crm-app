@@ -3,6 +3,7 @@ import { subscribeInvoices, updateInvoiceStatus } from '../../services/invoices'
 import { useBrands } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
 import InvoicePrintView from './InvoicePrintView';
+import StatCard from '../analytics/StatCard';
 import type { Invoice, InvoiceStatus } from '../../types';
 
 const STATUS_LABEL: Record<InvoiceStatus, string> = {
@@ -14,6 +15,11 @@ const STATUS_COLOR: Record<InvoiceStatus, string> = {
   unpaid: 'bg-rose-50 text-rose-700',
   partial: 'bg-amber-50 text-amber-700',
   paid: 'bg-emerald-50 text-emerald-700',
+};
+const STATUS_ACCENT: Record<InvoiceStatus, string> = {
+  unpaid: '#be123c',
+  partial: '#b45309',
+  paid: '#047857',
 };
 
 function formatShortDate(iso: string): string {
@@ -109,6 +115,22 @@ export default function InvoiceList() {
     [invoices, brandFilter, statusFilter]
   );
 
+  // Status counts for the stat tiles — scoped to the brand filter (so the tiles still make sense
+  // when a brand is picked) but NOT to the status filter itself, since these tiles are what pick
+  // the status filter in the first place.
+  const brandScoped = useMemo(
+    () => invoices.filter((inv) => !brandFilter || inv.brandId === brandFilter),
+    [invoices, brandFilter]
+  );
+  const statusCounts = useMemo(
+    () => ({
+      unpaid: brandScoped.filter((inv) => inv.status === 'unpaid').length,
+      partial: brandScoped.filter((inv) => inv.status === 'partial').length,
+      paid: brandScoped.filter((inv) => inv.status === 'paid').length,
+    }),
+    [brandScoped]
+  );
+
   const viewing = invoices.find((i) => i.id === viewingId) || null;
 
   if (viewing) {
@@ -151,6 +173,27 @@ export default function InvoiceList() {
     <div className="bg-white rounded-xl border border-slate-200 p-5">
       <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
         <h3 className="text-sm font-semibold text-slate-800">Invoices ({filteredInvoices.length})</h3>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <StatCard
+          label="Unpaid"
+          value={String(statusCounts.unpaid)}
+          accent={STATUS_ACCENT.unpaid}
+          action={{ label: 'Go to list', onClick: () => setStatusFilter('unpaid') }}
+        />
+        <StatCard
+          label="Partially Paid"
+          value={String(statusCounts.partial)}
+          accent={STATUS_ACCENT.partial}
+          action={{ label: 'Go to list', onClick: () => setStatusFilter('partial') }}
+        />
+        <StatCard
+          label="Paid"
+          value={String(statusCounts.paid)}
+          accent={STATUS_ACCENT.paid}
+          action={{ label: 'Go to list', onClick: () => setStatusFilter('paid') }}
+        />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">

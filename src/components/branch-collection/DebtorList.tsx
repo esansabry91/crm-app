@@ -4,6 +4,7 @@ import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
 import { isAdminRole } from '../../types';
 import type { Invoice } from '../../types';
+import StatCard from '../analytics/StatCard';
 
 /** Days between the invoice's due date (invoiceDate + paymentTermsDays) and today — negative
  *  means not yet due. */
@@ -21,6 +22,15 @@ function bucketLabel(overdue: number): string {
   if (overdue <= 90) return '61–90 days';
   return '90+ days';
 }
+
+const OVERDUE_BUCKETS = ['Not yet due', '1–30 days', '31–60 days', '61–90 days', '90+ days'] as const;
+const BUCKET_ACCENT: Record<(typeof OVERDUE_BUCKETS)[number], string> = {
+  'Not yet due': '#475569',
+  '1–30 days': '#b45309',
+  '31–60 days': '#b45309',
+  '61–90 days': '#be123c',
+  '90+ days': '#be123c',
+};
 
 /** Aging report: every invoice not yet fully paid, sorted most-overdue first, with how much is
  *  still outstanding on each. Pulls from the same `invoices` collection InvoiceList reads — this
@@ -40,6 +50,7 @@ export default function DebtorList() {
   const canFilterByBranch = isAdminRole(profile?.role);
   const [brandFilter, setBrandFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
+  const [bucketFilter, setBucketFilter] = useState<(typeof OVERDUE_BUCKETS)[number] | ''>('');
 
   useEffect(() => subscribeInvoices(setInvoices), []);
 
@@ -55,10 +66,25 @@ export default function DebtorList() {
     [invoices, brandFilter, effectiveBranchFilter]
   );
 
-  const outstanding = filtered
-    .filter((inv) => inv.status !== 'paid')
-    .map((inv) => ({ inv, overdue: daysOverdue(inv), balance: inv.total - inv.amountPaid }))
-    .sort((a, b) => b.overdue - a.overdue);
+  // Every not-yet-fully-paid invoice with its aging bucket — the base both the bucket stat tiles
+  // and the (optionally bucket-filtered) table below are built from, so the tiles' counts always
+  // match what clicking "Go to list" on one of them reveals.
+  const allOutstanding = useMemo(
+    () =>
+      filtered
+        .filter((inv) => inv.status !== 'paid')
+        .map((inv) => ({ inv, overdue: daysOverdue(inv), balance: inv.total - inv.amountPaid, bucket: bucketLabel(daysOverdue(inv)) }))
+        .sort((a, b) => b.overdue - a.overdue),
+    [filtered]
+  );
+
+  const bucketCounts = useMemo(() => {
+    const counts = Object.fromEntries(OVERDUE_BUCKETS.map((b) => [b, 0])) as Record<(typeof OVERDUE_BUCKETS)[number], number>;
+    for (const o of allOutstanding) counts[o.bucket as (typeof OVERDUE_BUCKETS)[number]]++;
+    return counts;
+  }, [allOutstanding]);
+
+  const outstanding = allOutstanding.filter((o) => !bucketFilter || o.bucket === bucketFilter);
 
   const totalOutstanding = outstanding.reduce((sum, o) => sum + o.balance, 0);
 
@@ -67,6 +93,18 @@ export default function DebtorList() {
       <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
         <h3 className="text-sm font-semibold text-slate-800">Debtor list ({outstanding.length})</h3>
         <p className="text-sm font-semibold text-slate-800">Total outstanding: RM {totalOutstanding.toFixed(2)}</p>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+        {OVERDUE_BUCKETS.map((bucket) => (
+          <StatCard
+            key={bucket}
+            label={bucket}
+            value={String(bucketCounts[bucket])}
+            accent={BUCKET_ACCENT[bucket]}
+            action={{ label: 'Go to list', onClick: () => setBucketFilter(bucket) }}
+          />
+        ))}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -88,11 +126,17 @@ export default function DebtorList() {
             ))}
           </select>
         )}
-        {(brandFilter || effectiveBranchFilter) && (
+        {bucketFilter && (
+          <span className="text-xs font-medium text-slate-600 bg-slate-100 rounded px-2 py-1">
+            Overdue: {bucketFilter}
+          </span>
+        )}
+        {(brandFilter || effectiveBranchFilter || bucketFilter) && (
           <button
             onClick={() => {
               setBrandFilter('');
               setBranchFilter('');
+              setBucketFilter('');
             }}
             className="text-xs text-slate-500 hover:underline"
           >
