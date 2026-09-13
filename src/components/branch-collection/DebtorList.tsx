@@ -95,18 +95,6 @@ export default function DebtorList() {
         <p className="text-sm font-semibold text-slate-800">Total outstanding: RM {totalOutstanding.toFixed(2)}</p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
-        {OVERDUE_BUCKETS.map((bucket) => (
-          <StatCard
-            key={bucket}
-            label={bucket}
-            value={String(bucketCounts[bucket])}
-            accent={BUCKET_ACCENT[bucket]}
-            action={{ label: 'Go to list', onClick: () => setBucketFilter(bucket) }}
-          />
-        ))}
-      </div>
-
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input text-sm">
           <option value="">All brands</option>
@@ -143,6 +131,18 @@ export default function DebtorList() {
             Clear filters
           </button>
         )}
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+        {OVERDUE_BUCKETS.map((bucket) => (
+          <StatCard
+            key={bucket}
+            label={bucket}
+            value={String(bucketCounts[bucket])}
+            accent={BUCKET_ACCENT[bucket]}
+            action={{ label: 'Go to list', onClick: () => setBucketFilter(bucket) }}
+          />
+        ))}
       </div>
 
       <div className="overflow-x-auto">

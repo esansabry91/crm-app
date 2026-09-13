@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { subscribeInvoices, updateInvoiceStatus } from '../../services/invoices';
-import { useBrands } from '../../hooks/useBranches';
+import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
 import InvoicePrintView from './InvoicePrintView';
 import StatCard from '../analytics/StatCard';
+import { isAdminRole } from '../../types';
 import type { Invoice, InvoiceStatus } from '../../types';
 
 const STATUS_LABEL: Record<InvoiceStatus, string> = {
@@ -100,35 +101,42 @@ function StatusEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => v
 export default function InvoiceList() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const { brands } = useBrands();
+  const { branches } = useBranches();
+  const { profile } = useAuth();
+  const canFilterByBranch = isAdminRole(profile?.role);
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [brandFilter, setBrandFilter] = useState('');
+  const [branchFilter, setBranchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | ''>('');
 
   useEffect(() => subscribeInvoices(setInvoices), []);
 
-  const filteredInvoices = useMemo(
+  const effectiveBranchFilter = canFilterByBranch ? branchFilter : '';
+
+  // Brand/branch-scoped, but NOT status-scoped — this is what the stat tiles' counts are built
+  // from, since the tiles are what pick the status filter in the first place (a status-scoped
+  // base would make every tile but the selected one read 0).
+  const scoped = useMemo(
     () =>
       invoices
         .filter((inv) => !brandFilter || inv.brandId === brandFilter)
-        .filter((inv) => !statusFilter || inv.status === statusFilter),
-    [invoices, brandFilter, statusFilter]
+        .filter((inv) => !effectiveBranchFilter || inv.branchId === effectiveBranchFilter),
+    [invoices, brandFilter, effectiveBranchFilter]
   );
 
-  // Status counts for the stat tiles — scoped to the brand filter (so the tiles still make sense
-  // when a brand is picked) but NOT to the status filter itself, since these tiles are what pick
-  // the status filter in the first place.
-  const brandScoped = useMemo(
-    () => invoices.filter((inv) => !brandFilter || inv.brandId === brandFilter),
-    [invoices, brandFilter]
+  const filteredInvoices = useMemo(
+    () => scoped.filter((inv) => !statusFilter || inv.status === statusFilter),
+    [scoped, statusFilter]
   );
+
   const statusCounts = useMemo(
     () => ({
-      unpaid: brandScoped.filter((inv) => inv.status === 'unpaid').length,
-      partial: brandScoped.filter((inv) => inv.status === 'partial').length,
-      paid: brandScoped.filter((inv) => inv.status === 'paid').length,
+      unpaid: scoped.filter((inv) => inv.status === 'unpaid').length,
+      partial: scoped.filter((inv) => inv.status === 'partial').length,
+      paid: scoped.filter((inv) => inv.status === 'paid').length,
     }),
-    [brandScoped]
+    [scoped]
   );
 
   const viewing = invoices.find((i) => i.id === viewingId) || null;
@@ -175,6 +183,44 @@ export default function InvoiceList() {
         <h3 className="text-sm font-semibold text-slate-800">Invoices ({filteredInvoices.length})</h3>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input text-sm">
+          <option value="">All brands</option>
+          {brands.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+        {canFilterByBranch && (
+          <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input text-sm">
+            <option value="">All branches</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {statusFilter && (
+          <span className="text-xs font-medium text-slate-600 bg-slate-100 rounded px-2 py-1">
+            Status: {STATUS_LABEL[statusFilter]}
+          </span>
+        )}
+        {(brandFilter || effectiveBranchFilter || statusFilter) && (
+          <button
+            onClick={() => {
+              setBrandFilter('');
+              setBranchFilter('');
+              setStatusFilter('');
+            }}
+            className="text-xs text-slate-500 hover:underline"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
         <StatCard
           label="Unpaid"
@@ -194,38 +240,6 @@ export default function InvoiceList() {
           accent={STATUS_ACCENT.paid}
           action={{ label: 'Go to list', onClick: () => setStatusFilter('paid') }}
         />
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input text-sm">
-          <option value="">All brands</option>
-          {brands.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as InvoiceStatus | '')}
-          className="input text-sm"
-        >
-          <option value="">All statuses</option>
-          <option value="unpaid">Unpaid</option>
-          <option value="partial">Partially Paid</option>
-          <option value="paid">Paid</option>
-        </select>
-        {(brandFilter || statusFilter) && (
-          <button
-            onClick={() => {
-              setBrandFilter('');
-              setStatusFilter('');
-            }}
-            className="text-xs text-slate-500 hover:underline"
-          >
-            Clear filters
-          </button>
-        )}
       </div>
 
       <div className="space-y-2">
