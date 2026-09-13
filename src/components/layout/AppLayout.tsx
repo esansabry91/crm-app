@@ -49,7 +49,7 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
               onClick={onCollapse}
               aria-label="Collapse sidebar"
               title="Collapse sidebar"
-              className="shrink-0 p-1.5 -mr-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              className="shrink-0 p-1.5 -mr-1.5 rounded-lg text-blue-600 bg-blue-50 hover:bg-blue-100 hover:text-blue-700"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="19" y1="12" x2="5" y2="12" />
@@ -214,7 +214,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           onClick={() => setDesktopCollapsed(false)}
           aria-label="Open menu"
           title="Open menu"
-          className="hidden lg:flex fixed top-1/2 left-0 -translate-y-1/2 z-40 items-center justify-center w-5 h-14 rounded-r-lg bg-white border border-l-0 border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 shadow-sm no-print"
+          className="hidden lg:flex fixed top-1/2 left-0 -translate-y-1/2 z-40 items-center justify-center w-6 h-16 rounded-r-lg bg-blue-50 border border-l-0 border-blue-200 text-blue-600 hover:bg-blue-100 hover:text-blue-700 shadow-md no-print"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="9 18 15 12 9 6" />
