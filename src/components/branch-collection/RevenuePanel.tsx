@@ -61,6 +61,12 @@ interface MonthRow {
   revenue: number;
   discrepancy: number;
   count: number;
+  /** Of `count`, how many actually have a discrepancy figure to add up (see
+   *  Invoice.discrepancyAmount's doc comment — null whenever there was nothing confirmed on Duty
+   *  Roster to compare against). An invoice with nothing to check contributes 0 to `discrepancy`
+   *  the same way a confirmed, genuinely-zero discrepancy would — this is what tells those two
+   *  apart, since "Total discrepancy: RM 0" alone can't. */
+  checkedCount: number;
 }
 
 /**
@@ -159,10 +165,11 @@ export default function RevenuePanel() {
     const map = new Map<string, MonthRow>();
     for (const inv of filtered) {
       const key = monthKeyOf(inv);
-      const row = map.get(key) || { monthKey: key, revenue: 0, discrepancy: 0, count: 0 };
+      const row = map.get(key) || { monthKey: key, revenue: 0, discrepancy: 0, count: 0, checkedCount: 0 };
       row.revenue += inv.total;
       row.discrepancy += inv.discrepancyAmount || 0;
       row.count += 1;
+      if (inv.discrepancyAmount != null) row.checkedCount += 1;
       map.set(key, row);
     }
     return Array.from(map.values()).sort((a, b) => (a.monthKey < b.monthKey ? 1 : -1));
@@ -174,6 +181,7 @@ export default function RevenuePanel() {
     revenue: 0,
     discrepancy: 0,
     count: 0,
+    checkedCount: 0,
   };
 
   const overall = useMemo(
@@ -182,9 +190,10 @@ export default function RevenuePanel() {
         (acc, inv) => {
           acc.revenue += inv.total;
           acc.discrepancy += inv.discrepancyAmount || 0;
+          if (inv.discrepancyAmount != null) acc.checkedCount += 1;
           return acc;
         },
-        { revenue: 0, discrepancy: 0 }
+        { revenue: 0, discrepancy: 0, checkedCount: 0 }
       ),
     [filtered]
   );
@@ -249,12 +258,14 @@ export default function RevenuePanel() {
           <StatCard
             label={`Discrepancy — ${monthLabel(thisMonthKey)}`}
             value={formatRM(thisMonth.discrepancy)}
+            sub={`${thisMonth.checkedCount} of ${thisMonth.count} invoice(s) checked against Duty Roster`}
             accent={Math.abs(thisMonth.discrepancy) > 0.01 ? '#b45309' : undefined}
           />
           <StatCard label="Total revenue (all time)" value={formatRM(overall.revenue)} sub={`${filtered.length} invoice(s)`} />
           <StatCard
             label="Total discrepancy (all time)"
             value={formatRM(overall.discrepancy)}
+            sub={`${overall.checkedCount} of ${filtered.length} invoice(s) checked against Duty Roster`}
             accent={Math.abs(overall.discrepancy) > 0.01 ? '#b45309' : undefined}
           />
         </div>
@@ -300,6 +311,7 @@ export default function RevenuePanel() {
                   <td className="py-2 pr-4 text-right font-medium">{row.revenue.toFixed(2)}</td>
                   <td className={`py-2 text-right ${Math.abs(row.discrepancy) > 0.01 ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
                     {row.discrepancy.toFixed(2)}
+                    <span className="text-slate-300 font-normal"> ({row.checkedCount}/{row.count} checked)</span>
                   </td>
                 </tr>
               ))}
