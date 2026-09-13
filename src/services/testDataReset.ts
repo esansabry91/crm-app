@@ -45,6 +45,23 @@ interface OpFailure {
 }
 
 /**
+ * Wraps a single read so a permission denial names exactly which read it was — resetTestData()'s
+ * upfront reads (the counts + the per-site guard/months lookups) run before any delete and
+ * aren't covered by deleteEach()'s per-document failure collection, so an unlabeled denial here
+ * used to surface as a bare, unhelpful "Missing or insufficient permissions." with no indication
+ * of which of the ~7 reads actually caused it.
+ */
+async function taggedRead<T>(label: string, promise: Promise<T>): Promise<T> {
+  try {
+    return await promise;
+  } catch (err) {
+    const e = err instanceof Error ? err : new Error(String(err));
+    e.message = `[reading ${label}] ${e.message}`;
+    throw e;
+  }
+}
+
+/**
  * Deletes each document one at a time (a plain deleteDoc() per document) instead of batching
  * them into a writeBatch. Two reasons, in order of how this was actually found:
  *
@@ -98,11 +115,11 @@ function throwIfAny(failures: OpFailure[]): void {
  */
 export async function resetTestData(): Promise<TestDataResetResult> {
   const [tendersSnap, sitesSnap, guardsSnap, bufferSnap, historySnapAll] = await Promise.all([
-    getDocs(query(collection(db, 'tenders'), where('isTestData', '==', true))),
-    getDocs(query(collection(db, 'sites'), where('isTestData', '==', true))),
-    getDocs(query(collection(db, 'guards'), where('isTestData', '==', true))),
-    getDocs(query(collection(db, 'bufferGuards'), where('isTestData', '==', true))),
-    getDocs(collectionGroup(db, 'history')),
+    taggedRead('tenders (isTestData query)', getDocs(query(collection(db, 'tenders'), where('isTestData', '==', true)))),
+    taggedRead('sites (isTestData query)', getDocs(query(collection(db, 'sites'), where('isTestData', '==', true)))),
+    taggedRead('guards (isTestData query)', getDocs(query(collection(db, 'guards'), where('isTestData', '==', true)))),
+    taggedRead('bufferGuards (isTestData query)', getDocs(query(collection(db, 'bufferGuards'), where('isTestData', '==', true)))),
+    taggedRead('history (collectionGroup)', getDocs(collectionGroup(db, 'history'))),
   ]);
 
   const testTenderIds = new Set(tendersSnap.docs.map((d) => d.id));
@@ -114,13 +131,17 @@ export async function resetTestData(): Promise<TestDataResetResult> {
   const guardsToRelease: DocumentReference[] = [];
   const monthDocsToDelete: DocumentReference[] = [];
   for (const siteDoc of sitesSnap.docs) {
-    const deployedSnap = await getDocs(
-      query(collection(db, 'guards'), where('siteId', '==', siteDoc.id), where('status', '==', 'deployed'))
+    const deployedSnap = await taggedRead(
+      `guards deployed at site ${siteDoc.id}`,
+      getDocs(query(collection(db, 'guards'), where('siteId', '==', siteDoc.id), where('status', '==', 'deployed')))
     );
     for (const gd of deployedSnap.docs) {
       if (!testGuardIds.has(gd.id)) guardsToRelease.push(gd.ref);
     }
-    const monthsSnap = await getDocs(collection(db, 'sites', siteDoc.id, 'months'));
+    const monthsSnap = await taggedRead(
+      `sites/${siteDoc.id}/months`,
+      getDocs(collection(db, 'sites', siteDoc.id, 'months'))
+    );
     monthDocsToDelete.push(...monthsSnap.docs.map((d) => d.ref));
   }
 
