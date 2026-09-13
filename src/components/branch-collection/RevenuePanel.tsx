@@ -77,6 +77,12 @@ export default function RevenuePanel() {
   const { branches } = useBranches();
   const { profile } = useAuth();
   const canFilterByBranch = isAdminRole(profile?.role);
+  // The branch filter itself stays admin-only (per the original spec), but the backfill/
+  // diagnostics tools below it are safe for a Branch Manager to run too — firestore.rules
+  // already lets a Branch Manager create/update invoices, and their read of `sites` is
+  // naturally branch-scoped there, so running this only ever touches data they can already
+  // reach.
+  const canManageInvoiceData = canFilterByBranch || profile?.role === 'branchManager';
   const [brandFilter, setBrandFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
   const [granularity, setGranularity] = useState<Granularity>('monthly');
@@ -295,7 +301,7 @@ export default function RevenuePanel() {
         </div>
       </div>
 
-      {canFilterByBranch && (
+      {canManageInvoiceData && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <h3 className="text-sm font-semibold text-slate-800 mb-1">Data maintenance</h3>
           <p className="text-xs text-slate-400 mb-3">
