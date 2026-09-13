@@ -492,12 +492,14 @@ export default function InvoiceGenerator() {
                 <input
                   type="number"
                   step="0.01"
-                  value={r.hourlyRate}
-                  onChange={(e) =>
+                  value={r.hourlyRate === 0 ? '' : r.hourlyRate}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/^0+(?=\d)/, '');
                     setRateDraft((prev) =>
-                      prev.map((row, j) => (j === i ? { ...row, hourlyRate: Number(e.target.value) || 0 } : row))
-                    )
-                  }
+                      prev.map((row, j) => (j === i ? { ...row, hourlyRate: raw === '' ? 0 : Number(raw) || 0 } : row))
+                    );
+                  }}
                   placeholder="0.00"
                   className="input w-28"
                 />
@@ -657,8 +659,12 @@ export default function InvoiceGenerator() {
                       <input
                         type="number"
                         step="0.01"
-                        value={row.rate}
-                        onChange={(e) => updateRow(gi, ri, { rate: Number(e.target.value) || 0 })}
+                        value={row.rate === 0 ? '' : row.rate}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                          updateRow(gi, ri, { rate: raw === '' ? 0 : Number(raw) || 0 });
+                        }}
                         className="input w-full"
                       />
                     </td>
