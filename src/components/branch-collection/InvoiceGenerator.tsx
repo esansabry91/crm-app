@@ -629,8 +629,12 @@ export default function InvoiceGenerator() {
                     <td className="pr-2 py-1">
                       <input
                         type="number"
-                        value={row.headcount}
-                        onChange={(e) => updateRow(gi, ri, { headcount: Number(e.target.value) || 0 })}
+                        value={row.headcount === 0 ? '' : row.headcount}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                          updateRow(gi, ri, { headcount: raw === '' ? 0 : Number(raw) || 0 });
+                        }}
                         className="input w-full"
                       />
                     </td>
@@ -638,8 +642,12 @@ export default function InvoiceGenerator() {
                       <input
                         type="number"
                         step="0.5"
-                        value={row.days}
-                        onChange={(e) => updateRow(gi, ri, { days: Number(e.target.value) || 0 })}
+                        value={row.days === 0 ? '' : row.days}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                          updateRow(gi, ri, { days: raw === '' ? 0 : Number(raw) || 0 });
+                        }}
                         className="input w-full"
                       />
                     </td>
