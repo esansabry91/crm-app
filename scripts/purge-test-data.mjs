@@ -68,6 +68,23 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 
+/**
+ * Firestore caps a single batched write at 20 total get()/exists() calls across ALL its
+ * operations combined (separate from, and much stricter than, its 500-write operation-count
+ * limit — see https://firebase.google.com/docs/firestore/security/rules-conditions). This
+ * script authenticates as a real admin through the client SDK (see the file header comment), so
+ * every delete/update below goes through firestore.rules, and every one of those rules calls
+ * get() at least once (isAdmin()/isDeveloper()/isActiveUser()/isPayroll() all read the caller's
+ * own /users/{uid} doc) — the /sites/{id}/months delete rule alone costs FOUR get() calls
+ * (isActiveUser + isPayroll + the parent site's own get() + isAdmin() inside canReachSite()).
+ * The previous 400-per-batch chunking was sized only against the 500-operation cap and silently
+ * blew past the 20-get()-call cap the moment a batch mixed in even a handful of documents whose
+ * rules need get() — this is also what breaks the in-app "Delete all test data" button (same
+ * logic, see src/services/testDataReset.ts). 5 keeps every batch safely under 20 even if every
+ * document in it happened to be the worst case (5 × 4 = 20).
+ */
+const MAX_OPS_PER_BATCH = 5;
+
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 
 // ---- load .env (VITE_FIREBASE_* values) without adding a dotenv dependency ----
@@ -247,7 +264,7 @@ async function runTestDataPurge(db, ask) {
         updatedAt: Date.now(),
       });
       releaseCount++;
-      if (releaseCount === 400) {
+      if (releaseCount === MAX_OPS_PER_BATCH) {
         await releaseBatch.commit();
         releaseBatch = writeBatch(db);
         releaseCount = 0;
@@ -273,7 +290,7 @@ async function runTestDataPurge(db, ask) {
     batch.delete(ref);
     opCount++;
     totalDeleted++;
-    if (opCount === 400) {
+    if (opCount === MAX_OPS_PER_BATCH) {
       await batch.commit();
       batch = writeBatch(db);
       opCount = 0;
@@ -437,7 +454,7 @@ async function main() {
     batch.delete(ref);
     opCount++;
     totalDeleted++;
-    if (opCount === 400) {
+    if (opCount === MAX_OPS_PER_BATCH) {
       await batch.commit();
       batch = writeBatch(db);
       opCount = 0;

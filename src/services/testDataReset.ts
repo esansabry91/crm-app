@@ -1,6 +1,22 @@
 import { collection, collectionGroup, getDocs, query, where, writeBatch, type DocumentReference } from 'firebase/firestore';
 import { db } from '../firebase';
 
+/**
+ * Firestore caps a single batched write at 20 total get()/exists() calls across ALL its
+ * operations combined (separate from, and much stricter than, its 500-write operation-count
+ * limit — see https://firebase.google.com/docs/firestore/security/rules-conditions). Every
+ * delete/update this file batches is authorized by a rule that calls get() at least once
+ * (isAdmin()/isDeveloper()/isActiveUser()/isPayroll() all read the caller's own /users/{uid}
+ * doc) — and the /sites/{id}/months delete rule costs FOUR get() calls on its own (isActiveUser
+ * + isPayroll + the parent site's own get() + isAdmin() inside canReachSite()). The previous
+ * 400-per-batch chunking was sized only against the 500-operation cap and silently blew past
+ * the 20-get()-call cap the moment a batch mixed in even a handful of months docs — that's what
+ * was causing "Delete all test data" to fail with "Missing or insufficient permissions." even
+ * after the /sites delete rule itself was fixed. 5 keeps every batch safely under 20 even if
+ * every document in it happened to be the worst case (5 × 4 = 20).
+ */
+const MAX_OPS_PER_BATCH = 5;
+
 export interface TestDataResetResult {
   tenders: number;
   history: number;
@@ -94,7 +110,7 @@ export async function resetTestData(): Promise<TestDataResetResult> {
         updatedAt: Date.now(),
       });
       count++;
-      if (count === 400) {
+      if (count === MAX_OPS_PER_BATCH) {
         await releaseBatch.commit();
         releaseBatch = writeBatch(db);
         count = 0;
@@ -117,7 +133,7 @@ export async function resetTestData(): Promise<TestDataResetResult> {
   for (const ref of refsToDelete) {
     batch.delete(ref);
     opCount++;
-    if (opCount === 400) {
+    if (opCount === MAX_OPS_PER_BATCH) {
       await batch.commit();
       batch = writeBatch(db);
       opCount = 0;
