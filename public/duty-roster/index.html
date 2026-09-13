@@ -2508,9 +2508,13 @@
     try{ applyRosterSheetStyling(rosterWs, rosterExport.meta, rosterExport.weekendCols); }
     catch(err){ console.error("Roster sheet styling failed — exporting without colors.", err); }
     XLSX.utils.book_append_sheet(wb, rosterWs, sheetName);
-    // Combined column: whatever "Refresh combined hours" last loaded for this site/month, or
-    // blank if that's never been clicked — see summaryReportExportRows()'s own comment.
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryReportExportRows(y, m, config, monthState, result, currentCombinedHours())), "Summary Report");
+    // Summary Report sheet deliberately left out of this workbook — the Roster tab's "Export to
+    // Excel" is meant to be just the roster itself now. summaryReportExportRows() (below) is
+    // unused by any export as a result, but left in place rather than deleted since its logic is
+    // shared/referenced elsewhere (see the comment near renderSummaryReport()); the Summary
+    // Report TAB and its own separate "Export to Excel (TimeAttendance format)" button are
+    // untouched by this — that one still exports via timeAttendanceExportRows(), a different
+    // function entirely.
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(tempGuardExportRows(monthState)), "Temp Guards");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(supportGuardExportRows(monthState)), "Support Guards");
 
