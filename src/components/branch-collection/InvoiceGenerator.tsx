@@ -280,6 +280,8 @@ export default function InvoiceGenerator() {
           brandId: brand.id,
           brandName: brand.name,
           brandCode,
+          branchId: matchedBranch?.id || null,
+          branchName: matchedBranch?.name || site.branch || '',
           siteId: site.id,
           siteName: site.name,
           tenderId: site.tenderId,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { subscribeInvoices, updateInvoiceStatus } from '../../services/invoices';
 import { useBrands } from '../../hooks/useBranches';
+import { useAuth } from '../../contexts/AuthContext';
 import InvoicePrintView from './InvoicePrintView';
 import type { Invoice, InvoiceStatus } from '../../types';
 
@@ -15,16 +16,43 @@ const STATUS_COLOR: Record<InvoiceStatus, string> = {
   paid: 'bg-emerald-50 text-emerald-700',
 };
 
+function formatShortDate(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/** The most recent payment recorded against this invoice, for the "Last paid" line — reads
+ *  paymentLog when present (see InvoicePayment's doc comment in types.ts), and falls back to the
+ *  plain amountPaid/paidDate fields for invoices saved before that log existed. */
+function lastPayment(inv: Invoice): { amount: number; date: string } | null {
+  if (inv.paymentLog && inv.paymentLog.length > 0) {
+    const entry = inv.paymentLog[inv.paymentLog.length - 1];
+    return { amount: entry.amount, date: entry.date };
+  }
+  if (inv.amountPaid > 0) {
+    return { amount: inv.amountPaid, date: inv.paidDate || '' };
+  }
+  return null;
+}
+
 function StatusEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
+  const { profile } = useAuth();
   const [status, setStatus] = useState<InvoiceStatus>(invoice.status);
   const [amountPaid, setAmountPaid] = useState(invoice.amountPaid);
   const [paidDate, setPaidDate] = useState(invoice.paidDate || '');
   const [busy, setBusy] = useState(false);
 
   async function save() {
+    if (!profile) return;
     setBusy(true);
     try {
-      await updateInvoiceStatus(invoice.id, { status, amountPaid, paidDate: paidDate || undefined });
+      await updateInvoiceStatus(
+        invoice.id,
+        { status, amountPaid, paidDate: paidDate || undefined, previousAmountPaid: invoice.amountPaid },
+        { uid: profile.uid, name: profile.name }
+      );
       onClose();
     } finally {
       setBusy(false);
@@ -123,6 +151,12 @@ export default function InvoiceList() {
                 <p className="text-xs text-slate-400">
                   {inv.brandName} · {inv.siteName} · {inv.invoiceDate}
                 </p>
+                {inv.status !== 'unpaid' && lastPayment(inv) && (
+                  <p className="text-xs text-emerald-600 mt-0.5">
+                    Last paid: RM {lastPayment(inv)!.amount.toFixed(2)}
+                    {lastPayment(inv)!.date && ` on ${formatShortDate(lastPayment(inv)!.date)}`}
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <span className={`text-xs font-medium px-2 py-1 rounded ${STATUS_COLOR[inv.status]}`}>

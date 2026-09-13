@@ -404,10 +404,31 @@ export type InvoiceStatus = 'unpaid' | 'partial' | 'paid';
  * invoice is printed. `siteId` links back to the Duty Roster site this was billed for (nullable
  * since a site can later be deleted without breaking a historical invoice).
  */
+/** One entry in an Invoice's paymentLog — recorded automatically whenever a status update in
+ *  InvoiceList's editor actually moves the amountPaid total (see updateInvoiceStatus in
+ *  services/invoices.ts). `amount` is the size of THIS installment (the change in amountPaid),
+ *  not the new running total — amountPaid on the Invoice itself is still the cumulative figure,
+ *  this log is what lets "last paid" and full payment history be shown without that cumulative
+ *  total having overwritten the previous entry's details. */
+export interface InvoicePayment {
+  amount: number;
+  /** Date this installment was recorded as paid (yyyy-mm-dd), as entered in the status editor. */
+  date: string;
+  recordedAt: number;
+  recordedByUid: string;
+  recordedByName: string;
+}
+
 export interface Invoice {
   id: string;
   brandId: string;
   brandName: string;
+  /** The Branch record matching the site this invoice was generated from (see Branch's doc
+   *  comment) — null when the invoice has no linked site/branch. Snapshotted at creation like
+   *  brandId/brandName, so it stays put even if a Branch is later renamed, and so the Debtor
+   *  List can filter by branch without re-deriving it from siteId every time. */
+  branchId?: string | null;
+  branchName?: string;
   siteId: string | null;
   siteName: string;
   tenderId: string | null;
@@ -428,6 +449,10 @@ export interface Invoice {
   status: InvoiceStatus;
   amountPaid: number;
   paidDate?: string;
+  /** History of individual payments recorded against this invoice — see InvoicePayment's doc
+   *  comment. Absent/empty on invoices created before this feature, or ones never marked as
+   *  (partially) paid. */
+  paymentLog?: InvoicePayment[];
   /** Copied from the site's Branch at the moment this invoice was generated — see Branch's doc
    *  comment. Snapshotted (not looked up live) so editing a branch's signatory later never
    *  changes how an already-issued invoice prints. */

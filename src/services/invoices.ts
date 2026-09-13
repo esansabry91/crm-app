@@ -1,4 +1,5 @@
 import {
+  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -92,6 +93,8 @@ export interface NewInvoiceInput {
   brandId: string;
   brandName: string;
   brandCode: string;
+  branchId: string | null;
+  branchName: string;
   siteId: string | null;
   siteName: string;
   tenderId: string | null;
@@ -158,6 +161,8 @@ export async function createInvoice(input: NewInvoiceInput, actor: Actor): Promi
     tx.set(newInvoiceRef, {
       brandId: input.brandId,
       brandName: input.brandName,
+      branchId: input.branchId,
+      branchName: input.branchName,
       siteId: input.siteId,
       siteName: input.siteName,
       tenderId: input.tenderId,
@@ -179,6 +184,7 @@ export async function createInvoice(input: NewInvoiceInput, actor: Actor): Promi
       total,
       status: 'unpaid' as InvoiceStatus,
       amountPaid: 0,
+      paymentLog: [],
       createdByUid: actor.uid,
       createdByName: actor.name,
       createdAt: now,
@@ -199,14 +205,34 @@ export function subscribeInvoices(callback: (invoices: Invoice[]) => void): () =
   });
 }
 
+/**
+ * Updates an invoice's payment status. `previousAmountPaid` is the amountPaid the invoice had
+ * before this edit (the caller already has the Invoice loaded, so no extra read here) — the
+ * difference between it and `amountPaid` is what gets appended to paymentLog as one installment,
+ * so a running history of payments survives even though amountPaid itself is only ever the
+ * latest cumulative total. A save that doesn't actually move the amount (e.g. just switching the
+ * status dropdown) logs nothing — the log is a record of real payments, not of edits.
+ */
 export async function updateInvoiceStatus(
   id: string,
-  patch: { status: InvoiceStatus; amountPaid: number; paidDate?: string }
+  patch: { status: InvoiceStatus; amountPaid: number; paidDate?: string; previousAmountPaid: number },
+  actor: { uid: string; name: string }
 ): Promise<void> {
-  await updateDoc(doc(db, 'invoices', id), {
+  const delta = patch.amountPaid - patch.previousAmountPaid;
+  const updates: Record<string, unknown> = {
     status: patch.status,
     amountPaid: patch.amountPaid,
     paidDate: patch.paidDate || null,
     updatedAt: Date.now(),
-  });
+  };
+  if (delta !== 0) {
+    updates.paymentLog = arrayUnion({
+      amount: delta,
+      date: patch.paidDate || new Date().toISOString().slice(0, 10),
+      recordedAt: Date.now(),
+      recordedByUid: actor.uid,
+      recordedByName: actor.name,
+    });
+  }
+  await updateDoc(doc(db, 'invoices', id), updates);
 }
