@@ -1,8 +1,21 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { isAdminRole } from '../../types';
 import clsx from 'clsx';
+
+const SIDEBAR_COLLAPSED_KEY = 'ipsb-desktop-sidebar-collapsed';
+
+/** Remembers the desktop sidebar's collapsed/open state across reloads — a per-browser
+ *  convenience only, so a read/write failure (private browsing, blocked storage) just falls
+ *  back to "open" rather than breaking anything. */
+function getStoredSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 const navItemClass = ({ isActive }: { isActive: boolean }) =>
   clsx(
@@ -16,20 +29,34 @@ const navItemClass = ({ isActive }: { isActive: boolean }) =>
  * `onNavigate` fires after a link is clicked, so the mobile drawer can close itself; the
  * desktop sidebar passes a no-op since it has nothing to close.
  */
-function NavContent({ onNavigate }: { onNavigate: () => void }) {
+function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onCollapse?: () => void }) {
   const { profile, logout } = useAuth();
 
   return (
     <>
       <div className="px-4 py-5 border-b border-slate-100">
         <div className="flex items-center gap-2.5">
-          <div className="h-9 w-12 rounded-lg bg-blue-600 text-white flex items-center justify-center font-semibold text-xs">
+          <div className="h-9 w-12 rounded-lg bg-blue-600 text-white flex items-center justify-center font-semibold text-xs shrink-0">
             IPSB
           </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-900 leading-tight">Inter Prominent</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-slate-900 leading-tight truncate">Inter Prominent</p>
             <p className="text-xs text-slate-400 leading-tight">Customer Relationship Management Portal</p>
           </div>
+          {onCollapse && (
+            <button
+              type="button"
+              onClick={onCollapse}
+              aria-label="Collapse sidebar"
+              title="Collapse sidebar"
+              className="shrink-0 p-1.5 -mr-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12" />
+                <polyline points="12 19 5 12 12 5" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
@@ -115,6 +142,15 @@ function NavContent({ onNavigate }: { onNavigate: () => void }) {
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(getStoredSidebarCollapsed);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, desktopCollapsed ? '1' : '0');
+    } catch {
+      // Best-effort only — the collapsed state still works for this session either way.
+    }
+  }, [desktopCollapsed]);
 
   return (
     <div className="h-screen flex flex-col lg:flex-row bg-slate-50">
@@ -163,10 +199,28 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      {/* Desktop sidebar — same content/behavior as before, just hidden below lg. */}
-      <aside className="hidden lg:flex w-60 shrink-0 border-r border-slate-200 bg-white flex-col no-print">
-        <NavContent onNavigate={() => {}} />
-      </aside>
+      {/* Desktop sidebar — same content/behavior as before, just hidden below lg. Collapsible:
+          when closed it takes up no width at all (freeing the full window for wide tables like
+          Invoices/Debtor List), and a small floating tab on the left edge reopens it. The
+          open/closed choice is remembered per-browser via localStorage. */}
+      {!desktopCollapsed && (
+        <aside className="hidden lg:flex w-60 shrink-0 border-r border-slate-200 bg-white flex-col no-print">
+          <NavContent onNavigate={() => {}} onCollapse={() => setDesktopCollapsed(true)} />
+        </aside>
+      )}
+      {desktopCollapsed && (
+        <button
+          type="button"
+          onClick={() => setDesktopCollapsed(false)}
+          aria-label="Open menu"
+          title="Open menu"
+          className="hidden lg:flex fixed top-1/2 left-0 -translate-y-1/2 z-40 items-center justify-center w-5 h-14 rounded-r-lg bg-white border border-l-0 border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 shadow-sm no-print"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+      )}
 
       <main className="flex-1 min-w-0 min-h-0 overflow-x-hidden">{children}</main>
     </div>
