@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { subscribeInvoices, backfillInvoiceBranches, type BackfillBranchResult } from '../../services/invoices';
+import {
+  subscribeInvoices,
+  backfillInvoiceBranches,
+  diagnoseInvoiceBranches,
+  type BackfillBranchResult,
+  type InvoiceBranchDiagnostic,
+} from '../../services/invoices';
 import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
 import { isAdminRole } from '../../types';
@@ -76,6 +82,8 @@ export default function RevenuePanel() {
   const [granularity, setGranularity] = useState<Granularity>('monthly');
   const [backfillBusy, setBackfillBusy] = useState(false);
   const [backfillResult, setBackfillResult] = useState<BackfillBranchResult | null>(null);
+  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<InvoiceBranchDiagnostic[] | null>(null);
 
   useEffect(() => subscribeInvoices(setInvoices), []);
 
@@ -85,19 +93,44 @@ export default function RevenuePanel() {
     try {
       const result = await backfillInvoiceBranches();
       setBackfillResult(result);
+      // Refresh the diagnostic list too, if it's open, so a re-run's effect is visible immediately.
+      if (diagnostics) setDiagnostics(await diagnoseInvoiceBranches());
     } finally {
       setBackfillBusy(false);
     }
   }
 
+  async function runDiagnostics() {
+    setDiagnosticsBusy(true);
+    try {
+      setDiagnostics(await diagnoseInvoiceBranches());
+    } finally {
+      setDiagnosticsBusy(false);
+    }
+  }
+
   const effectiveBranchFilter = canFilterByBranch ? branchFilter : '';
 
+  // The branch filter's value is a branchId, matched directly against Invoice.branchId. As a
+  // safety net for invoices where that backfill hasn't (yet) resolved a branchId — see the "Data
+  // maintenance" section below — an invoice whose plain-text branchName matches the selected
+  // branch's name (case/whitespace-insensitively) still counts, so a name mismatch never silently
+  // drops a real invoice out of the total the way it did before this fallback existed.
+  const selectedBranchName = branches.find((b) => b.id === effectiveBranchFilter)?.name;
   const filtered = useMemo(
     () =>
       invoices
         .filter((inv) => !brandFilter || inv.brandId === brandFilter)
-        .filter((inv) => !effectiveBranchFilter || inv.branchId === effectiveBranchFilter),
-    [invoices, brandFilter, effectiveBranchFilter]
+        .filter(
+          (inv) =>
+            !effectiveBranchFilter ||
+            inv.branchId === effectiveBranchFilter ||
+            (!inv.branchId &&
+              !!inv.branchName &&
+              !!selectedBranchName &&
+              inv.branchName.trim().toLowerCase() === selectedBranchName.trim().toLowerCase())
+        ),
+    [invoices, brandFilter, effectiveBranchFilter, selectedBranchName]
   );
 
   // Per-month totals — the base aggregation the stat tiles, the trend chart, and the month table
@@ -292,6 +325,44 @@ export default function RevenuePanel() {
                   '.'}
             </p>
           )}
+
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <button
+              onClick={runDiagnostics}
+              disabled={diagnosticsBusy}
+              className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-60 rounded-lg"
+            >
+              {diagnosticsBusy ? 'Checking…' : 'Check invoices still missing a branch'}
+            </button>
+            {diagnostics && (
+              diagnostics.length === 0 ? (
+                <p className="text-xs text-slate-600 mt-2">Every invoice now has a matched branch.</p>
+              ) : (
+                <div className="overflow-x-auto mt-3">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-left text-slate-400 border-b border-slate-100">
+                        <th className="py-1.5 pr-3 font-medium">Invoice</th>
+                        <th className="py-1.5 pr-3 font-medium">Site</th>
+                        <th className="py-1.5 pr-3 font-medium">Branch name on file</th>
+                        <th className="py-1.5 font-medium">Why it's still unmatched</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {diagnostics.map((row) => (
+                        <tr key={row.invoiceId} className="border-b border-slate-50 last:border-0">
+                          <td className="py-1.5 pr-3 font-medium text-slate-700">{row.invoiceNo}</td>
+                          <td className="py-1.5 pr-3">{row.siteName || '—'}</td>
+                          <td className="py-1.5 pr-3">{row.branchName || '—'}</td>
+                          <td className="py-1.5 text-amber-700">{row.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            )}
+          </div>
         </div>
       )}
     </div>

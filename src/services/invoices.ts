@@ -269,9 +269,18 @@ export interface BackfillBranchResult {
  * how a new invoice behaves in that situation, so branch-filtering still won't surface them, but
  * nothing about them looks broken either. Never touches an invoice that already has a branchId.
  */
-export async function backfillInvoiceBranches(): Promise<BackfillBranchResult> {
-  const [invoicesSnap, sitesSnap, branchesSnap] = await Promise.all([
-    getDocs(invoicesCollection()),
+/** Trims and lowercases a branch/site name so "KV3 Branch", " KV3 Branch ", and "kv3 branch"
+ *  all match each other — names entered by hand in two different collections drift like this
+ *  more often than it seems. */
+function normalizeBranchName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/** Builds the two lookup maps `backfillInvoiceBranches` and `diagnoseInvoiceBranches` both need:
+ *  siteId -> that site's raw branch name string, and normalized branch name -> {id, name} of the
+ *  matching Branch record (matching case/whitespace-insensitively; see `normalizeBranchName`). */
+async function loadSiteAndBranchLookups() {
+  const [sitesSnap, branchesSnap] = await Promise.all([
     getDocs(collection(db, 'sites')),
     getDocs(collection(db, 'branches')),
   ]);
@@ -281,11 +290,20 @@ export async function backfillInvoiceBranches(): Promise<BackfillBranchResult> {
     const branch = (d.data() as { branch?: string }).branch;
     if (branch) siteBranchById.set(d.id, branch);
   });
-  const branchByName = new Map<string, string>();
+  const branchByNormalizedName = new Map<string, { id: string; name: string }>();
   branchesSnap.forEach((d) => {
     const name = (d.data() as { name?: string }).name;
-    if (name) branchByName.set(name, d.id);
+    if (name) branchByNormalizedName.set(normalizeBranchName(name), { id: d.id, name });
   });
+
+  return { siteBranchById, branchByNormalizedName };
+}
+
+export async function backfillInvoiceBranches(): Promise<BackfillBranchResult> {
+  const [invoicesSnap, { siteBranchById, branchByNormalizedName }] = await Promise.all([
+    getDocs(invoicesCollection()),
+    loadSiteAndBranchLookups(),
+  ]);
 
   const result: BackfillBranchResult = { total: 0, updated: 0, skippedNoSite: 0, updatedNameOnly: 0 };
   let batch = writeBatch(db);
@@ -302,10 +320,10 @@ export async function backfillInvoiceBranches(): Promise<BackfillBranchResult> {
       result.skippedNoSite++;
       continue;
     }
-    const branchId = branchByName.get(siteBranchName) || null;
-    if (!branchId) result.updatedNameOnly++;
+    const matchedBranch = branchByNormalizedName.get(normalizeBranchName(siteBranchName));
+    if (!matchedBranch) result.updatedNameOnly++;
 
-    batch.update(d.ref, { branchId, branchName: siteBranchName });
+    batch.update(d.ref, { branchId: matchedBranch?.id || null, branchName: matchedBranch?.name || siteBranchName });
     result.updated++;
     opsInBatch++;
     if (opsInBatch >= 400) {
@@ -318,4 +336,58 @@ export async function backfillInvoiceBranches(): Promise<BackfillBranchResult> {
   await Promise.all(commits);
 
   return result;
+}
+
+export interface InvoiceBranchDiagnostic {
+  invoiceId: string;
+  invoiceNo: string;
+  siteId: string | null;
+  siteName: string;
+  branchName: string | null;
+  reason: string;
+}
+
+/**
+ * Read-only inspection of every invoice still missing a branchId, explaining exactly why the
+ * match failed for each one — so a stuck invoice (still not showing under a branch filter after
+ * running the backfill) can be diagnosed from the Revenue tab instead of guessing blind. Doesn't
+ * write anything.
+ */
+export async function diagnoseInvoiceBranches(): Promise<InvoiceBranchDiagnostic[]> {
+  const [invoicesSnap, { siteBranchById, branchByNormalizedName }] = await Promise.all([
+    getDocs(invoicesCollection()),
+    loadSiteAndBranchLookups(),
+  ]);
+
+  const rows: InvoiceBranchDiagnostic[] = [];
+  invoicesSnap.forEach((d) => {
+    const inv = d.data() as Invoice;
+    if (inv.branchId) return; // already resolved
+
+    let reason: string;
+    if (!inv.siteId) {
+      reason = 'No linked site on this invoice (siteId is empty)';
+    } else {
+      const siteBranchName = siteBranchById.get(inv.siteId);
+      if (!siteBranchName) {
+        reason = `Linked site (${inv.siteId}) has no branch assigned, or the site no longer exists`;
+      } else {
+        const matchedBranch = branchByNormalizedName.get(normalizeBranchName(siteBranchName));
+        reason = matchedBranch
+          ? 'Should be matched — try running the backfill again'
+          : `Site's branch "${siteBranchName}" doesn't match any Branch record by name`;
+      }
+    }
+
+    rows.push({
+      invoiceId: d.id,
+      invoiceNo: inv.invoiceNo,
+      siteId: inv.siteId,
+      siteName: inv.siteName,
+      branchName: inv.branchName || null,
+      reason,
+    });
+  });
+
+  return rows;
 }
