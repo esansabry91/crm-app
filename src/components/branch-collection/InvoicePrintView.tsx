@@ -58,16 +58,17 @@ export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
         .inv-table td, .inv-table th { border: 1px solid #cbd5e1; padding: 4px 8px; }
       `}</style>
 
-      {/* Logo sits at the left, sized to match the height of the company-details column beside
-          it (name through TIN) rather than a fixed pixel cap — height:'100%' on a flex item
-          resolves against the row's cross-size (set by whichever sibling is tallest, here always
-          the text column), with width auto so the logo's own aspect ratio is preserved. */}
-      <div className="flex items-stretch gap-4 border-b-2 border-slate-800 pb-3 mb-4">
+      {/* Logo sits at the left, vertically centered against the company-details column beside
+          it. Capped at a fixed height/width (rather than stretched to the column's own height,
+          which made a squarish logo balloon far wider than the text next to it) — objectFit
+          'contain' + width/height both 'auto' on the OTHER axis keeps whichever dimension isn't
+          the limiting one scaled proportionally, so the logo never distorts. */}
+      <div className="flex items-center gap-4 border-b-2 border-slate-800 pb-3 mb-4">
         {brand.logoDataUrl && (
           <img
             src={brand.logoDataUrl}
             alt=""
-            style={{ height: '100%', width: 'auto', objectFit: 'contain', flexShrink: 0 }}
+            style={{ maxHeight: '80px', maxWidth: '150px', height: 'auto', width: 'auto', objectFit: 'contain', flexShrink: 0 }}
           />
         )}
         <div className="flex-1 text-center">
