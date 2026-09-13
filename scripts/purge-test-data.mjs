@@ -202,14 +202,12 @@ function askHidden(promptText) {
 async function runTestDataPurge(db, ask) {
   console.log('Scanning for everything tagged isTestData across tenders, sites, guards and buffer guards...\n');
 
-  let tendersSnap, sitesSnap, guardsSnap, bufferSnap, historySnapAll;
+  let tendersSnap, sitesSnap, guardsSnap, bufferSnap;
   try {
     tendersSnap = await getDocs(query(collection(db, 'tenders'), where('isTestData', '==', true)));
     sitesSnap = await getDocs(query(collection(db, 'sites'), where('isTestData', '==', true)));
     guardsSnap = await getDocs(query(collection(db, 'guards'), where('isTestData', '==', true)));
     bufferSnap = await getDocs(query(collection(db, 'bufferGuards'), where('isTestData', '==', true)));
-    // history has no isTestData of its own -- matched below against the test tenders just found.
-    historySnapAll = await getDocs(collectionGroup(db, 'history'));
   } catch (err) {
     if (err.code === 'permission-denied') {
       console.error(
@@ -225,7 +223,26 @@ async function runTestDataPurge(db, ask) {
   }
 
   const testTenderIds = new Set(tendersSnap.docs.map((d) => d.id));
-  const historyDocsToDelete = historySnapAll.docs.filter((d) => testTenderIds.has(d.data().tenderId));
+
+  // Each test tender's own `history` subcollection, read directly rather than through a single
+  // database-wide collectionGroup('history') query -- Firestore only authorizes a collectionGroup
+  // read when a rule can be proven to hold for EVERY 'history' subcollection anywhere in the
+  // database, not just the ones nested under tenders, so the otherwise-correct
+  // /tenders/{tenderId}/history/{historyId} rule doesn't cover it and the whole read is denied
+  // outright. This was the actual cause of every "permission-denied" this mode has ever hit --
+  // see src/services/testDataReset.ts (the in-app equivalent of this mode) for the same fix and
+  // the fuller explanation, and useTenderHistory.ts for where this app first ran into it.
+  let historyDocsToDelete = [];
+  try {
+    for (const tenderId of testTenderIds) {
+      const historySnap = await getDocs(collection(db, 'tenders', tenderId, 'history'));
+      historyDocsToDelete.push(...historySnap.docs.map((d) => d.ref));
+    }
+  } catch (err) {
+    console.error(`\nCould not read one test tender's history subcollection: ${err.code || err.message}`);
+    process.exit(1);
+  }
+  historyDocsToDelete = historyDocsToDelete.map((ref) => ({ ref }));
 
   // For each test-flagged site, find any guard CURRENTLY deployed there that is NOT itself
   // test-flagged -- these need releasing back to the Guard Pool first, not left pointing at a

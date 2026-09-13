@@ -1,4 +1,4 @@
-import { collection, collectionGroup, deleteDoc, getDocs, query, updateDoc, where, type DocumentReference } from 'firebase/firestore';
+import { collection, deleteDoc, getDocs, query, updateDoc, where, type DocumentReference } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export interface TestDataResetResult {
@@ -114,18 +114,33 @@ function throwIfAny(failures: OpFailure[]): void {
  * signed-in admin's own browser session instead of a separate terminal sign-in.
  */
 export async function resetTestData(): Promise<TestDataResetResult> {
-  const [tendersSnap, sitesSnap, guardsSnap, bufferSnap, historySnapAll] = await Promise.all([
+  const [tendersSnap, sitesSnap, guardsSnap, bufferSnap] = await Promise.all([
     taggedRead('tenders (isTestData query)', getDocs(query(collection(db, 'tenders'), where('isTestData', '==', true)))),
     taggedRead('sites (isTestData query)', getDocs(query(collection(db, 'sites'), where('isTestData', '==', true)))),
     taggedRead('guards (isTestData query)', getDocs(query(collection(db, 'guards'), where('isTestData', '==', true)))),
     taggedRead('bufferGuards (isTestData query)', getDocs(query(collection(db, 'bufferGuards'), where('isTestData', '==', true)))),
-    taggedRead('history (collectionGroup)', getDocs(collectionGroup(db, 'history'))),
   ]);
 
   const testTenderIds = new Set(tendersSnap.docs.map((d) => d.id));
-  const historyDocsToDelete = historySnapAll.docs.filter((d) =>
-    testTenderIds.has((d.data() as { tenderId?: string }).tenderId || '')
-  );
+
+  // Each test tender's own `history` subcollection, read directly — NOT via a database-wide
+  // collectionGroup('history') query like this used to. That was the actual root cause of every
+  // "Delete all test data" permission denial: Firestore only authorizes a collectionGroup query
+  // when a security rule can be proven to hold for EVERY 'history' subcollection anywhere in the
+  // database, not just the ones nested under tenders, so a rule scoped to
+  // `/tenders/{tenderId}/history/{historyId}` (which is otherwise exactly correct) doesn't cover
+  // it and Firestore denies the whole read outright — see useTenderHistory.ts's doc comment,
+  // which already hit and fixed this exact issue for the trend-chart read path. This was never a
+  // batching or get()-call-limit problem; those fixes were real improvements but this collectionGroup
+  // read was denied before any delete — or any batch — ever ran.
+  const historyDocsToDelete: DocumentReference[] = [];
+  for (const tenderId of testTenderIds) {
+    const historySnap = await taggedRead(
+      `tenders/${tenderId}/history`,
+      getDocs(collection(db, 'tenders', tenderId, 'history'))
+    );
+    historyDocsToDelete.push(...historySnap.docs.map((d) => d.ref));
+  }
 
   const testGuardIds = new Set(guardsSnap.docs.map((d) => d.id));
   const guardsToRelease: DocumentReference[] = [];
@@ -164,10 +179,7 @@ export async function resetTestData(): Promise<TestDataResetResult> {
     }
   }
 
-  const historyDeleted = await deleteEach(
-    historyDocsToDelete.map((d) => d.ref),
-    failures
-  );
+  const historyDeleted = await deleteEach(historyDocsToDelete, failures);
   const monthsDeleted = await deleteEach(monthDocsToDelete, failures);
   const tendersDeleted = await deleteEach(
     tendersSnap.docs.map((d) => d.ref),
