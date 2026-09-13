@@ -304,6 +304,16 @@
     <button class="tab" data-tab="report" role="tab">Summary Report</button>
   </div>
 
+  <!-- Shown instead of the tabs/views above whenever this branch has no client sites at all —
+       see renderEmptySitesState() in the script below. Sites are only ever created through the
+       CRM's Won-tender pipeline now (manual creation was removed — see applyRoleUiLockdown()'s
+       doc comment), so there is deliberately no button here: this is a plain status message,
+       not a dead-end call to action. -->
+  <div id="emptySitesState" style="display:none;text-align:center;padding:64px 16px;color:var(--muted, #64748b);">
+    <p style="font-size:15px;margin:0 0 4px;font-weight:600;">No client sites for this branch yet.</p>
+    <p style="font-size:13px;margin:0;">Sites are created automatically once a tender for this branch is marked Won and its Duty Roster link is opened.</p>
+  </div>
+
   <!-- ROSTER VIEW -->
   <div class="view active" id="view-roster">
     <div class="stats" id="rosterStats"></div>
@@ -1159,40 +1169,51 @@
     // revokeConfirmationIfPresent().
     suppressConfirmRevoke: false
   };
+  // Inert, never-registered stand-in for "no site selected, and none exist yet" — returned by
+  // currentConfig() below instead of ever fabricating a real (even if only local) placeholder
+  // site. Zero guards, zero everything, so any render function that still calls currentConfig()
+  // in this state just draws nothing instead of throwing — but it is NEVER written into
+  // state.sites/state.configsCache/state.currentSiteId, so it can never itself become something
+  // that later needs deleting. render() checks state.currentSiteId itself and shows a genuine
+  // empty state (see renderEmptySitesState()) rather than calling into the rest of the render
+  // pipeline at all when there truly is no site — this stub only exists as a last-resort safety
+  // net for any call path that isn't gated by that check.
+  function emptySiteStub(){
+    return {
+      guards: [],
+      site: defaultSite(),
+      restRule: { restDaysPerWeek:1, minRestHours:12 },
+      publicHolidays: [],
+      state: null,
+      stateHolidayDates: [],
+      isSample: true,
+      updatedAt: nowIso()
+    };
+  }
   function currentConfig(){
     if(!state.currentSiteId){
-      // Self-heal: the app must stay usable even if the db handshake in
-      // initDb() is slow, stuck, or fails outright — never leave every
-      // action silently writing into a config nobody keeps a reference to.
-      //
-      // This runs on the very first render() at the bottom of the file, which fires
-      // synchronously BEFORE initDb() gets to do any of its async work — so this self-heal path
-      // wins the race on EVERY page load, live Firestore or not, for the brief gap before
-      // initDb()'s async work resolves. When a tenderId deep link is pending we still want to
-      // show something reasonable for that gap (the deep-linked client's name rather than a
-      // generic "Site 1") — but this placeholder is local-only and never persisted to Firestore,
-      // so deepLinkHandled must stay FALSE here: recombineSitesAndRender()'s later call to
-      // handleTenderDeepLinkIfNeeded() is what actually looks up-or-creates the real,
-      // Firestore-persisted site once the live site list is known, and it will no-op forever if
-      // this synchronous placeholder already claimed deepLinkHandled first (that was the bug —
-      // it left the "Duty Roster" deep link never actually creating/selecting a Firestore site at
-      // all, falling back to whatever site was already selected/first for the branch instead).
-      const id = newId("site");
-      const cfg = makeSampleConfig();
-      cfg.id = id; cfg.createdAt = nowIso();
+      // A tenderId deep link is pending and hasn't resolved into its real, Firestore-persisted
+      // site yet (recombineSitesAndRender()'s handleTenderDeepLinkIfNeeded() is what actually
+      // creates that) — show the right client name for this brief gap instead of a generic
+      // placeholder. Local-only, never persisted; deliberately does NOT set deepLinkHandled, so
+      // the real site-creation path still runs once the live site list is known (that used to be
+      // the bug here — this local stand-in claiming deepLinkHandled first left the real one never
+      // firing, falling back to whatever site was already selected/first for the branch instead).
       if(deepLinkTenderId && !deepLinkHandled){
+        const id = newId("site");
+        const cfg = makeSampleConfig();
+        cfg.id = id; cfg.createdAt = nowIso();
         cfg.name = deepLinkParams.get("clientName") || "New site";
         cfg.branch = deepLinkParams.get("branch") || null;
         cfg.tenderId = deepLinkTenderId;
         cfg.archived = false;
         state.sites = [{ id, name:cfg.name, branch:cfg.branch, tenderId:deepLinkTenderId, archived:false }];
-        // deliberately NOT setting deepLinkHandled here — see comment above.
-      } else {
-        cfg.name = "Site 1";
-        state.sites = [{ id, name:"Site 1" }];
+        state.configsCache[id] = cfg;
+        state.currentSiteId = id;
+        return cfg;
       }
-      state.configsCache[id] = cfg;
-      state.currentSiteId = id;
+      // Genuinely nothing to show — see emptySiteStub()'s own doc comment above.
+      return emptySiteStub();
     }
     const id = state.currentSiteId;
     if(!state.configsCache[id]) state.configsCache[id] = makeSampleConfig();
@@ -1804,6 +1825,7 @@
     renderSiteSelect();
     renderTabsVisibility();
     renderMonthNav();
+    if(renderEmptySitesState()) { enforceReadonlyLockdown(); return; }
     const {y,m} = parseYM(state.currentMonth);
     lastResult = generateMonth(y, m, currentConfig(), currentMonthState());
     renderRosterStats(lastResult);
@@ -1845,6 +1867,25 @@
   }
 
   function renderTabsVisibility(){ /* no-op placeholder for future gating */ }
+
+  // Toggles the tabs/roster-guards-adjustments-report UI vs. the plain "No client sites yet"
+  // message added alongside it in the HTML — see that element's own doc comment for why there's
+  // no call-to-action button in it. Returns true when the empty state is what's showing (so
+  // render() knows to skip the rest of the render pipeline, all of which assumes a real site is
+  // selected) and false otherwise. Runs on every render() call, in both directions, so a site
+  // reappearing (or the last one disappearing) always flips this immediately either way.
+  function renderEmptySitesState(){
+    const noSite = !state.currentSiteId;
+    const empty = $("#emptySitesState");
+    if(empty) empty.style.display = noSite ? "" : "none";
+    const tabsEl = $(".tabs");
+    if(tabsEl) tabsEl.style.display = noSite ? "none" : "";
+    ["view-roster", "view-setup", "view-adjust", "view-report"].forEach(id => {
+      const el = document.getElementById(id);
+      if(el) el.style.display = noSite ? "none" : "";
+    });
+    return noSite;
+  }
 
   function renderMonthNav(){
     const {y,m} = parseYM(state.currentMonth);
@@ -5369,56 +5410,23 @@
     }, () => { state.currentTenderRate = null; });
   }
 
-  // Brand-new (empty) Firestore project, or nothing reachable yet for this user's branch:
-  // seed one sample site so the app isn't blank on first load. Explicitly unassigned
-  // (branch: null, not just omitted) so it's both visible to everyone and a valid match for
-  // the `where("branch","==",null)` query non-privileged users run below.
-  //
-  // Only ever does this ONCE per project, guarded by settings/app.demoSiteSeeded -- without that,
-  // this refires every single time a branch's sites read back empty, which includes right after
-  // "Delete all test data" purges every isTestData:true site (this seed's own site included):
-  // the very next Duty Roster page load would see zero reachable sites again and recreate a
-  // fresh "Site 1" right back into Firestore, forever. The marker is set best-effort (settings/app
-  // is developer-write-only in firestore.rules) -- the one account that can actually trigger this
-  // loop today (repeated test-data purges) is always a developer account, so this covers the real
-  // case; a genuinely fresh project's very first-ever user being a non-developer, non-admin
-  // account is an edge case this won't cover, and it'll just keep re-seeding for them exactly as
-  // it always has.
-  async function migrateOrSeed(){
-    const alreadySeeded = await dbHandle.doc("settings/app").get()
-      .then(snap => !!(snap.exists && snap.data().demoSiteSeeded), () => false);
-    if(alreadySeeded) return;
-
-    const id = newId("site");
-    const cfg = makeSampleConfig();
-    cfg.id = id; cfg.name = "Site 1"; cfg.branch = null; cfg.createdAt = nowIso();
-    // Always synthetic placeholder content (see this function's own doc comment on the caller
-    // side, initDb()) -- tagged unconditionally, regardless of Testing Mode, since there's no
-    // scenario where an auto-seeded demo site is genuine data.
-    cfg.isTestData = true;
-    await dbHandle.doc("sites/"+id).set(cfg).catch(()=>{});
-    await dbHandle.doc("settings/app").set({ demoSiteSeeded: true }, { merge: true }).catch(()=>{});
-  }
-
   function bootLocalFallback(){
-    // No db capability available: keep working entirely client-side, single local site — unless
-    // a tenderId deep link is pending, in which case that becomes the one local site instead of
-    // a generic "Site 1" (mirrors the live-Firestore path in recombineSitesAndRender()).
-    if(!state.sites.length){
+    // No db capability available: keep working entirely client-side. A pending tenderId deep
+    // link still becomes the one local site (mirrors the live-Firestore path in
+    // recombineSitesAndRender()) — otherwise this leaves state.sites empty and
+    // state.currentSiteId unset, and render() shows the genuine "no sites" empty state rather
+    // than ever fabricating a generic "Site 1" (there's no db to persist one to here anyway, and
+    // no way for it to ever become a real site later without one).
+    if(!state.sites.length && deepLinkTenderId){
       const id = newId("site");
       const cfg = makeSampleConfig();
       cfg.id = id; cfg.createdAt = nowIso();
-      if(deepLinkTenderId){
-        cfg.name = deepLinkParams.get("clientName") || "New site";
-        cfg.branch = deepLinkParams.get("branch") || null;
-        cfg.tenderId = deepLinkTenderId;
-        cfg.archived = false;
-        state.sites = [{id, name:cfg.name, branch:cfg.branch, tenderId:deepLinkTenderId, archived:false}];
-        deepLinkHandled = true;
-      } else {
-        cfg.name = "Site 1";
-        state.sites = [{id, name:"Site 1"}];
-      }
+      cfg.name = deepLinkParams.get("clientName") || "New site";
+      cfg.branch = deepLinkParams.get("branch") || null;
+      cfg.tenderId = deepLinkTenderId;
+      cfg.archived = false;
+      state.sites = [{id, name:cfg.name, branch:cfg.branch, tenderId:deepLinkTenderId, archived:false}];
+      deepLinkHandled = true;
       state.configsCache[id] = cfg;
       state.currentSiteId = id;
     }
@@ -5524,28 +5532,10 @@
       }
 
       const queries = reachableSiteQueries();
-      // Track genuine read failures separately from a genuinely empty result: q.get() rejecting
-      // (a permission hiccup while Firebase Auth is still rehydrating, a dropped connection, etc.)
-      // must NEVER be treated the same as "this account truly has zero sites" -- that used to be
-      // exactly what happened here (the .catch() below quietly returned {docs:[]} either way),
-      // and it's what let a single slow/failed read permanently seed a real, live "Site 1" demo
-      // site (six hardcoded sample guards, full sample rotation) straight into Firestore for
-      // everyone to see, even on accounts that already had real sites -- the failed read just
-      // looked identical to an empty one. Now a failed read skips seeding entirely and falls
-      // through to the onSnapshot listeners below, which either recover with the real data once
-      // the read succeeds, or hit their own error handler (bootLocalFallback() -- local-only,
-      // never persisted) if it keeps failing.
-      let initialReadFailed = false;
-      const initialSnaps = await Promise.all(
-        queries.map(q => q.get().catch(() => { initialReadFailed = true; return {docs:[]}; }))
-      );
-      // Skip the generic "Site 1" seed when a tenderId deep link is pending — recombine­
-      // SitesAndRender's onSnapshot handler below creates the real, tender-linked site directly
-      // once it sees this branch has nothing yet, so seeding a throwaway default first would
-      // just leave it sitting around unused alongside the real one.
-      if(initialSnaps.every(s => s.docs.length === 0) && !deepLinkTenderId && !initialReadFailed) await migrateOrSeed();
-
-      let retriedSeed = false;
+      // No upfront one-off read here any more -- this used to exist purely to decide whether to
+      // auto-seed a demo "Site 1" on an empty result, which this app no longer does at all (see
+      // currentConfig()'s emptySiteStub() doc comment). The onSnapshot listeners below are the
+      // only source of truth for the site list now, for both the empty and non-empty cases.
       const buckets = queries.map(() => []);
 
       function recombineSitesAndRender(){
@@ -5570,14 +5560,11 @@
             setSyncUi("on");
             return;
           }
-          // Nothing this user can reach made it to the store yet (a first write that
-          // silently failed, a slow backend, or simply no site tagged for their branch
-          // yet). Retry seeding once — the seeded site is unassigned, so it's visible to
-          // everyone and this user isn't left stuck on a blank screen; meanwhile the app
-          // stays usable locally via currentConfig()'s self-heal, and we don't strand the
-          // sync indicator on "Connecting…" forever.
-          if(!retriedSeed){ retriedSeed = true; migrateOrSeed().catch(()=>{}); }
+          // Genuinely nothing this user can reach — no auto-seed any more (see
+          // currentConfig()'s emptySiteStub() doc comment for why). render() shows the real
+          // empty state for this rather than the app inventing a site to fill the gap.
           setSyncUi("off");
+          render();
           return;
         }
         state.sites = merged.map(({id, name, branch, tenderId, archived}) => ({id, name, branch, tenderId: tenderId||null, archived: !!archived}));
