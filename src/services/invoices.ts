@@ -661,14 +661,29 @@ export function computeOutstandingTrend(invoices: Invoice[]): OutstandingTrendPo
   for (const inv of invoices) {
     events.push({ monthKey: monthKeyOfDate(inv.invoiceDate), delta: inv.total });
 
+    let loggedReduction = 0;
     if (inv.paymentLog && inv.paymentLog.length > 0) {
       for (const p of inv.paymentLog) {
         events.push({ monthKey: monthKeyOfDate(p.date || inv.invoiceDate), delta: -p.amount });
+        loggedReduction += p.amount;
       }
-    } else if (inv.amountPaid > 0) {
-      // Pre-paymentLog invoice: amountPaid is a lump sum with no per-installment history, so it
-      // lands as one reducing event on its paidDate.
-      events.push({ monthKey: monthKeyOfDate(inv.paidDate || inv.invoiceDate), delta: -inv.amountPaid });
+    }
+
+    // True up against the invoice's own authoritative amountPaid rather than trusting paymentLog
+    // to fully account for it — a log built up across manual edits (e.g. before amounts were
+    // clamped/derived) can under- or over-total the current amountPaid. Without this, the trend's
+    // latest point can silently drift from the Debtor List's own live "Total outstanding" figure,
+    // which is always computed directly as sum(total) - sum(amountPaid). Any shortfall/excess is
+    // dated to the most recent known payment (or paidDate/invoiceDate if there's no log at all).
+    const shortfall = inv.amountPaid - loggedReduction;
+    if (Math.abs(shortfall) > 0.005) {
+      const lastLoggedDate = inv.paymentLog && inv.paymentLog.length > 0
+        ? inv.paymentLog[inv.paymentLog.length - 1].date
+        : undefined;
+      events.push({
+        monthKey: monthKeyOfDate(lastLoggedDate || inv.paidDate || inv.invoiceDate),
+        delta: -shortfall,
+      });
     }
   }
 
