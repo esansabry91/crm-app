@@ -157,7 +157,17 @@ export default function TestingDataTool() {
     setResetMessage(null);
     setResetBusy(true);
     try {
-      const counts = await getTestDataCounts();
+      let counts: Awaited<ReturnType<typeof getTestDataCounts>>;
+      try {
+        counts = await getTestDataCounts();
+      } catch (err) {
+        // Tag which phase failed before it reaches the shared catch below — this read happens
+        // before either confirmation dialog, so a denial here means the button's counts (and the
+        // confirm dialog listing them) never even had a chance to appear.
+        const e = err instanceof Error ? err : new Error(String(err));
+        e.message = `[reading current counts] ${e.message}`;
+        throw e;
+      }
       const total = counts.tenders + counts.sites + counts.guards + counts.bufferGuards;
       if (total === 0) {
         setResetMessage({ text: 'Nothing is currently tagged as test data — nothing to delete.', isError: false });
@@ -186,8 +196,14 @@ export default function TestingDataTool() {
         isError: false,
       });
     } catch (err) {
+      // Logged with full detail (including Firestore's error `code`, e.g. "permission-denied")
+      // so a denial can be diagnosed from the browser console without guessing — the on-page
+      // text below is deliberately terser than what Firestore actually reports.
+      console.error('Delete all test data failed:', err);
+      const code = (err as { code?: string } | null)?.code;
+      const baseMessage = err instanceof Error ? err.message : 'Could not delete test data.';
       setResetMessage({
-        text: err instanceof Error ? err.message : 'Could not delete test data.',
+        text: code ? `${baseMessage} (code: ${code})` : baseMessage,
         isError: true,
       });
     } finally {
