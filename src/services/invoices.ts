@@ -105,6 +105,7 @@ export interface NewInvoiceInput {
   clientAlias: string;
   invoiceDate: string;
   billingMonth: string;
+  billingMonthKey: string;
   contractRef?: string;
   quotationNo?: string;
   paymentTermsDays: number;
@@ -112,6 +113,8 @@ export interface NewInvoiceInput {
   sstRate: number;
   signatoryName?: string;
   signatoryTitle?: string;
+  discrepancyAmount: number | null;
+  discrepancyAcknowledged: boolean;
 }
 
 /** Actor performing the create — same shape as createTender's Actor (src/services/tenders.ts),
@@ -172,6 +175,7 @@ export async function createInvoice(input: NewInvoiceInput, actor: Actor): Promi
       invoiceNo: number,
       invoiceDate: input.invoiceDate,
       billingMonth: input.billingMonth,
+      billingMonthKey: input.billingMonthKey,
       contractRef: input.contractRef || '',
       quotationNo: input.quotationNo || '',
       paymentTermsDays: input.paymentTermsDays,
@@ -185,6 +189,8 @@ export async function createInvoice(input: NewInvoiceInput, actor: Actor): Promi
       status: 'unpaid' as InvoiceStatus,
       amountPaid: 0,
       paymentLog: [],
+      discrepancyAmount: input.discrepancyAmount,
+      discrepancyAcknowledged: input.discrepancyAcknowledged,
       createdByUid: actor.uid,
       createdByName: actor.name,
       createdAt: now,

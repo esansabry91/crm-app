@@ -438,6 +438,11 @@ export interface Invoice {
   invoiceNo: string;
   invoiceDate: string;
   billingMonth: string;
+  /** The `<input type="month">` value ("2026-08") billingMonth was formatted from — kept
+   *  alongside the prose string so the Revenue tab can group/sort/filter by month without having
+   *  to parse "August 2026" back apart. Absent on invoices saved before the Revenue tab existed;
+   *  those fall back to invoiceDate's own month there. */
+  billingMonthKey?: string;
   contractRef?: string;
   quotationNo?: string;
   paymentTermsDays: number;
@@ -453,6 +458,15 @@ export interface Invoice {
    *  comment. Absent/empty on invoices created before this feature, or ones never marked as
    *  (partially) paid. */
   paymentLog?: InvoicePayment[];
+  /** Snapshot of the Duty Roster reconciliation discrepancy at the moment this invoice was
+   *  generated — the confirmed roster total minus what was actually billed in the line items
+   *  (see InvoiceGenerator's remainingAmount/hasDiscrepancy). Null when there was nothing
+   *  confirmed on Duty Roster to compare against for that site/month. Purely informational, fed
+   *  into the Revenue tab's discrepancy rollup — never affects amountPaid/total. */
+  discrepancyAmount?: number | null;
+  /** Whether a discrepancy (see discrepancyAmount) was explicitly acknowledged before this
+   *  invoice was generated anyway — see InvoiceGenerator's discrepancyAcknowledged checkbox. */
+  discrepancyAcknowledged?: boolean;
   /** Copied from the site's Branch at the moment this invoice was generated — see Branch's doc
    *  comment. Snapshotted (not looked up live) so editing a branch's signatory later never
    *  changes how an already-issued invoice prints. */

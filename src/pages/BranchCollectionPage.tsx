@@ -3,8 +3,9 @@ import clsx from 'clsx';
 import InvoiceGenerator from '../components/branch-collection/InvoiceGenerator';
 import InvoiceList from '../components/branch-collection/InvoiceList';
 import DebtorList from '../components/branch-collection/DebtorList';
+import RevenuePanel from '../components/branch-collection/RevenuePanel';
 
-const TABS = ['Generate Invoice', 'Invoices', 'Debtor List'] as const;
+const TABS = ['Generate Invoice', 'Invoices', 'Debtor List', 'Revenue'] as const;
 
 export default function BranchCollectionPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>('Generate Invoice');
@@ -33,7 +34,15 @@ export default function BranchCollectionPage() {
       </header>
 
       <div className="px-6 py-6 max-w-5xl">
-        {tab === 'Generate Invoice' ? <InvoiceGenerator /> : tab === 'Invoices' ? <InvoiceList /> : <DebtorList />}
+        {tab === 'Generate Invoice' ? (
+          <InvoiceGenerator />
+        ) : tab === 'Invoices' ? (
+          <InvoiceList />
+        ) : tab === 'Debtor List' ? (
+          <DebtorList />
+        ) : (
+          <RevenuePanel />
+        )}
       </div>
     </div>
   );

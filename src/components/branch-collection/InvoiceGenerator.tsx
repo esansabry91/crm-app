@@ -292,6 +292,7 @@ export default function InvoiceGenerator() {
           clientAlias: clientAlias.trim() || clientName.trim(),
           invoiceDate,
           billingMonth,
+          billingMonthKey: billingMonthValue,
           contractRef: contractRef.trim(),
           quotationNo: quotationNo.trim(),
           paymentTermsDays,
@@ -299,6 +300,8 @@ export default function InvoiceGenerator() {
           sstRate,
           signatoryName: signatoryName.trim(),
           signatoryTitle: signatoryTitle.trim(),
+          discrepancyAmount: remainingAmount,
+          discrepancyAcknowledged,
         },
         { uid: profile.uid, name: profile.name, role: profile.role }
       );
