@@ -240,7 +240,9 @@ export default function TestingDataTool() {
           </button>
         </div>
         {resetMessage && (
-          <p className={`text-xs mt-3 ${resetMessage.isError ? 'text-rose-600' : 'text-emerald-600'}`}>
+          <p
+            className={`text-xs mt-3 whitespace-pre-line ${resetMessage.isError ? 'text-rose-600' : 'text-emerald-600'}`}
+          >
             {resetMessage.text}
           </p>
         )}

@@ -1,21 +1,5 @@
-import { collection, collectionGroup, getDocs, query, where, writeBatch, type DocumentReference } from 'firebase/firestore';
+import { collection, collectionGroup, deleteDoc, getDocs, query, updateDoc, where, type DocumentReference } from 'firebase/firestore';
 import { db } from '../firebase';
-
-/**
- * Firestore caps a single batched write at 20 total get()/exists() calls across ALL its
- * operations combined (separate from, and much stricter than, its 500-write operation-count
- * limit — see https://firebase.google.com/docs/firestore/security/rules-conditions). Every
- * delete/update this file batches is authorized by a rule that calls get() at least once
- * (isAdmin()/isDeveloper()/isActiveUser()/isPayroll() all read the caller's own /users/{uid}
- * doc) — and the /sites/{id}/months delete rule costs FOUR get() calls on its own (isActiveUser
- * + isPayroll + the parent site's own get() + isAdmin() inside canReachSite()). The previous
- * 400-per-batch chunking was sized only against the 500-operation cap and silently blew past
- * the 20-get()-call cap the moment a batch mixed in even a handful of months docs — that's what
- * was causing "Delete all test data" to fail with "Missing or insufficient permissions." even
- * after the /sites delete rule itself was fixed. 5 keeps every batch safely under 20 even if
- * every document in it happened to be the worst case (5 × 4 = 20).
- */
-const MAX_OPS_PER_BATCH = 5;
 
 export interface TestDataResetResult {
   tenders: number;
@@ -53,6 +37,51 @@ export async function getTestDataCounts(): Promise<TestDataCounts> {
     guards: guardsSnap.docs.length,
     bufferGuards: bufferSnap.docs.length,
   };
+}
+
+interface OpFailure {
+  path: string;
+  message: string;
+}
+
+/**
+ * Deletes each document one at a time (a plain deleteDoc() per document) instead of batching
+ * them into a writeBatch. Two reasons, in order of how this was actually found:
+ *
+ * 1. A batched write's security-rule evaluation is capped at 20 total get()/exists() calls
+ *    across ALL its operations combined (see
+ *    https://firebase.google.com/docs/firestore/security/rules-conditions) — several of the
+ *    rules this purge relies on (isAdmin()/isDeveloper()/canReachSite()) call get(). A first fix
+ *    just shrank the batch size to stay under that cap — but "Delete all test data" kept failing
+ *    with the same generic "Missing or insufficient permissions." even after that shipped, which
+ *    means either the real cap wasn't the (only) problem, or some other rule denial was hiding
+ *    behind the same one-size-fails-all batch error the whole time.
+ * 2. That's the deeper reason to go one-at-a-time regardless: a writeBatch commit fails or
+ *    succeeds as a single all-or-nothing unit with ONE error for the whole thing — there is no
+ *    way to tell, from a failed batch, which specific document among dozens was actually denied.
+ *    Individual deleteDoc() calls each get their own success/failure, so a denial now names the
+ *    exact collection/document path it happened on instead of a dead end.
+ */
+async function deleteEach(refs: DocumentReference[], failures: OpFailure[]): Promise<number> {
+  let succeeded = 0;
+  for (const ref of refs) {
+    try {
+      await deleteDoc(ref);
+      succeeded++;
+    } catch (err) {
+      failures.push({ path: ref.path, message: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return succeeded;
+}
+
+function throwIfAny(failures: OpFailure[]): void {
+  if (failures.length === 0) return;
+  const shown = failures.slice(0, 6).map((f) => `${f.path} — ${f.message}`);
+  const more = failures.length > 6 ? [`…and ${failures.length - 6} more`] : [];
+  throw new Error(
+    `${failures.length} of the operations were denied (everything else was deleted):\n${[...shown, ...more].join('\n')}`
+  );
 }
 
 /**
@@ -95,12 +124,12 @@ export async function resetTestData(): Promise<TestDataResetResult> {
     monthDocsToDelete.push(...monthsSnap.docs.map((d) => d.ref));
   }
 
+  const failures: OpFailure[] = [];
+
   // Release real guards first, before their site disappears underneath them.
-  if (guardsToRelease.length > 0) {
-    let releaseBatch = writeBatch(db);
-    let count = 0;
-    for (const ref of guardsToRelease) {
-      releaseBatch.update(ref, {
+  for (const ref of guardsToRelease) {
+    try {
+      await updateDoc(ref, {
         status: 'pool',
         siteId: null,
         siteName: null,
@@ -109,45 +138,42 @@ export async function resetTestData(): Promise<TestDataResetResult> {
         brandName: null,
         updatedAt: Date.now(),
       });
-      count++;
-      if (count === MAX_OPS_PER_BATCH) {
-        await releaseBatch.commit();
-        releaseBatch = writeBatch(db);
-        count = 0;
-      }
-    }
-    if (count > 0) await releaseBatch.commit();
-  }
-
-  const refsToDelete: DocumentReference[] = [
-    ...historyDocsToDelete.map((d) => d.ref),
-    ...tendersSnap.docs.map((d) => d.ref),
-    ...monthDocsToDelete,
-    ...sitesSnap.docs.map((d) => d.ref),
-    ...guardsSnap.docs.map((d) => d.ref),
-    ...bufferSnap.docs.map((d) => d.ref),
-  ];
-
-  let batch = writeBatch(db);
-  let opCount = 0;
-  for (const ref of refsToDelete) {
-    batch.delete(ref);
-    opCount++;
-    if (opCount === MAX_OPS_PER_BATCH) {
-      await batch.commit();
-      batch = writeBatch(db);
-      opCount = 0;
+    } catch (err) {
+      failures.push({ path: ref.path, message: err instanceof Error ? err.message : String(err) });
     }
   }
-  if (opCount > 0) await batch.commit();
+
+  const historyDeleted = await deleteEach(
+    historyDocsToDelete.map((d) => d.ref),
+    failures
+  );
+  const monthsDeleted = await deleteEach(monthDocsToDelete, failures);
+  const tendersDeleted = await deleteEach(
+    tendersSnap.docs.map((d) => d.ref),
+    failures
+  );
+  const sitesDeleted = await deleteEach(
+    sitesSnap.docs.map((d) => d.ref),
+    failures
+  );
+  const guardsDeleted = await deleteEach(
+    guardsSnap.docs.map((d) => d.ref),
+    failures
+  );
+  const bufferDeleted = await deleteEach(
+    bufferSnap.docs.map((d) => d.ref),
+    failures
+  );
+
+  throwIfAny(failures);
 
   return {
-    tenders: tendersSnap.docs.length,
-    history: historyDocsToDelete.length,
-    sites: sitesSnap.docs.length,
-    months: monthDocsToDelete.length,
-    guards: guardsSnap.docs.length,
-    bufferGuards: bufferSnap.docs.length,
+    tenders: tendersDeleted,
+    history: historyDeleted,
+    sites: sitesDeleted,
+    months: monthsDeleted,
+    guards: guardsDeleted,
+    bufferGuards: bufferDeleted,
     guardsReleased: guardsToRelease.length,
   };
 }

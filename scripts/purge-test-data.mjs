@@ -65,25 +65,51 @@ import {
   getDocs,
   getDoc,
   doc,
-  writeBatch,
+  deleteDoc,
+  updateDoc,
 } from 'firebase/firestore';
 
 /**
- * Firestore caps a single batched write at 20 total get()/exists() calls across ALL its
- * operations combined (separate from, and much stricter than, its 500-write operation-count
- * limit — see https://firebase.google.com/docs/firestore/security/rules-conditions). This
- * script authenticates as a real admin through the client SDK (see the file header comment), so
- * every delete/update below goes through firestore.rules, and every one of those rules calls
- * get() at least once (isAdmin()/isDeveloper()/isActiveUser()/isPayroll() all read the caller's
- * own /users/{uid} doc) — the /sites/{id}/months delete rule alone costs FOUR get() calls
- * (isActiveUser + isPayroll + the parent site's own get() + isAdmin() inside canReachSite()).
- * The previous 400-per-batch chunking was sized only against the 500-operation cap and silently
- * blew past the 20-get()-call cap the moment a batch mixed in even a handful of documents whose
- * rules need get() — this is also what breaks the in-app "Delete all test data" button (same
- * logic, see src/services/testDataReset.ts). 5 keeps every batch safely under 20 even if every
- * document in it happened to be the worst case (5 × 4 = 20).
+ * Deletes each document one at a time (a plain deleteDoc() per document) instead of batching
+ * them into a writeBatch. Two reasons, in order of how this was actually found:
+ *
+ * 1. A batched write's security-rule evaluation is capped at 20 total get()/exists() calls
+ *    across ALL its operations combined (see
+ *    https://firebase.google.com/docs/firestore/security/rules-conditions) — several of the
+ *    rules this script relies on (isAdmin()/isDeveloper()/canReachSite()) call get(). A first
+ *    fix just shrank the batch size to stay under that cap — but the in-app "Delete all test
+ *    data" button (same logic, see src/services/testDataReset.ts) kept failing with the same
+ *    generic "Missing or insufficient permissions." even after that shipped, which means either
+ *    the real cap wasn't the (only) problem, or some other rule denial was hiding behind the
+ *    same one-size-fails-all batch error the whole time.
+ * 2. That's the deeper reason to go one-at-a-time regardless: a writeBatch commit fails or
+ *    succeeds as a single all-or-nothing unit with ONE error for the whole thing — there is no
+ *    way to tell, from a failed batch, which specific document among dozens was actually denied.
+ *    Individual deleteDoc() calls each get their own success/failure, so a denial now names the
+ *    exact collection/document path it happened on instead of a dead end.
  */
-const MAX_OPS_PER_BATCH = 5;
+async function deleteEach(refs, failures) {
+  let succeeded = 0;
+  for (const ref of refs) {
+    try {
+      await deleteDoc(ref);
+      succeeded++;
+    } catch (err) {
+      failures.push({ path: ref.path, message: err.message });
+    }
+  }
+  return succeeded;
+}
+
+function reportFailures(failures) {
+  if (failures.length === 0) return;
+  console.error(`\n${failures.length} of the operations were denied (everything else was deleted):`);
+  for (const f of failures.slice(0, 10)) {
+    console.error(`  - ${f.path} — ${f.message}`);
+  }
+  if (failures.length > 10) console.error(`  …and ${failures.length - 10} more`);
+  process.exitCode = 1;
+}
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 
@@ -250,58 +276,39 @@ async function runTestDataPurge(db, ask) {
     return;
   }
 
+  const failures = [];
+
   if (guardsToRelease.length > 0) {
-    let releaseBatch = writeBatch(db);
-    let releaseCount = 0;
     for (const ref of guardsToRelease) {
-      releaseBatch.update(ref, {
-        status: 'pool',
-        siteId: null,
-        siteName: null,
-        branch: null,
-        brandId: null,
-        brandName: null,
-        updatedAt: Date.now(),
-      });
-      releaseCount++;
-      if (releaseCount === MAX_OPS_PER_BATCH) {
-        await releaseBatch.commit();
-        releaseBatch = writeBatch(db);
-        releaseCount = 0;
+      try {
+        await updateDoc(ref, {
+          status: 'pool',
+          siteId: null,
+          siteName: null,
+          branch: null,
+          brandId: null,
+          brandName: null,
+          updatedAt: Date.now(),
+        });
+      } catch (err) {
+        failures.push({ path: ref.path, message: err.message });
       }
     }
-    if (releaseCount > 0) await releaseBatch.commit();
     console.log(`Released ${guardsToRelease.length} real guard(s) back to the Guard Pool.`);
   }
 
-  const refsToDelete = [
-    ...historyDocsToDelete.map((d) => d.ref),
-    ...tendersSnap.docs.map((d) => d.ref),
-    ...monthDocsToDelete,
-    ...sitesSnap.docs.map((d) => d.ref),
-    ...guardsSnap.docs.map((d) => d.ref),
-    ...bufferSnap.docs.map((d) => d.ref),
-  ];
-
-  let batch = writeBatch(db);
-  let opCount = 0;
   let totalDeleted = 0;
-  for (const ref of refsToDelete) {
-    batch.delete(ref);
-    opCount++;
-    totalDeleted++;
-    if (opCount === MAX_OPS_PER_BATCH) {
-      await batch.commit();
-      batch = writeBatch(db);
-      opCount = 0;
-      console.log(`  ...${totalDeleted} deleted so far`);
-    }
-  }
-  if (opCount > 0) await batch.commit();
+  totalDeleted += await deleteEach(historyDocsToDelete.map((d) => d.ref), failures);
+  totalDeleted += await deleteEach(monthDocsToDelete, failures);
+  totalDeleted += await deleteEach(tendersSnap.docs.map((d) => d.ref), failures);
+  totalDeleted += await deleteEach(sitesSnap.docs.map((d) => d.ref), failures);
+  totalDeleted += await deleteEach(guardsSnap.docs.map((d) => d.ref), failures);
+  totalDeleted += await deleteEach(bufferSnap.docs.map((d) => d.ref), failures);
 
   console.log(
     `\nDone - deleted ${totalDeleted} document(s) and released ${guardsToRelease.length} real guard(s) back to the Guard Pool.`
   );
+  reportFailures(failures);
 }
 
 async function main() {
@@ -438,7 +445,6 @@ async function main() {
     return;
   }
 
-  // ---- delete in batches (Firestore batch limit is 500 writes) ----
   const refsToDelete = [
     ...historyDocsToDelete.map((d) => d.ref),
     ...tendersSnap.docs.map((d) => d.ref),
@@ -447,21 +453,8 @@ async function main() {
     refsToDelete.push(doc(db, 'users', uid));
   }
 
-  let batch = writeBatch(db);
-  let opCount = 0;
-  let totalDeleted = 0;
-  for (const ref of refsToDelete) {
-    batch.delete(ref);
-    opCount++;
-    totalDeleted++;
-    if (opCount === MAX_OPS_PER_BATCH) {
-      await batch.commit();
-      batch = writeBatch(db);
-      opCount = 0;
-      console.log(`  ...${totalDeleted} deleted so far`);
-    }
-  }
-  if (opCount > 0) await batch.commit();
+  const failures = [];
+  const totalDeleted = await deleteEach(refsToDelete, failures);
 
   console.log(`\nDone - deleted ${totalDeleted} document(s).`);
   if (!allMode) {
@@ -469,6 +462,7 @@ async function main() {
       `Remember: ${uid}'s Firebase Auth login still exists. Remove it too in Firebase console -> Authentication -> Users if you want it fully gone.`
     );
   }
+  reportFailures(failures);
   rl.close();
 }
 
