@@ -228,7 +228,8 @@ export interface NewMigratedInvoiceInput {
   paymentTermsDays: number;
   subTotal: number;
   sstRate: number;
-  status: InvoiceStatus;
+  /** Clamped to [0, total] and used to derive `status` automatically — see deriveInvoiceStatus/
+   *  clampAmountPaid — rather than trusting a status picked independently of the amount. */
   amountPaid: number;
   paidDate?: string;
   /** When set to a value greater than the brand+branch+client counter's current lastNumber,
@@ -260,6 +261,8 @@ export async function createMigratedInvoice(input: NewMigratedInvoiceInput, acto
   const subTotal = input.subTotal;
   const sstAmount = subTotal * input.sstRate;
   const total = subTotal + sstAmount;
+  const amountPaid = clampAmountPaid(input.amountPaid, total);
+  const status = deriveInvoiceStatus(amountPaid, total);
   const isTestData = await shouldStampTestData(actor.role);
 
   const lineGroups: InvoiceLineGroup[] = [
@@ -279,10 +282,10 @@ export async function createMigratedInvoice(input: NewMigratedInvoiceInput, acto
 
   const newInvoiceRef = doc(invoicesCollection());
   const paymentLog =
-    input.amountPaid > 0
+    amountPaid > 0
       ? [
           {
-            amount: input.amountPaid,
+            amount: amountPaid,
             date: input.paidDate || input.invoiceDate,
             recordedAt: now,
             recordedByUid: actor.uid,
@@ -314,9 +317,9 @@ export async function createMigratedInvoice(input: NewMigratedInvoiceInput, acto
     sstRate: input.sstRate,
     sstAmount,
     total,
-    status: input.status,
-    amountPaid: input.amountPaid,
-    paidDate: input.paidDate || null,
+    status,
+    amountPaid,
+    paidDate: amountPaid > 0 ? input.paidDate || null : null,
     paymentLog,
     discrepancyAmount: null,
     discrepancyAcknowledged: true,
@@ -364,23 +367,47 @@ export function subscribeInvoices(callback: (invoices: Invoice[]) => void): () =
   });
 }
 
+/** Unpaid once nothing's been paid, Paid once amountPaid reaches the invoice's total (or would
+ *  exceed it — see clampAmountPaid, which is always applied first), Partially Paid anywhere in
+ *  between. The single source of truth for an invoice's status — it's never set independently of
+ *  amountPaid, so "Paid" and "there's still a balance owing" can never disagree with each other. */
+export function deriveInvoiceStatus(amountPaid: number, total: number): InvoiceStatus {
+  if (amountPaid <= 0) return 'unpaid';
+  if (total <= 0 || amountPaid >= total) return 'paid';
+  return 'partial';
+}
+
+/** Keeps a recorded payment from ever overshooting what's actually owed on the invoice — clamps
+ *  to the [0, total] range (a negative or NaN input clamps to 0). */
+export function clampAmountPaid(amountPaid: number, total: number): number {
+  if (!Number.isFinite(amountPaid) || amountPaid < 0) return 0;
+  return Math.min(amountPaid, Math.max(total, 0));
+}
+
 /**
  * Updates an invoice's payment status. `previousAmountPaid` is the amountPaid the invoice had
  * before this edit (the caller already has the Invoice loaded, so no extra read here) — the
- * difference between it and `amountPaid` is what gets appended to paymentLog as one installment,
- * so a running history of payments survives even though amountPaid itself is only ever the
- * latest cumulative total. A save that doesn't actually move the amount (e.g. just switching the
- * status dropdown) logs nothing — the log is a record of real payments, not of edits.
+ * difference between it and the (clamped) new amountPaid is what gets appended to paymentLog as
+ * one installment, so a running history of payments survives even though amountPaid itself is
+ * only ever the latest cumulative total. A save that doesn't actually move the amount logs
+ * nothing — the log is a record of real payments, not of edits.
+ *
+ * `status` is always derived from amountPaid vs `total` (see deriveInvoiceStatus) rather than
+ * chosen independently, and amountPaid is always clamped to never exceed `total` (see
+ * clampAmountPaid) — so a payment can never overshoot what's owed, and the status can never
+ * disagree with the actual remaining balance.
  */
 export async function updateInvoiceStatus(
   id: string,
-  patch: { status: InvoiceStatus; amountPaid: number; paidDate?: string; previousAmountPaid: number },
+  patch: { amountPaid: number; total: number; paidDate?: string; previousAmountPaid: number },
   actor: { uid: string; name: string }
 ): Promise<void> {
-  const delta = patch.amountPaid - patch.previousAmountPaid;
+  const amountPaid = clampAmountPaid(patch.amountPaid, patch.total);
+  const status = deriveInvoiceStatus(amountPaid, patch.total);
+  const delta = amountPaid - patch.previousAmountPaid;
   const updates: Record<string, unknown> = {
-    status: patch.status,
-    amountPaid: patch.amountPaid,
+    status,
+    amountPaid,
     paidDate: patch.paidDate || null,
     updatedAt: Date.now(),
   };

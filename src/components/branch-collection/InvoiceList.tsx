@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { subscribeInvoices, updateInvoiceStatus } from '../../services/invoices';
+import { subscribeInvoices, updateInvoiceStatus, deriveInvoiceStatus, clampAmountPaid } from '../../services/invoices';
 import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
 import InvoicePrintView from './InvoicePrintView';
@@ -46,10 +46,15 @@ function lastPayment(inv: Invoice): { amount: number; date: string } | null {
 
 function StatusEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
   const { profile } = useAuth();
-  const [status, setStatus] = useState<InvoiceStatus>(invoice.status);
   const [amountPaid, setAmountPaid] = useState(invoice.amountPaid);
   const [paidDate, setPaidDate] = useState(invoice.paidDate || '');
   const [busy, setBusy] = useState(false);
+
+  // Status is never picked independently of the amount — it's always derived from amountPaid vs
+  // the invoice's total (see deriveInvoiceStatus), and a payment can never be typed in above the
+  // total in the first place (see the onChange below, which clamps as you type), so the two can
+  // never end up disagreeing with each other the way a manually-picked status used to allow.
+  const previewStatus = deriveInvoiceStatus(amountPaid, invoice.total);
 
   async function save() {
     if (!profile) return;
@@ -57,7 +62,7 @@ function StatusEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => v
     try {
       await updateInvoiceStatus(
         invoice.id,
-        { status, amountPaid, paidDate: paidDate || undefined, previousAmountPaid: invoice.amountPaid },
+        { amountPaid, total: invoice.total, paidDate: paidDate || undefined, previousAmountPaid: invoice.amountPaid },
         { uid: profile.uid, name: profile.name }
       );
       onClose();
@@ -68,19 +73,19 @@ function StatusEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => v
 
   return (
     <div className="border-t border-slate-100 pt-3 mt-3 flex flex-wrap items-center gap-2">
-      <select value={status} onChange={(e) => setStatus(e.target.value as InvoiceStatus)} className="input">
-        <option value="unpaid">Unpaid</option>
-        <option value="partial">Partially Paid</option>
-        <option value="paid">Paid</option>
-      </select>
+      <span className={`px-2.5 py-1.5 text-xs font-medium rounded-lg ${STATUS_COLOR[previewStatus]}`}>
+        {STATUS_LABEL[previewStatus]}
+      </span>
       <input
         type="number"
         value={amountPaid === 0 ? '' : amountPaid}
         onFocus={(e) => e.target.select()}
         onChange={(e) => {
           const raw = e.target.value.replace(/^0+(?=\d)/, '');
-          setAmountPaid(raw === '' ? 0 : Number(raw) || 0);
+          const parsed = raw === '' ? 0 : Number(raw) || 0;
+          setAmountPaid(clampAmountPaid(parsed, invoice.total));
         }}
+        max={invoice.total}
         className="input w-32"
         placeholder="Amount paid (RM)"
       />

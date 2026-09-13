@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useWonTenders } from '../../hooks/useActiveProjects';
-import { createMigratedInvoice } from '../../services/invoices';
-import type { InvoiceStatus } from '../../types';
+import { createMigratedInvoice, deriveInvoiceStatus, clampAmountPaid } from '../../services/invoices';
 import { formatRM } from '../../utils/format';
 
 const MONTH_NAMES = [
@@ -74,7 +73,6 @@ export default function MigrateInvoiceForm() {
   const [paymentTermsDays, setPaymentTermsDays] = useState(30);
   const [subTotal, setSubTotal] = useState(0);
   const [sstRate, setSstRate] = useState(0.08);
-  const [status, setStatus] = useState<InvoiceStatus>('unpaid');
   const [amountPaid, setAmountPaid] = useState(0);
   const [paidDate, setPaidDate] = useState('');
 
@@ -111,6 +109,17 @@ export default function MigrateInvoiceForm() {
   const billingMonth = formatBillingMonth(billingMonthValue);
   const sstAmount = subTotal * sstRate;
   const total = subTotal + sstAmount;
+  // Status is never picked independently of the amount paid — see deriveInvoiceStatus — and the
+  // Amount paid field below can never be typed in above `total` in the first place.
+  const status = deriveInvoiceStatus(amountPaid, total);
+
+  // Re-clamp if editing the subtotal/SST rate after the fact shrinks the total below an
+  // already-typed amountPaid — the onChange clamp alone only guards against typing past whatever
+  // the total was at that moment.
+  useEffect(() => {
+    setAmountPaid((prev) => clampAmountPaid(prev, total));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [total]);
 
   const canSave = !!(profile && tender && brand && clientName.trim() && invoiceNo.trim() && subTotal > 0);
 
@@ -141,7 +150,6 @@ export default function MigrateInvoiceForm() {
           paymentTermsDays,
           subTotal,
           sstRate,
-          status,
           amountPaid,
           paidDate: paidDate || undefined,
           reserveRunningNumber,
@@ -152,7 +160,6 @@ export default function MigrateInvoiceForm() {
       setInvoiceNo('');
       setSubTotal(0);
       setAmountPaid(0);
-      setStatus('unpaid');
       setPaidDate('');
       setReserveTouched(false);
       setReserveRunningNumber(null);
@@ -332,25 +339,6 @@ export default function MigrateInvoiceForm() {
             <div className="input w-full bg-slate-50 text-slate-800 font-semibold">{formatRM(total)}</div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
-            <select
-              value={status}
-              onChange={(e) => {
-                const next = e.target.value as InvoiceStatus;
-                setStatus(next);
-                if (next === 'unpaid') {
-                  setAmountPaid(0);
-                  setPaidDate('');
-                }
-              }}
-              className="input w-full"
-            >
-              <option value="unpaid">Unpaid</option>
-              <option value="partial">Partially Paid</option>
-              <option value="paid">Paid</option>
-            </select>
-          </div>
-          <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Amount paid (RM)</label>
             <input
               type="number"
@@ -358,12 +346,20 @@ export default function MigrateInvoiceForm() {
               onFocus={(e) => e.target.select()}
               onChange={(e) => {
                 const raw = e.target.value.replace(/^0+(?=\d)/, '');
-                setAmountPaid(raw === '' ? 0 : Number(raw) || 0);
+                const parsed = raw === '' ? 0 : Number(raw) || 0;
+                setAmountPaid(clampAmountPaid(parsed, total));
               }}
+              max={total}
               className="input w-full"
               placeholder="0.00"
-              disabled={status === 'unpaid'}
             />
+            <p className="text-xs text-slate-400 mt-1">Can't exceed the total ({formatRM(total)}).</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
+            <div className="input w-full bg-slate-50 text-slate-700 font-medium">
+              {status === 'unpaid' ? 'Unpaid' : status === 'partial' ? 'Partially Paid' : 'Paid'}
+            </div>
           </div>
           {status !== 'unpaid' && (
             <div>
