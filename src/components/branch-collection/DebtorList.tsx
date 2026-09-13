@@ -1,10 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
-import { subscribeInvoices } from '../../services/invoices';
+import { subscribeInvoices, computeOutstandingTrend } from '../../services/invoices';
 import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
 import { isAdminRole } from '../../types';
 import type { Invoice } from '../../types';
 import StatCard from '../analytics/StatCard';
+import OutstandingTrendChart from './OutstandingTrendChart';
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function monthLabel(monthKey: string): string {
+  const [y, m] = monthKey.split('-').map(Number);
+  if (!y || !m || m < 1 || m > 12) return monthKey;
+  return `${MONTH_NAMES[m - 1]} ${y}`;
+}
 
 /** Days between the invoice's due date (invoiceDate + paymentTermsDays) and today — negative
  *  means not yet due. */
@@ -88,6 +100,15 @@ export default function DebtorList() {
 
   const totalOutstanding = outstanding.reduce((sum, o) => sum + o.balance, 0);
 
+  // The trend needs every invoice touched by the current brand/branch filter — including already
+  // fully-paid ones — to correctly reconstruct past balances, not just what's still outstanding
+  // today (that's what `filtered` is for; `allOutstanding`/`outstanding` above have already
+  // dropped paid invoices and don't carry payment history the trend needs).
+  const outstandingTrend = useMemo(
+    () => computeOutstandingTrend(filtered).map((p) => ({ key: p.monthKey, label: monthLabel(p.monthKey), outstanding: p.outstanding })),
+    [filtered]
+  );
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5">
       <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
@@ -143,6 +164,11 @@ export default function DebtorList() {
             action={{ label: 'Go to list', onClick: () => setBucketFilter(bucket) }}
           />
         ))}
+      </div>
+
+      <div className="mb-4">
+        <h4 className="text-sm font-semibold text-slate-800 mb-3">Total outstanding over time</h4>
+        <OutstandingTrendChart data={outstandingTrend} />
       </div>
 
       <div className="overflow-x-auto">

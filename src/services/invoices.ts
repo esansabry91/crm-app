@@ -629,3 +629,75 @@ export async function backfillInvoiceStatuses(): Promise<BackfillStatusResult> {
 
   return result;
 }
+
+export interface OutstandingTrendPoint {
+  /** yyyy-mm */
+  monthKey: string;
+  /** Total outstanding balance across every invoice, as of the end of this month. */
+  outstanding: number;
+}
+
+/**
+ * Reconstructs the total outstanding balance as of the end of every month, from the earliest
+ * invoice on record to the current month, by replaying two kinds of dated events in chronological
+ * order: an invoice's full total lands on its invoiceDate, and each recorded payment (see
+ * InvoicePayment) reduces the balance on the date it was recorded — falling back to the invoice's
+ * own paidDate (or invoiceDate if that's missing too) for an invoice saved before paymentLog
+ * existed. A month with no events of its own carries the previous month's running total forward,
+ * so the series is continuous rather than dropping to zero in the gaps — and its very last point
+ * always equals exactly what the Debtor List's own "Total outstanding" figure shows right now,
+ * since both ultimately add up to the same sum(total) - sum(amountPaid) underneath.
+ */
+export function computeOutstandingTrend(invoices: Invoice[]): OutstandingTrendPoint[] {
+  if (invoices.length === 0) return [];
+
+  const todayMonth = new Date().toISOString().slice(0, 7);
+  const monthKeyOfDate = (iso: string | undefined): string => {
+    const key = iso ? iso.slice(0, 7) : '';
+    return /^\d{4}-\d{2}$/.test(key) ? key : todayMonth;
+  };
+
+  const events: { monthKey: string; delta: number }[] = [];
+  for (const inv of invoices) {
+    events.push({ monthKey: monthKeyOfDate(inv.invoiceDate), delta: inv.total });
+
+    if (inv.paymentLog && inv.paymentLog.length > 0) {
+      for (const p of inv.paymentLog) {
+        events.push({ monthKey: monthKeyOfDate(p.date || inv.invoiceDate), delta: -p.amount });
+      }
+    } else if (inv.amountPaid > 0) {
+      // Pre-paymentLog invoice: amountPaid is a lump sum with no per-installment history, so it
+      // lands as one reducing event on its paidDate.
+      events.push({ monthKey: monthKeyOfDate(inv.paidDate || inv.invoiceDate), delta: -inv.amountPaid });
+    }
+  }
+
+  const byMonth = new Map<string, number>();
+  for (const e of events) {
+    byMonth.set(e.monthKey, (byMonth.get(e.monthKey) || 0) + e.delta);
+  }
+
+  const earliestMonth = events.reduce((min, e) => (e.monthKey < min ? e.monthKey : min), events[0].monthKey);
+  // An invoice dated after the current month (bad data, or a future-dated draft) shouldn't make
+  // the walk start after where it ends — clamp the start to "now" in that case.
+  const startMonth = earliestMonth < todayMonth ? earliestMonth : todayMonth;
+
+  const points: OutstandingTrendPoint[] = [];
+  let [y, m] = startMonth.split('-').map(Number);
+  let running = 0;
+  // One point per calendar month; 1200 (100 years) is just a safety valve against a corrupt date
+  // producing an unbounded loop, never expected to bind in practice.
+  for (let i = 0; i < 1200; i++) {
+    const key = `${y}-${String(m).padStart(2, '0')}`;
+    running += byMonth.get(key) || 0;
+    points.push({ monthKey: key, outstanding: roundMoney(running) });
+    if (key >= todayMonth) break;
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+
+  return points;
+}
