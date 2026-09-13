@@ -8,6 +8,7 @@ import {
   orderBy,
   query,
   runTransaction,
+  setDoc,
   updateDoc,
   writeBatch,
 } from 'firebase/firestore';
@@ -204,6 +205,156 @@ export async function createInvoice(input: NewInvoiceInput, actor: Actor): Promi
   });
 
   return { id: newInvoiceRef.id, invoiceNo };
+}
+
+export interface NewMigratedInvoiceInput {
+  brandId: string;
+  brandName: string;
+  brandCode: string;
+  branchId: string | null;
+  branchName: string;
+  branchCode: string;
+  tenderId: string | null;
+  clientName: string;
+  clientAddress?: string;
+  attnName?: string;
+  clientAlias: string;
+  invoiceNo: string;
+  invoiceDate: string;
+  billingMonth: string;
+  billingMonthKey: string;
+  contractRef?: string;
+  quotationNo?: string;
+  paymentTermsDays: number;
+  subTotal: number;
+  sstRate: number;
+  status: InvoiceStatus;
+  amountPaid: number;
+  paidDate?: string;
+  /** When set to a value greater than the brand+branch+client counter's current lastNumber,
+   *  bumps the counter up to it in the same write — see createMigratedInvoice's doc comment for
+   *  why this exists. Leave unset/0 to not touch the counter at all. */
+  reserveRunningNumber?: number | null;
+}
+
+/**
+ * Records a historical invoice that was already issued to a client before this app existed (or
+ * outside its normal Duty Roster-driven flow) — tied to an Active Project (tenderId) instead of a
+ * Duty Roster site, since siteId is always null here. Unlike createInvoice(), invoiceNo is
+ * exactly what the caller supplies (the number already printed on the original document) rather
+ * than assigned from the running counter, and subTotal/status/amountPaid are entered directly
+ * instead of derived from line items — a single synthetic line item is stored purely so the
+ * invoice still prints sensibly if ever viewed.
+ *
+ * Because the counter never issued this invoiceNo, left alone it has no way to know a running
+ * number this high is already "used" — the very next NORMAL invoice for the same
+ * brand+branch+client could then reuse a running number a migrated invoice's own number already
+ * carries. When the caller supplies `reserveRunningNumber` (see MigrateInvoiceForm's
+ * guessRunningNumber — best-effort parsed from the tail of the typed invoiceNo, editable), the
+ * counter is bumped up to at least that value in the same transaction as the invoice write, so
+ * future auto-numbering continues on from the highest known historical number instead of
+ * eventually repeating one.
+ */
+export async function createMigratedInvoice(input: NewMigratedInvoiceInput, actor: Actor): Promise<{ id: string }> {
+  const now = Date.now();
+  const subTotal = input.subTotal;
+  const sstAmount = subTotal * input.sstRate;
+  const total = subTotal + sstAmount;
+  const isTestData = await shouldStampTestData(actor.role);
+
+  const lineGroups: InvoiceLineGroup[] = [
+    {
+      location: 'Migrated invoice',
+      rows: [
+        {
+          category: 'Total carried over from historical record',
+          headcount: 1,
+          days: 1,
+          rate: subTotal,
+          amount: subTotal,
+        },
+      ],
+    },
+  ];
+
+  const newInvoiceRef = doc(invoicesCollection());
+  const paymentLog =
+    input.amountPaid > 0
+      ? [
+          {
+            amount: input.amountPaid,
+            date: input.paidDate || input.invoiceDate,
+            recordedAt: now,
+            recordedByUid: actor.uid,
+            recordedByName: actor.name,
+          },
+        ]
+      : [];
+
+  const invoiceData = {
+    brandId: input.brandId,
+    brandName: input.brandName,
+    branchId: input.branchId,
+    branchName: input.branchName,
+    siteId: null,
+    siteName: '',
+    tenderId: input.tenderId,
+    clientName: input.clientName,
+    clientAddress: input.clientAddress || '',
+    attnName: input.attnName || '',
+    invoiceNo: input.invoiceNo,
+    invoiceDate: input.invoiceDate,
+    billingMonth: input.billingMonth,
+    billingMonthKey: input.billingMonthKey,
+    contractRef: input.contractRef || '',
+    quotationNo: input.quotationNo || '',
+    paymentTermsDays: input.paymentTermsDays,
+    lineGroups,
+    subTotal,
+    sstRate: input.sstRate,
+    sstAmount,
+    total,
+    status: input.status,
+    amountPaid: input.amountPaid,
+    paidDate: input.paidDate || null,
+    paymentLog,
+    discrepancyAmount: null,
+    discrepancyAcknowledged: true,
+    createdByUid: actor.uid,
+    createdByName: actor.name,
+    createdAt: now,
+    updatedAt: now,
+    isTestData,
+    isMigrated: true,
+  };
+
+  if (input.reserveRunningNumber && input.reserveRunningNumber > 0) {
+    const counterKey = buildInvoiceCounterKey(input.brandCode, input.branchCode, input.clientAlias);
+    const counterRef = doc(db, 'invoiceCounters', counterKey);
+    const reserve = input.reserveRunningNumber;
+    await runTransaction(db, async (tx) => {
+      const counterSnap = await tx.get(counterRef);
+      const current = counterSnap.exists() ? (counterSnap.data().lastNumber as number) || 0 : 0;
+      if (reserve > current) {
+        tx.set(
+          counterRef,
+          {
+            lastNumber: reserve,
+            brandCode: input.brandCode,
+            branchCode: input.branchCode,
+            clientAlias: input.clientAlias,
+            updatedAt: now,
+          },
+          { merge: true }
+        );
+      }
+      tx.set(newInvoiceRef, invoiceData);
+    });
+  } else {
+    await setDoc(newInvoiceRef, invoiceData);
+  }
+
+  return { id: newInvoiceRef.id };
 }
 
 export function subscribeInvoices(callback: (invoices: Invoice[]) => void): () => void {

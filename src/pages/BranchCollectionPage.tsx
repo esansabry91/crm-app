@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import clsx from 'clsx';
-import InvoiceGenerator from '../components/branch-collection/InvoiceGenerator';
+import GenerateInvoiceHost from '../components/branch-collection/GenerateInvoiceHost';
 import InvoiceList from '../components/branch-collection/InvoiceList';
 import DebtorList from '../components/branch-collection/DebtorList';
 import RevenuePanel from '../components/branch-collection/RevenuePanel';
@@ -35,7 +35,7 @@ export default function BranchCollectionPage() {
 
       <div className="px-6 py-6 max-w-5xl">
         {tab === 'Generate Invoice' ? (
-          <InvoiceGenerator />
+          <GenerateInvoiceHost />
         ) : tab === 'Invoices' ? (
           <InvoiceList />
         ) : tab === 'Debtor List' ? (

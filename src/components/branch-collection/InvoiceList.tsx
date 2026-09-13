@@ -247,11 +247,16 @@ export default function InvoiceList() {
           <div key={inv.id} className="border border-slate-100 rounded-lg p-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
-                <p className="text-sm font-medium text-slate-800">
+                <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
                   {inv.invoiceNo} · {inv.clientName}
+                  {inv.isMigrated && (
+                    <span className="text-[10px] font-medium text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">
+                      Migrated
+                    </span>
+                  )}
                 </p>
                 <p className="text-xs text-slate-400">
-                  {inv.brandName} · {inv.siteName} · {inv.invoiceDate}
+                  {[inv.brandName, inv.siteName || null, inv.invoiceDate].filter(Boolean).join(' · ')}
                 </p>
                 {inv.status !== 'unpaid' && lastPayment(inv) && (
                   <p className="text-xs text-emerald-600 mt-0.5">

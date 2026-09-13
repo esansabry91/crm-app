@@ -478,4 +478,10 @@ export interface Invoice {
   updatedAt: number;
   /** Same meaning and lifecycle as Tender.isTestData — see its doc comment. */
   isTestData?: boolean;
+  /** True only for a historical invoice entered via "Add historical invoice" (Branch Collection >
+   *  Generate Invoice) to migrate a paper/legacy record into the app — one tied to an Active
+   *  Project (tenderId) instead of a Duty Roster site, with a manually-typed invoiceNo rather
+   *  than one assigned by the running counter. See createMigratedInvoice() in services/invoices.ts.
+   *  Absent (not false) on every normal invoice. */
+  isMigrated?: boolean;
 }
