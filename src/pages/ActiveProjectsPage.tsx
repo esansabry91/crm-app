@@ -138,6 +138,14 @@ export default function ActiveProjectsPage() {
   const [bridgePeriodKey, setBridgePeriodKey] = useState<string | null>(null);
   const [raceTimeView, setRaceTimeView] = useState<RaceTimeView>('alltime');
   const [raceMetric, setRaceMetric] = useState<ActiveProjectRaceMetric>('value');
+  // Which stat tile's "Go to list" was clicked, if any — narrows the project table further down
+  // this same page to just the matching rows. 'none' shows everything, same as before these
+  // actions existed. Deliberately keyed off `visible` (branch-filtered only, not this filter)
+  // for the tile counts themselves — see reminderFiltered below — so the numbers stay meaningful
+  // even while a reminder filter is already active.
+  const [reminderFilter, setReminderFilter] = useState<'none' | 'endingSoon' | 'endingVerySoon' | 'contractEnded'>(
+    'none'
+  );
 
   const isAdmin = isAdminRole(profile?.role);
   const branchNames = useMemo(() => branches.map((b) => b.name), [branches]);
@@ -201,16 +209,30 @@ export default function ActiveProjectsPage() {
     [projects, branchNames, raceTimeView, raceMetric]
   );
 
+  // Applies the reminder-tile filter (if any) on top of the branch filter already baked into
+  // `visible`, for the table below — see reminderFilter's own doc comment above for why the tile
+  // counts themselves are computed from `visible` directly, not this.
+  const reminderFiltered = useMemo(() => {
+    if (reminderFilter === 'none') return visible;
+    return visible.filter((t) => {
+      const d = daysUntil(t.contractEnd);
+      if (d === null) return false;
+      if (reminderFilter === 'contractEnded') return d < 0;
+      if (reminderFilter === 'endingVerySoon') return d >= 0 && d <= ENDING_VERY_SOON_DAYS;
+      return d >= 0 && d <= ENDING_SOON_DAYS;
+    });
+  }, [visible, reminderFilter]);
+
   const sorted = useMemo(
     () =>
-      [...visible].sort((a, b) => {
+      [...reminderFiltered].sort((a, b) => {
         const daysA = daysUntil(a.contractEnd);
         const daysB = daysUntil(b.contractEnd);
         if (daysA === null) return 1;
         if (daysB === null) return -1;
         return daysA - daysB;
       }),
-    [visible]
+    [reminderFiltered]
   );
 
   const totalValue = visible.reduce((sum, t) => sum + (t.tenderValue || 0), 0);
@@ -236,6 +258,14 @@ export default function ActiveProjectsPage() {
     : branchFilter === 'all'
       ? 'all branches'
       : branchFilter;
+
+  // Sets the reminder filter AND scrolls the (possibly far-below-the-fold) project table into
+  // view, so "Go to list" actually feels like it went somewhere rather than just changing a
+  // number above the fold nobody's looking at.
+  const goToReminderList = (filter: 'endingSoon' | 'endingVerySoon' | 'contractEnded') => {
+    setReminderFilter(filter);
+    document.getElementById('activeProjectsList')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const handleBranchChange = (t: Tender, newBranch: string) => {
     const current = t.activeBranch;
@@ -381,18 +411,33 @@ export default function ActiveProjectsPage() {
               value={String(endingSoonCount)}
               sub={`within ${ENDING_SOON_DAYS} days`}
               accent={VIZ.status.warning}
+              action={{
+                label: 'Go to list',
+                onClick: () => goToReminderList('endingSoon'),
+                disabled: endingSoonCount === 0,
+              }}
             />
             <StatCard
               label="Ending Very Soon"
               value={String(endingVerySoonCount)}
               sub={`within ${ENDING_VERY_SOON_DAYS} days`}
               accent={VIZ.status.critical}
+              action={{
+                label: 'Go to list',
+                onClick: () => goToReminderList('endingVerySoon'),
+                disabled: endingVerySoonCount === 0,
+              }}
             />
             <StatCard
               label="Contract Ended"
               value={String(endedCount)}
               sub="needs follow-up"
               accent={VIZ.status.critical}
+              action={{
+                label: 'Go to list',
+                onClick: () => goToReminderList('contractEnded'),
+                disabled: endedCount === 0,
+              }}
             />
             <StatCard label="Guards Deployed" value={String(totalGuards)} sub="across shown projects" />
           </div>
@@ -463,8 +508,34 @@ export default function ActiveProjectsPage() {
             </div>
           )}
 
+          <div id="activeProjectsList" />
+
+          {reminderFilter !== 'none' && (
+            <div className="flex items-center justify-between gap-3 bg-amber-50 text-amber-800 text-sm rounded-lg px-3 py-2">
+              <span>
+                Showing only projects matching{' '}
+                <span className="font-medium">
+                  {reminderFilter === 'endingSoon'
+                    ? 'Ending Soon'
+                    : reminderFilter === 'endingVerySoon'
+                      ? 'Ending Very Soon'
+                      : 'Contract Ended'}
+                </span>{' '}
+                ({sorted.length})
+              </span>
+              <button
+                onClick={() => setReminderFilter('none')}
+                className="font-medium underline underline-offset-2 shrink-0"
+              >
+                Clear filter
+              </button>
+            </div>
+          )}
+
           {sorted.length === 0 ? (
-            <p className="text-sm text-slate-400 py-8 text-center">No active projects yet.</p>
+            <p className="text-sm text-slate-400 py-8 text-center">
+              {reminderFilter === 'none' ? 'No active projects yet.' : 'No projects match this filter.'}
+            </p>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
               <table className="w-full text-sm">
