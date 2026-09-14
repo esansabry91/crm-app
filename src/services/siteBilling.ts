@@ -14,6 +14,18 @@ export interface BillingSite {
   archived: boolean;
   tenderId: string | null;
   billingRates: SiteBillingRate[];
+  /**
+   * Count of this site's currently-active permanent guards (active !== false — same "active"
+   * definition useLiveGuardCountsByTender in hooks/useActiveProjects.ts uses), or null when the
+   * site doc has no `guards` field at all (predates Duty Roster's data model, or was never
+   * touched there) and so there's nothing real to cap against. The invoice generator uses this as
+   * the hard ceiling on total headcount typed across an invoice's line items — see
+   * InvoiceGenerator.tsx's headcountExceedsSite — so nobody can bill more guards than are
+   * actually deployed at the site by mistake. A real (even empty) guards array still yields a
+   * concrete number — including 0 — since a site with no guards on it right now genuinely
+   * shouldn't be billed for any.
+   */
+  guardCount: number | null;
 }
 
 export function useSitesForBilling() {
@@ -26,6 +38,7 @@ export function useSitesForBilling() {
         setSites(
           snap.docs.map((d) => {
             const data = d.data() as Record<string, unknown>;
+            const guards = data.guards;
             return {
               id: d.id,
               name: (data.name as string) || 'Untitled site',
@@ -33,6 +46,9 @@ export function useSitesForBilling() {
               archived: !!data.archived,
               tenderId: (data.tenderId as string) ?? null,
               billingRates: Array.isArray(data.billingRates) ? (data.billingRates as SiteBillingRate[]) : [],
+              guardCount: Array.isArray(guards)
+                ? (guards as Array<{ active?: boolean }>).filter((g) => g.active !== false).length
+                : null,
             };
           })
         );

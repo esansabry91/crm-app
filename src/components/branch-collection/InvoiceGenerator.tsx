@@ -295,6 +295,22 @@ export default function InvoiceGenerator() {
     updateRow(gi, ri, { category, rate: match ? match.hourlyRate : 0 });
   }
 
+  /** How much headcount is left to give this one row without pushing the invoice's total past
+   *  this site's actual active-guard count (site.guardCount — see BillingSite's doc comment) —
+   *  the site's capacity minus every OTHER row's headcount, never below 0. Returns null when the
+   *  site has no known guard count (guardCount is null — see its doc comment) or there's no site
+   *  at all, meaning there's nothing to cap against yet, same as before this feature existed. */
+  function remainingHeadcountFor(gi: number, ri: number): number | null {
+    if (!site || site.guardCount == null) return null;
+    const usedByOthers = lineGroups.reduce(
+      (sum, g, i) =>
+        sum +
+        g.rows.reduce((s, r, j) => s + (i === gi && j === ri ? 0 : r.headcount || 0), 0),
+      0
+    );
+    return Math.max(0, site.guardCount - usedByOthers);
+  }
+
   const subTotal = sumLineGroups(lineGroups);
   const sstAmount = subTotal * sstRate;
   const total = subTotal + sstAmount;
@@ -314,9 +330,25 @@ export default function InvoiceGenerator() {
     remainingAmount != null && remainingManHours != null
     && (Math.abs(remainingAmount) > 0.01 || Math.abs(remainingManHours) > 0.05);
 
+  // Total headcount typed across every row of every location, capped against how many guards are
+  // actually active at this Duty Roster site right now (site.guardCount — see BillingSite's doc
+  // comment in services/siteBilling.ts) so an invoice can never bill for more guards than are
+  // really deployed there. Unlike the man-hours reconciliation above, there's no acknowledge-and-
+  // override path for this one — a headcount that doesn't exist at the site is always wrong, not
+  // just a discrepancy worth double-checking, so updateRow's headcount clamp (below) stops it
+  // from ever being typed in the first place; this is a second guard rail on top of that, in case
+  // the site's guard count changes (a guard leaves) after the line items were already entered.
+  const totalHeadcount = lineGroups.reduce(
+    (sum, g) => sum + g.rows.reduce((s, r) => s + (r.headcount || 0), 0),
+    0
+  );
+  const siteGuardCount = site?.guardCount ?? null;
+  const headcountExceedsSite = siteGuardCount != null && totalHeadcount > siteGuardCount;
+
   const canSave = !!(
     profile && brand && site && clientName.trim() && lineGroups.length > 0
     && (!hasDiscrepancy || discrepancyAcknowledged)
+    && !headcountExceedsSite
   );
 
   async function handleSave() {
@@ -656,6 +688,30 @@ export default function InvoiceGenerator() {
           </button>
         </div>
 
+        {/* Hard cap, not a soft warning like the Duty Roster reconciliation above — a headcount
+            that exceeds how many guards are actually active at this site is always a data-entry
+            mistake, so there's no acknowledge-and-override here (see headcountExceedsSite's doc
+            comment and canSave). Only shown once the site's real guard count is known (see
+            BillingSite.guardCount) — a site with no Duty Roster guard data yet behaves exactly as
+            before this feature existed. */}
+        {siteGuardCount != null && (
+          <div
+            className={`rounded-lg px-3 py-2 text-sm mb-3 ${
+              headcountExceedsSite ? 'bg-rose-50 text-rose-800' : 'bg-slate-50 text-slate-600'
+            }`}
+          >
+            <p className="font-medium">
+              Headcount: {totalHeadcount} / {siteGuardCount} guard{siteGuardCount === 1 ? '' : 's'} deployed at this site
+            </p>
+            {headcountExceedsSite && (
+              <p className="text-xs mt-0.5 opacity-90">
+                This site only has {siteGuardCount} active guard{siteGuardCount === 1 ? '' : 's'} on Duty Roster right
+                now — reduce the headcount below before this invoice can be saved.
+              </p>
+            )}
+          </div>
+        )}
+
         {lineGroups.map((group, gi) => (
           <div key={gi} className="border border-slate-200 rounded-lg p-3 mb-3">
             <div className="flex items-center gap-2 mb-2">
@@ -705,8 +761,12 @@ export default function InvoiceGenerator() {
                         onFocus={(e) => e.target.select()}
                         onChange={(e) => {
                           const raw = e.target.value.replace(/^0+(?=\d)/, '');
-                          updateRow(gi, ri, { headcount: raw === '' ? 0 : Number(raw) || 0 });
+                          let parsed = raw === '' ? 0 : Number(raw) || 0;
+                          const remaining = remainingHeadcountFor(gi, ri);
+                          if (remaining != null) parsed = Math.min(parsed, remaining);
+                          updateRow(gi, ri, { headcount: parsed });
                         }}
+                        max={remainingHeadcountFor(gi, ri) ?? undefined}
                         className="input w-full"
                       />
                     </td>
