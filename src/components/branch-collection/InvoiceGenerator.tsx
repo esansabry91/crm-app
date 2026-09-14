@@ -33,10 +33,37 @@ function currentMonthValue(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+/** Derives this invoice's billing rate categories straight from the linked tender's own Guard
+ *  Rate setup (Active Projects > Project Details — see Tender.guardRateMode's doc comment in
+ *  types.ts), so the same rate never has to be typed once there and again here. 'multiple' mode
+ *  maps each named position directly to a category of the same name/rate; 'same' mode has no
+ *  position names to draw from, so it becomes a single "Security Guard" category at the flat
+ *  rate. Returns null when the tender has no Guard Rate configured yet (undefined mode, or a
+ *  'same' rate of 0) — callers fall back to the site's own saved billingRates in that case, so a
+ *  project that hasn't set one up yet keeps working exactly as before. */
+function deriveRateCategoriesFromGuardRate(t: {
+  guardRateMode?: 'same' | 'multiple';
+  guardRate?: number;
+  guardRatePositions?: { name: string; rate: number }[];
+}): SiteBillingRate[] | null {
+  if (t.guardRateMode === 'multiple') {
+    const positions = (t.guardRatePositions || []).filter((p) => p.name.trim());
+    return positions.length > 0
+      ? positions.map((p) => ({ category: p.name, hourlyRate: p.rate }))
+      : null;
+  }
+  if (t.guardRateMode === 'same' && t.guardRate) {
+    return [{ category: 'Security Guard', hourlyRate: t.guardRate }];
+  }
+  return null;
+}
+
 /**
  * The Branch Collection tab's invoice-building form. Deliberately semi-manual (see the Rate
- * source / Invoice line entry decisions this was built from): a site's billing-rate categories
- * are configured once and reused, but headcount/days per category and each location's label are
+ * source / Invoice line entry decisions this was built from): billing-rate categories mirror the
+ * linked tender's own Guard Rate (Active Projects > Project Details — see
+ * deriveRateCategoriesFromGuardRate above) once one's configured there, falling back to a manual,
+ * saved-per-site list otherwise; headcount/days per category and each location's label are still
  * typed in fresh per invoice against the Duty Roster Summary Report (opened in another tab) —
  * nothing here reads guard attendance directly. Amount per row = headcount * days * a 12-hour
  * shift * rate, matching the sample invoices this was modeled on exactly.
@@ -45,8 +72,9 @@ function currentMonthValue(): string {
  * signatory are all auto-filled from elsewhere (the site's linked Won tender in Active Projects,
  * the site's Branch record, and a running per-brand+branch+client counter) rather than typed in
  * fresh each time — see each field's own comment below for exactly where it's sourced from. Every
- * auto-filled field stays editable, in case the source data isn't set up yet or this particular
- * invoice needs a one-off correction.
+ * auto-filled field stays editable (Guard-Rate-sourced billing categories being the one
+ * exception, precisely because there's a canonical place to correct those instead), in case the
+ * source data isn't set up yet or this particular invoice needs a one-off correction.
  */
 export default function InvoiceGenerator() {
   const { profile } = useAuth();
@@ -82,6 +110,12 @@ export default function InvoiceGenerator() {
   const [rateDraft, setRateDraft] = useState<SiteBillingRate[]>([]);
   const [ratesSaving, setRatesSaving] = useState(false);
   const [ratesSaved, setRatesSaved] = useState(false);
+  // Whether the categories currently shown came from the linked tender's Project Details > Guard
+  // Rate (see deriveRateCategoriesFromGuardRate below) rather than this site's own manually-typed
+  // billingRates — purely so the section below can tell the user where to actually go to change
+  // them, instead of them editing here and wondering why it doesn't stick next time they switch
+  // sites away and back.
+  const [ratesFromGuardRate, setRatesFromGuardRate] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ text: string; isError: boolean } | null>(null);
@@ -116,6 +150,7 @@ export default function InvoiceGenerator() {
   // that tender's Active Projects details so they're not retyped.
   useEffect(() => {
     setRateDraft(site?.billingRates || []);
+    setRatesFromGuardRate(false);
     setRatesSaved(false);
     if (site?.tenderId) {
       getDoc(doc(db, 'tenders', site.tenderId))
@@ -127,12 +162,26 @@ export default function InvoiceGenerator() {
             clientAlias?: string;
             clientAddress?: string;
             tenderDocNumber?: string;
+            guardRateMode?: 'same' | 'multiple';
+            guardRate?: number;
+            guardRatePositions?: { name: string; rate: number }[];
           };
           if (t.brandId) setBrandId(t.brandId);
           if (t.clientName) setClientName(t.clientName);
           setClientAlias(t.clientAlias || '');
           setClientAddress(t.clientAddress || '');
           setContractRef(t.tenderDocNumber || '');
+
+          // Billing rate categories mirror this project's own Guard Rate (Active Projects >
+          // Project Details) whenever one's been configured there, instead of being retyped a
+          // second time here — see deriveRateCategoriesFromGuardRate's doc comment. Falls back to
+          // whatever's already saved on the site (the pre-existing manual-entry path) for a
+          // project that hasn't set a Guard Rate yet.
+          const derived = deriveRateCategoriesFromGuardRate(t);
+          if (derived) {
+            setRateDraft(derived);
+            setRatesFromGuardRate(true);
+          }
         })
         .catch(() => {});
     } else {
@@ -470,63 +519,79 @@ export default function InvoiceGenerator() {
             <div>
               <h3 className="text-sm font-semibold text-slate-800">Billing rate categories for {site.name}</h3>
               <p className="text-xs text-slate-400 mt-0.5 mb-3">
-                Set once, reused every month — each line row below picks from this list.
+                {ratesFromGuardRate
+                  ? "Pulled from this project's Guard Rate (Active Projects > Project Details) — edit it there to change these."
+                  : 'Set once, reused every month — each line row below picks from this list.'}
               </p>
             </div>
-            <button
-              onClick={() => setRateDraft((prev) => [...prev, { category: '', hourlyRate: 0 }])}
-              className="shrink-0 text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
-            >
-              + Add category
-            </button>
+            {/* Guard Rate is the source of truth once it's configured (see
+                deriveRateCategoriesFromGuardRate) — no manual add/remove/edit here in that case,
+                so nothing typed here can silently drift from it. */}
+            {!ratesFromGuardRate && (
+              <button
+                onClick={() => setRateDraft((prev) => [...prev, { category: '', hourlyRate: 0 }])}
+                className="shrink-0 text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
+              >
+                + Add category
+              </button>
+            )}
           </div>
           <div className="space-y-2">
-            {rateDraft.map((r, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <input
-                  value={r.category}
-                  onChange={(e) =>
-                    setRateDraft((prev) => prev.map((row, j) => (j === i ? { ...row, category: e.target.value } : row)))
-                  }
-                  placeholder="e.g. Security Officer"
-                  className="input flex-1"
-                />
-                <span className="text-xs text-slate-400">RM</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={r.hourlyRate === 0 ? '' : r.hourlyRate}
-                  onFocus={(e) => e.target.select()}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/^0+(?=\d)/, '');
-                    setRateDraft((prev) =>
-                      prev.map((row, j) => (j === i ? { ...row, hourlyRate: raw === '' ? 0 : Number(raw) || 0 } : row))
-                    );
-                  }}
-                  placeholder="0.00"
-                  className="input w-28"
-                />
-                <span className="text-xs text-slate-400">/ hour</span>
-                <button
-                  onClick={() => setRateDraft((prev) => prev.filter((_, j) => j !== i))}
-                  className="text-xs text-rose-500 hover:text-rose-700 shrink-0"
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
+            {rateDraft.map((r, i) =>
+              ratesFromGuardRate ? (
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <span className="flex-1 text-slate-700">{r.category}</span>
+                  <span className="text-slate-500">RM {r.hourlyRate.toFixed(2)} / hour</span>
+                </div>
+              ) : (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    value={r.category}
+                    onChange={(e) =>
+                      setRateDraft((prev) => prev.map((row, j) => (j === i ? { ...row, category: e.target.value } : row)))
+                    }
+                    placeholder="e.g. Security Officer"
+                    className="input flex-1"
+                  />
+                  <span className="text-xs text-slate-400">RM</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={r.hourlyRate === 0 ? '' : r.hourlyRate}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                      setRateDraft((prev) =>
+                        prev.map((row, j) => (j === i ? { ...row, hourlyRate: raw === '' ? 0 : Number(raw) || 0 } : row))
+                      );
+                    }}
+                    placeholder="0.00"
+                    className="input w-28"
+                  />
+                  <span className="text-xs text-slate-400">/ hour</span>
+                  <button
+                    onClick={() => setRateDraft((prev) => prev.filter((_, j) => j !== i))}
+                    className="text-xs text-rose-500 hover:text-rose-700 shrink-0"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )
+            )}
             {rateDraft.length === 0 && <p className="text-xs text-slate-400">No categories yet — add one above.</p>}
           </div>
-          <div className="flex items-center gap-3 mt-3">
-            <button
-              onClick={handleSaveRates}
-              disabled={ratesSaving}
-              className="px-3 py-2 text-sm font-medium text-white bg-slate-700 hover:bg-slate-800 disabled:opacity-60 rounded-lg"
-            >
-              {ratesSaving ? 'Saving…' : 'Save categories & rates'}
-            </button>
-            {ratesSaved && <span className="text-xs text-emerald-600">Saved.</span>}
-          </div>
+          {!ratesFromGuardRate && (
+            <div className="flex items-center gap-3 mt-3">
+              <button
+                onClick={handleSaveRates}
+                disabled={ratesSaving}
+                className="px-3 py-2 text-sm font-medium text-white bg-slate-700 hover:bg-slate-800 disabled:opacity-60 rounded-lg"
+              >
+                {ratesSaving ? 'Saving…' : 'Save categories & rates'}
+              </button>
+              {ratesSaved && <span className="text-xs text-emerald-600">Saved.</span>}
+            </div>
+          )}
         </div>
       )}
 
