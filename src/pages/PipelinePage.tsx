@@ -99,6 +99,19 @@ export default function PipelinePage() {
     [openFiltered]
   );
 
+  // Simple category tallies for the two count tiles below — scoped the same way as everything
+  // else in the header (brand/branch/search via baseFiltered), but across every stage (not just
+  // open ones like the two reminder tiles above), since these are a straight count of the whole
+  // board's tender categories, not an action reminder.
+  const privateTendersCount = useMemo(
+    () => baseFiltered.filter((t) => t.category === 'Private').length,
+    [baseFiltered]
+  );
+  const governmentTendersCount = useMemo(
+    () => baseFiltered.filter((t) => t.category === 'Government').length,
+    [baseFiltered]
+  );
+
   const filtered = useMemo(() => {
     if (reminderFilter === 'none') return baseFiltered;
     const ids = new Set((reminderFilter === 'contractEnding' ? contractEndingSoon : submissionExpiringSoon).map((t) => t.id));
@@ -186,7 +199,7 @@ export default function PipelinePage() {
           </div>
         )}
         {headerExpanded && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 max-w-xl">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 max-w-3xl">
             <StatCard
               label="Contract ending soon"
               value={String(contractEndingSoon.length)}
@@ -209,6 +222,8 @@ export default function PipelinePage() {
                 disabled: submissionExpiringSoon.length === 0,
               }}
             />
+            <StatCard label="Private tenders" value={String(privateTendersCount)} accent="#7c3aed" />
+            <StatCard label="Government tenders" value={String(governmentTendersCount)} accent="#0f766e" />
           </div>
         )}
       </header>
