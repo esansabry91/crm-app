@@ -19,7 +19,7 @@ interface Props {
   profile: UserProfile;
   brands: Brand[];
   branches: Branch[];
-  staffOptions: UserProfile[]; // full active roster (admin only) — narrowed to Branch Managers below
+  staffOptions: UserProfile[]; // full active roster (admin only) — narrowed to Branch Managers + self below
   editing: Tender | null; // null = creating new
 }
 
@@ -55,13 +55,17 @@ export default function TenderFormModal({
   const isClosedStage = stage === 'Won' || stage === 'Lost';
   const today = () => new Date().toISOString().slice(0, 10);
 
-  // Only a Branch Manager can be assigned as a tender's owner going forward — an Admin/Developer
-  // account can still reassign a tender (they drive this dropdown), just never TO themselves or
-  // another Admin/Developer. Whoever the tender is CURRENTLY owned by is still shown even if
-  // that's not a Branch Manager (e.g. one of the tenders an Admin/Developer test account already
-  // owns from before this restriction existed) — otherwise the dropdown would silently show
-  // nothing selected the moment you opened Edit Tender on one of those.
-  const branchManagerOptions = staffOptions.filter((s) => s.role === 'branchManager');
+  // Only Admin/Developer ever sees this dropdown at all (a Branch Manager's Tender Owner field
+  // is locked to their own name below — always their own branch).
+  // The choices offered are every Branch Manager PLUS this signed-in admin herself, so an admin
+  // can keep a tender under her own name instead of only ever handing it to a Branch Manager.
+  // Whoever the tender is CURRENTLY owned by is still shown even if that's neither (e.g. one of
+  // the tenders an Admin/Developer test account already owns from before this restriction
+  // existed, or another admin's account) — otherwise the dropdown would silently show nothing
+  // selected the moment you opened Edit Tender on one of those.
+  const branchManagerOptions = staffOptions.filter(
+    (s) => s.role === 'branchManager' || s.uid === profile.uid
+  );
   const currentOwnerOption = staffOptions.find((s) => s.uid === ownerUid);
   const ownerSelectOptions =
     currentOwnerOption && !branchManagerOptions.some((s) => s.uid === currentOwnerOption.uid)
