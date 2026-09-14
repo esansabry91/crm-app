@@ -34,6 +34,10 @@ import type { Tender } from '../types';
 import { isAdminRole } from '../types';
 
 const ENDING_SOON_DAYS = 60;
+// A tighter, more urgent slice of ENDING_SOON_DAYS above — its own stat tile so a branch
+// manager can tell "needs attention eventually" (60 days) apart from "needs attention now"
+// (30 days) at a glance, without having to open the list and start counting badges.
+const ENDING_VERY_SOON_DAYS = 30;
 
 const ACTIVE_RACE_METRICS = [
   { value: 'value' as ActiveProjectRaceMetric, label: 'Value' },
@@ -214,6 +218,13 @@ export default function ActiveProjectsPage() {
     const d = daysUntil(t.contractEnd);
     return d !== null && d >= 0 && d <= ENDING_SOON_DAYS;
   }).length;
+  // Subset of endingSoonCount above (0-30 days is inside 0-60 days) — deliberately excludes
+  // already-passed contracts the same way endingSoonCount does, since those are their own
+  // "Contract Ended" tile below, not a more-urgent flavor of "ending soon".
+  const endingVerySoonCount = visible.filter((t) => {
+    const d = daysUntil(t.contractEnd);
+    return d !== null && d >= 0 && d <= ENDING_VERY_SOON_DAYS;
+  }).length;
   const endedCount = visible.filter((t) => {
     const d = daysUntil(t.contractEnd);
     return d !== null && d < 0;
@@ -358,7 +369,7 @@ export default function ActiveProjectsPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             <StatCard
               label="Active Project Value"
               value={formatRM(totalValue)}
@@ -370,6 +381,12 @@ export default function ActiveProjectsPage() {
               value={String(endingSoonCount)}
               sub={`within ${ENDING_SOON_DAYS} days`}
               accent={VIZ.status.warning}
+            />
+            <StatCard
+              label="Ending Very Soon"
+              value={String(endingVerySoonCount)}
+              sub={`within ${ENDING_VERY_SOON_DAYS} days`}
+              accent={VIZ.status.critical}
             />
             <StatCard
               label="Contract Ended"
