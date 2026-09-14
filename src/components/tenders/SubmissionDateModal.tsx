@@ -16,6 +16,12 @@ function today(): string {
  * Once a tender has a submittedDate, this modal is never shown again for it — changing an
  * already-set date happens only from TenderFormModal, and only for an Admin (see the "Submission
  * Date" field there, and the matching firestore.rules guard).
+ *
+ * Also collects the submission expiry date here, alongside submission date — see
+ * Tender.submissionExpiryDate's doc comment in types.ts. Compulsory for a Private tender (see
+ * Tender.category), left exactly as optional as before this field existed for a Government one.
+ * Unlike submittedDate, this one isn't locked afterwards — TenderFormModal lets it be corrected
+ * any time.
  */
 export default function SubmissionDateModal({
   open,
@@ -26,16 +32,20 @@ export default function SubmissionDateModal({
   open: boolean;
   tender: Tender | null;
   onCancel: () => void;
-  onConfirm: (submittedDate: string) => void;
+  onConfirm: (submittedDate: string, submissionExpiryDate?: string) => void;
 }) {
   const [date, setDate] = useState(today());
+  const [expiryDate, setExpiryDate] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  const expiryRequired = tender?.category === 'Private';
 
   // Reset to today whenever this opens (including opening again for a different tender), rather
   // than carrying over whatever was left in the field from a previous use.
   useEffect(() => {
     if (open) {
       setDate(today());
+      setExpiryDate('');
       setError(null);
     }
   }, [open, tender?.id]);
@@ -51,7 +61,11 @@ export default function SubmissionDateModal({
       setError('Submission date cannot be a future date.');
       return;
     }
-    onConfirm(date);
+    if (expiryRequired && !expiryDate) {
+      setError('Please enter the submission expiry date — required for a Private tender.');
+      return;
+    }
+    onConfirm(date, expiryDate || undefined);
   };
 
   return (
@@ -78,6 +92,26 @@ export default function SubmissionDateModal({
             className="input w-full"
             autoFocus
           />
+        </div>
+        <div className="mt-3">
+          <label htmlFor="submissionExpiryDateInput" className="text-xs font-medium text-slate-600 block mb-1">
+            Submission Expiry Date{expiryRequired ? '' : ' (optional)'}
+          </label>
+          <input
+            id="submissionExpiryDateInput"
+            type="date"
+            value={expiryDate}
+            onChange={(e) => {
+              setExpiryDate(e.target.value);
+              setError(null);
+            }}
+            className="input w-full"
+          />
+          <span className="block text-xs text-slate-400 mt-1">
+            {expiryRequired
+              ? 'Required for a Private tender — when the quote/tender validity to this client expires.'
+              : 'Optional for a Government tender — when the quote/tender validity to this client expires, if known.'}
+          </span>
         </div>
         {error && <p className="text-sm text-rose-600 mt-2">{error}</p>}
         <div className="flex justify-end gap-2 mt-5">

@@ -8,6 +8,7 @@ import {
   requalifyTender,
   setClosedDate,
   setSubmittedDate,
+  setSubmissionExpiryDate,
   updateTender,
 } from '../../services/tenders';
 import { formatDate } from '../../utils/format';
@@ -45,6 +46,9 @@ export default function TenderFormModal({
   const [notes, setNotes] = useState('');
   const [closedDate, setClosedDateField] = useState('');
   const [submittedDate, setSubmittedDateField] = useState('');
+  const [submissionExpiryDate, setSubmissionExpiryDateField] = useState('');
+  const [category, setCategory] = useState<'Government' | 'Private' | ''>('');
+  const [currentContractEndDate, setCurrentContractEndDateField] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +75,11 @@ export default function TenderFormModal({
   // moment stage is being set to Submitted for a tender that doesn't have one yet.
   const showSubmittedField = stage === 'Submitted' || !!editing?.submittedDate;
   const submittedDateAlreadySet = !!editing?.submittedDate;
+  const expiryRequired = category === 'Private';
+  // Visible from Qualified Lead onward (New Lead is pre-qualification, so there's nothing to ask
+  // yet) — see Tender.currentContractEndDate's doc comment in types.ts. Stays visible at every
+  // later stage too, once set, same reasoning as showSubmittedField above.
+  const showCurrentContractEndField = stage !== 'New Lead' || !!editing?.currentContractEndDate;
 
   useEffect(() => {
     if (!open) return;
@@ -86,6 +95,9 @@ export default function TenderFormModal({
       setNotes(editing.notes || '');
       setClosedDateField(editing.closedDate || (editing.stage === 'Won' || editing.stage === 'Lost' ? today() : ''));
       setSubmittedDateField(editing.submittedDate || (editing.stage === 'Submitted' ? today() : ''));
+      setSubmissionExpiryDateField(editing.submissionExpiryDate || '');
+      setCategory(editing.category || '');
+      setCurrentContractEndDateField(editing.currentContractEndDate || '');
     } else {
       setClientName('');
       setBrandId(brands[0]?.id || '');
@@ -104,6 +116,9 @@ export default function TenderFormModal({
       setNotes('');
       setClosedDateField('');
       setSubmittedDateField('');
+      setSubmissionExpiryDateField('');
+      setCategory('');
+      setCurrentContractEndDateField('');
     }
     setError(null);
   }, [open, editing, brands, profile, isAdmin, staffOptions]);
@@ -129,10 +144,14 @@ export default function TenderFormModal({
     const value = Number(tenderValue);
     if (!clientName.trim()) return setError('Client name is required.');
     if (!brandId) return setError('Please select a brand.');
+    if (!category) return setError('Please select whether this is a Government or Private tender.');
     if (!Number.isFinite(value) || value < 0) return setError('Enter a valid tender value.');
     if (showSubmittedField) {
       if (!submittedDate) return setError('Please enter the submission date.');
       if (submittedDate > today()) return setError('Submission date cannot be a future date.');
+      if (expiryRequired && !submissionExpiryDate) {
+        return setError('Please enter the submission expiry date — required for a Private tender.');
+      }
     }
 
     const owner = staffOptions.find((s) => s.uid === ownerUid) || profile;
@@ -163,6 +182,8 @@ export default function TenderFormModal({
             ownerUid,
             ownerName: owner.name,
             notes,
+            category: category as 'Government' | 'Private',
+            currentContractEndDate: currentContractEndDate || undefined,
           },
           { uid: profile.uid, name: profile.name },
           editing
@@ -188,6 +209,12 @@ export default function TenderFormModal({
         if (showSubmittedField && submittedDate !== (editing.submittedDate || '')) {
           await setSubmittedDate(editing.id, submittedDate);
         }
+        // Submission expiry date: same "independent of stage change" reasoning as submittedDate
+        // above, but with no write-once lock — any owner/admin can correct it any time (see
+        // setSubmissionExpiryDate's doc comment).
+        if (showSubmittedField && submissionExpiryDate !== (editing.submissionExpiryDate || '')) {
+          await setSubmissionExpiryDate(editing.id, submissionExpiryDate || null);
+        }
       } else {
         await createTender(
           {
@@ -202,8 +229,11 @@ export default function TenderFormModal({
             ownerUid,
             ownerName: owner.name,
             notes,
+            category: category as 'Government' | 'Private',
+            currentContractEndDate: currentContractEndDate || undefined,
             closedDate: isClosedStage ? closedDate : undefined,
             submittedDate: showSubmittedField ? submittedDate : undefined,
+            submissionExpiryDate: showSubmittedField ? submissionExpiryDate || undefined : undefined,
           },
           { uid: profile.uid, name: profile.name, role: profile.role }
         );
@@ -266,6 +296,24 @@ export default function TenderFormModal({
               className="input"
               placeholder="e.g. Petronas Chemicals Sdn Bhd"
             />
+          </Field>
+
+          <Field label="Category">
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value as 'Government' | 'Private')}
+              className="input"
+            >
+              <option value="" disabled>
+                Select Government or Private
+              </option>
+              <option value="Government">Government</option>
+              <option value="Private">Private</option>
+            </select>
+            <span className="block text-xs text-slate-400 mt-1">
+              A Private tender requires a submission expiry date once it reaches Submitted — a
+              Government one leaves that optional.
+            </span>
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
@@ -352,6 +400,22 @@ export default function TenderFormModal({
             </Field>
           </div>
 
+          {showCurrentContractEndField && (
+            <Field label="Current Awarded Contract End (optional)">
+              <input
+                type="date"
+                value={currentContractEndDate}
+                onChange={(e) => setCurrentContractEndDateField(e.target.value)}
+                className="input"
+              />
+              <span className="block text-xs text-slate-400 mt-1">
+                When this lead's CURRENT awarded contract (with another provider, or an existing
+                one of ours) is due to end — if known. Flagged on the Sales Funnel Pipeline's
+                "Contract ending soon" reminder tile once within 30 days.
+              </span>
+            </Field>
+          )}
+
           {isClosedStage && (
             <Field label={`Date ${stage === 'Won' ? 'Won' : 'Lost'}`}>
               <input
@@ -387,31 +451,46 @@ export default function TenderFormModal({
           )}
 
           {showSubmittedField && (
-            <Field label="Submission Date">
-              {submittedDateAlreadySet && !isAdmin ? (
-                <>
-                  <input type="text" value={formatDate(editing?.submittedDate)} disabled className="input disabled:bg-slate-50 disabled:text-slate-500" />
-                  <span className="block text-xs text-slate-400 mt-1">
-                    Locked after first entry — ask your Admin if this needs to change.
-                  </span>
-                </>
-              ) : (
-                <>
-                  <input
-                    type="date"
-                    value={submittedDate}
-                    max={today()}
-                    onChange={(e) => setSubmittedDateField(e.target.value)}
-                    className="input"
-                  />
-                  <span className="block text-xs text-slate-400 mt-1">
-                    {submittedDateAlreadySet
-                      ? 'Already set — as Admin you can correct it if needed.'
-                      : "The date this tender was submitted to the client — can't be a future date, and can only be entered once."}
-                  </span>
-                </>
-              )}
-            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Submission Date">
+                {submittedDateAlreadySet && !isAdmin ? (
+                  <>
+                    <input type="text" value={formatDate(editing?.submittedDate)} disabled className="input disabled:bg-slate-50 disabled:text-slate-500" />
+                    <span className="block text-xs text-slate-400 mt-1">
+                      Locked after first entry — ask your Admin if this needs to change.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="date"
+                      value={submittedDate}
+                      max={today()}
+                      onChange={(e) => setSubmittedDateField(e.target.value)}
+                      className="input"
+                    />
+                    <span className="block text-xs text-slate-400 mt-1">
+                      {submittedDateAlreadySet
+                        ? 'Already set — as Admin you can correct it if needed.'
+                        : "The date this tender was submitted to the client — can't be a future date, and can only be entered once."}
+                    </span>
+                  </>
+                )}
+              </Field>
+              <Field label={`Submission Expiry Date${expiryRequired ? '' : ' (optional)'}`}>
+                <input
+                  type="date"
+                  value={submissionExpiryDate}
+                  onChange={(e) => setSubmissionExpiryDateField(e.target.value)}
+                  className="input"
+                />
+                <span className="block text-xs text-slate-400 mt-1">
+                  {expiryRequired
+                    ? 'Required for a Private tender — freely correctable any time, unlike Submission Date.'
+                    : 'Optional for a Government tender — freely correctable any time.'}
+                </span>
+              </Field>
+            </div>
           )}
 
           <Field label="Tender Owner">

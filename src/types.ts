@@ -172,6 +172,40 @@ export interface Tender {
    */
   submittedDate?: string;
   /**
+   * Whether this is a Government or Private tender — asked once, compulsorily, the moment a
+   * tender is registered (see TenderFormModal's Category field). Optional only in the type
+   * system to cover tenders created before this field existed; every tender created (or later
+   * edited/saved) through the form now has one. Drives whether submissionExpiryDate below is
+   * required: a Private client can walk away the moment a cheaper quote expires, so its
+   * submission needs a hard expiry date tracked; a Government tender's own procurement timeline
+   * governs that instead, so it stays optional there — see SubmissionDateModal.tsx and
+   * TenderFormModal's submissionExpiryDate field for where that's enforced.
+   */
+  category?: 'Government' | 'Private';
+  /**
+   * ISO date (yyyy-mm-dd) this lead's CURRENT contract — the one they already have with another
+   * guard provider (or an existing one of ours coming up for renewal) — is due to end. Filled in
+   * once a lead reaches Qualified Lead (see TenderFormModal's "Current Awarded Contract End"
+   * field), since that's typically when this comes up in conversation; always optional, since not
+   * every lead volunteers or even has one. Stays visible/editable at every later stage too, since
+   * it remains useful context (e.g. as a renewal-timing reminder) long after the lead moves on
+   * from Qualified Lead — see PipelinePage's "Contract ending soon" reminder tile, which flags
+   * open (non-closed) tenders where this falls within 30 days (including already past).
+   */
+  currentContractEndDate?: string;
+  /**
+   * ISO date (yyyy-mm-dd) this tender's submission to the client expires — e.g. a quoted price
+   * or tender validity period after which the client can no longer accept it as-is. Captured
+   * alongside submittedDate the moment a tender first reaches Submitted (see
+   * SubmissionDateModal.tsx), and freely correctable afterwards from TenderFormModal (unlike
+   * submittedDate, there's no write-once/admin-only lock on this one). Compulsory at that point
+   * for a Private tender (see `category` above) — a Government tender leaves it exactly as
+   * optional as before this field existed. PipelinePage's "Submission expiring soon" reminder
+   * tile flags any open (non-closed) tender where this falls within 30 days (including already
+   * past), regardless of which stage it's since moved on to.
+   */
+  submissionExpiryDate?: string;
+  /**
    * The branch actually running the awarded contract — only meaningful once stage is Won.
    * Defaults to `department` (the branch that submitted/owns the tender) the moment it's won,
    * but an admin can reassign it afterwards from the Active Projects page — e.g. HQ wins a

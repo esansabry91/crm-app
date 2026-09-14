@@ -46,10 +46,16 @@ export interface NewTenderInput {
   ownerUid: string;
   ownerName: string;
   notes?: string;
+  /** See Tender.category's doc comment in types.ts — compulsory, validated by the form before this is ever called. */
+  category: 'Government' | 'Private';
+  /** See Tender.currentContractEndDate's doc comment in types.ts. Always optional. */
+  currentContractEndDate?: string;
   /** ISO date (yyyy-mm-dd) — only meaningful when stage is Won or Lost. Used to backfill history. */
   closedDate?: string;
   /** ISO date (yyyy-mm-dd) — only meaningful when stage is Submitted or later. See Tender.submittedDate. */
   submittedDate?: string;
+  /** ISO date (yyyy-mm-dd) — only meaningful when stage is Submitted or later. See Tender.submissionExpiryDate. */
+  submissionExpiryDate?: string;
 }
 
 async function addHistoryEntry(
@@ -93,11 +99,13 @@ export async function createTender(
   // Firestore's addDoc() rejects fields explicitly set to `undefined` — closedDate/submittedDate
   // are optional and undefined for most tenders, so they must be omitted entirely rather than
   // spread in as `closedDate: undefined`.
-  const { closedDate, submittedDate, ...rest } = input;
+  const { closedDate, submittedDate, submissionExpiryDate, currentContractEndDate, ...rest } = input;
   const docRef = await addDoc(collection(db, 'tenders'), {
     ...rest,
     ...(closedDate ? { closedDate } : {}),
     ...(submittedDate ? { submittedDate } : {}),
+    ...(submissionExpiryDate ? { submissionExpiryDate } : {}),
+    ...(currentContractEndDate ? { currentContractEndDate } : {}),
     // A tender can be created directly in the Won stage (not just moved there later) — give it
     // the same activeBranch default moveTenderStage would, so it doesn't rely on the opportunistic
     // backfill (which has no idea who created it) to fill this in afterwards.
@@ -154,18 +162,23 @@ export async function updateTender(
  * responsible for actually collecting it; this only ever writes it when the tender doesn't
  * already have one, so a stray call can never silently overwrite an already-set value — and
  * firestore.rules enforces the same thing independently of this client-side check.
+ * `submissionExpiryDate` (yyyy-mm-dd) rides along in that same first-Submitted write when the
+ * caller collected one (see SubmissionDateModal.tsx) — unlike submittedDate it isn't locked
+ * afterwards, so a later correction goes through setSubmissionExpiryDate() below instead of here.
  */
 export async function moveTenderStage(
   tender: Tender,
   newStage: Stage,
   actor: Actor,
   closedDate?: string,
-  submittedDate?: string
+  submittedDate?: string,
+  submissionExpiryDate?: string
 ) {
   if (newStage === tender.stage) return;
   const isClosed = newStage === 'Won' || newStage === 'Lost';
   const historyTimestamp = isClosed && closedDate ? closedDateToMillis(closedDate) : Date.now();
   const becomingWon = newStage === 'Won';
+  const firstTimeSubmitted = newStage === 'Submitted' && !tender.submittedDate && !!submittedDate;
 
   // Becoming Won turns this into an Active Project — see defaultActiveBranchOnWin's doc comment
   // for when it's left unassigned instead of defaulting to the submitting branch. Moving away
@@ -179,7 +192,8 @@ export async function moveTenderStage(
     activeBranch: becomingWon
       ? tender.activeBranch || defaultActiveBranchOnWin(tender.department, actor.role)
       : null,
-    ...(newStage === 'Submitted' && !tender.submittedDate && submittedDate ? { submittedDate } : {}),
+    ...(firstTimeSubmitted ? { submittedDate } : {}),
+    ...(firstTimeSubmitted && submissionExpiryDate ? { submissionExpiryDate } : {}),
   });
   await addHistoryEntry(
     tender.id,
@@ -338,6 +352,16 @@ export async function setClosedDate(
  */
 export async function setSubmittedDate(tenderId: string, submittedDate: string) {
   await updateDoc(doc(db, 'tenders', tenderId), { submittedDate, updatedAt: Date.now() });
+}
+
+/**
+ * Sets (or clears, passing null) a tender's submission expiry date — see
+ * Tender.submissionExpiryDate's doc comment in types.ts. Unlike setSubmittedDate() above, there's
+ * no write-once/admin-only lock here: any owner/admin can correct it at any time from
+ * TenderFormModal, since nothing currently depends on this value being immutable once set.
+ */
+export async function setSubmissionExpiryDate(tenderId: string, submissionExpiryDate: string | null) {
+  await updateDoc(doc(db, 'tenders', tenderId), { submissionExpiryDate: submissionExpiryDate || null, updatedAt: Date.now() });
 }
 
 /**

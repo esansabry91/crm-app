@@ -5,12 +5,23 @@ import { useBranches, useBrands } from '../hooks/useBranches';
 import { useUsers } from '../hooks/useUsers';
 import KanbanBoard from '../components/kanban/KanbanBoard';
 import HeaderCollapseToggle from '../components/layout/HeaderCollapseToggle';
+import StatCard from '../components/analytics/StatCard';
 import TenderFormModal from '../components/tenders/TenderFormModal';
 import SubmissionDateModal from '../components/tenders/SubmissionDateModal';
 import { disqualifyTender, isTenderArchived, moveTenderStage, requalifyTender } from '../services/tenders';
 import type { Tender } from '../types';
-import { isAdminRole } from '../types';
+import { CLOSED_STAGES, isAdminRole } from '../types';
 import { formatRM } from '../utils/format';
+
+/** Days from today (local midnight) until an ISO yyyy-mm-dd date — negative once it's past. Used
+ *  by both reminder tiles below to find dates "within 30 days", including already-overdue ones
+ *  (an overdue reminder is more urgent, not less, so it's never silently dropped). */
+function daysUntil(isoDate: string): number {
+  const target = new Date(`${isoDate}T00:00:00`).getTime();
+  const startOfToday = new Date(new Date().toDateString()).getTime();
+  return Math.round((target - startOfToday) / 86400000);
+}
+const REMINDER_WINDOW_DAYS = 30;
 
 export default function PipelinePage() {
   const { profile } = useAuth();
@@ -34,6 +45,11 @@ export default function PipelinePage() {
   // commits (see the onDropStage handler below and SubmissionDateModal.tsx).
   const [pendingSubmission, setPendingSubmission] = useState<Tender | null>(null);
   const [headerExpanded, setHeaderExpanded] = useState(true);
+  // Which reminder tile's "Go to list" was clicked, if any — narrows the board down to just the
+  // matching cards (still in their real columns) rather than opening a separate list view, since
+  // Pipeline has no flat list UI of its own. 'none' shows everything, same as before these tiles
+  // existed.
+  const [reminderFilter, setReminderFilter] = useState<'none' | 'contractEnding' | 'submissionExpiring'>('none');
 
   const staffOptions = useMemo(
     () => (isAdminRole(profile?.role) ? users.filter((u) => u.active !== false) : profile ? [profile] : []),
@@ -45,7 +61,11 @@ export default function PipelinePage() {
   // tenders, same pattern as Branch Collection's canFilterByBranch usages.
   const effectiveBranchFilter = canFilterByBranch ? branchFilter : 'all';
 
-  const filtered = useMemo(() => {
+  // Brand/branch/search-scoped set the two reminder tiles' counts are computed from, BEFORE the
+  // reminder filter itself narrows things further for the board below — so the tiles' numbers
+  // stay meaningful (e.g. "within this branch") rather than collapsing to whatever's currently
+  // showing once a reminder filter is already active.
+  const baseFiltered = useMemo(() => {
     return tenders.filter((t) => {
       // Won/Lost/Disqualified Lead tenders over a year old move to the Archive page instead of
       // sitting on the board forever — see isTenderArchived()'s doc comment in services/tenders.ts.
@@ -56,6 +76,34 @@ export default function PipelinePage() {
       return true;
     });
   }, [tenders, brandFilter, effectiveBranchFilter, search]);
+
+  // Only an open (not yet Won/Lost/Disqualified) tender's reminder is still actionable — once a
+  // tender is closed out one way or another, whether its current contract or submission is
+  // "ending soon" no longer matters.
+  const openFiltered = useMemo(
+    () => baseFiltered.filter((t) => !CLOSED_STAGES.includes(t.stage)),
+    [baseFiltered]
+  );
+  const contractEndingSoon = useMemo(
+    () =>
+      openFiltered.filter(
+        (t) => !!t.currentContractEndDate && daysUntil(t.currentContractEndDate) <= REMINDER_WINDOW_DAYS
+      ),
+    [openFiltered]
+  );
+  const submissionExpiringSoon = useMemo(
+    () =>
+      openFiltered.filter(
+        (t) => !!t.submissionExpiryDate && daysUntil(t.submissionExpiryDate) <= REMINDER_WINDOW_DAYS
+      ),
+    [openFiltered]
+  );
+
+  const filtered = useMemo(() => {
+    if (reminderFilter === 'none') return baseFiltered;
+    const ids = new Set((reminderFilter === 'contractEnding' ? contractEndingSoon : submissionExpiringSoon).map((t) => t.id));
+    return baseFiltered.filter((t) => ids.has(t.id));
+  }, [baseFiltered, reminderFilter, contractEndingSoon, submissionExpiringSoon]);
 
   const totalValue = filtered.reduce((s, t) => s + (t.tenderValue || 0), 0);
 
@@ -137,7 +185,50 @@ export default function PipelinePage() {
             </div>
           </div>
         )}
+        {headerExpanded && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 max-w-xl">
+            <StatCard
+              label="Contract ending soon"
+              value={String(contractEndingSoon.length)}
+              sub={`Qualified leads' current contract ends within ${REMINDER_WINDOW_DAYS} days`}
+              accent="#b45309"
+              action={{
+                label: 'Go to list',
+                onClick: () => setReminderFilter('contractEnding'),
+                disabled: contractEndingSoon.length === 0,
+              }}
+            />
+            <StatCard
+              label="Submission expiring soon"
+              value={String(submissionExpiringSoon.length)}
+              sub={`Submission expiry within ${REMINDER_WINDOW_DAYS} days`}
+              accent="#be123c"
+              action={{
+                label: 'Go to list',
+                onClick: () => setReminderFilter('submissionExpiring'),
+                disabled: submissionExpiringSoon.length === 0,
+              }}
+            />
+          </div>
+        )}
       </header>
+
+      {reminderFilter !== 'none' && (
+        <div className="px-6 pt-3 -mb-1">
+          <div className="flex items-center justify-between gap-3 bg-amber-50 text-amber-800 text-sm rounded-lg px-3 py-2">
+            <span>
+              Showing only tenders matching{' '}
+              <span className="font-medium">
+                {reminderFilter === 'contractEnding' ? 'Contract ending soon' : 'Submission expiring soon'}
+              </span>{' '}
+              ({filtered.length})
+            </span>
+            <button onClick={() => setReminderFilter('none')} className="font-medium underline underline-offset-2 shrink-0">
+              Clear filter
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 px-6 py-4">
         {loading ? (
@@ -181,14 +272,15 @@ export default function PipelinePage() {
         open={!!pendingSubmission}
         tender={pendingSubmission}
         onCancel={() => setPendingSubmission(null)}
-        onConfirm={(submittedDate) => {
+        onConfirm={(submittedDate, submissionExpiryDate) => {
           if (pendingSubmission) {
             moveTenderStage(
               pendingSubmission,
               'Submitted',
               { uid: profile.uid, name: profile.name, role: profile.role },
               undefined,
-              submittedDate
+              submittedDate,
+              submissionExpiryDate
             );
           }
           setPendingSubmission(null);
