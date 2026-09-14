@@ -21,6 +21,13 @@ export default function PipelinePage() {
 
   const [search, setSearch] = useState('');
   const [brandFilter, setBrandFilter] = useState('all');
+  // Admin/Developer only — a Branch Manager/staff account already only ever sees its own
+  // tenders here (see useTenders' own-uid scoping), so a branch filter would have nothing to
+  // narrow for them. Filters on Tender.department (the branch name, or "HQ" — see its doc
+  // comment in types.ts) rather than a branchId, since that's the plain string tenders are
+  // actually stored with, same as TenderFormModal's own department select.
+  const canFilterByBranch = isAdminRole(profile?.role);
+  const [branchFilter, setBranchFilter] = useState('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Tender | null>(null);
   // A tender awaiting its required submission date before the drag-to-Submitted move actually
@@ -33,16 +40,22 @@ export default function PipelinePage() {
     [profile, users]
   );
 
+  // A non-admin never gets to apply a branch filter — if one was somehow left selected (e.g.
+  // the account's role changed mid-session) it stops taking effect rather than silently hiding
+  // tenders, same pattern as Branch Collection's canFilterByBranch usages.
+  const effectiveBranchFilter = canFilterByBranch ? branchFilter : 'all';
+
   const filtered = useMemo(() => {
     return tenders.filter((t) => {
       // Won/Lost/Disqualified Lead tenders over a year old move to the Archive page instead of
       // sitting on the board forever — see isTenderArchived()'s doc comment in services/tenders.ts.
       if (isTenderArchived(t)) return false;
       if (brandFilter !== 'all' && t.brandId !== brandFilter) return false;
+      if (effectiveBranchFilter !== 'all' && t.department !== effectiveBranchFilter) return false;
       if (search.trim() && !t.clientName.toLowerCase().includes(search.trim().toLowerCase())) return false;
       return true;
     });
-  }, [tenders, brandFilter, search]);
+  }, [tenders, brandFilter, effectiveBranchFilter, search]);
 
   const totalValue = filtered.reduce((s, t) => s + (t.tenderValue || 0), 0);
 
@@ -101,6 +114,17 @@ export default function PipelinePage() {
                   </option>
                 ))}
               </select>
+              {canFilterByBranch && (
+                <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input w-full sm:w-40">
+                  <option value="all">All branches</option>
+                  <option value="HQ">HQ</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.name}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              )}
               <button
                 onClick={() => {
                   setEditing(null);
