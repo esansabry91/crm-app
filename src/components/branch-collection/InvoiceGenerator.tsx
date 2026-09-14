@@ -296,10 +296,11 @@ export default function InvoiceGenerator() {
   }
 
   /** How much headcount is left to give this one row without pushing the invoice's total past
-   *  this site's actual active-guard count (site.guardCount — see BillingSite's doc comment) —
-   *  the site's capacity minus every OTHER row's headcount, never below 0. Returns null when the
-   *  site has no known guard count (guardCount is null — see its doc comment) or there's no site
-   *  at all, meaning there's nothing to cap against yet, same as before this feature existed. */
+   *  this site's Client Site Requirement guard-post count (site.guardCount — see BillingSite's
+   *  doc comment) — the site's capacity minus every OTHER row's headcount, never below 0. Returns
+   *  null when the site has no known requirement (guardCount is null — see its doc comment) or
+   *  there's no site at all, meaning there's nothing to cap against yet, same as before this
+   *  feature existed. */
   function remainingHeadcountFor(gi: number, ri: number): number | null {
     if (!site || site.guardCount == null) return null;
     const usedByOthers = lineGroups.reduce(
@@ -330,14 +331,15 @@ export default function InvoiceGenerator() {
     remainingAmount != null && remainingManHours != null
     && (Math.abs(remainingAmount) > 0.01 || Math.abs(remainingManHours) > 0.05);
 
-  // Total headcount typed across every row of every location, capped against how many guards are
-  // actually active at this Duty Roster site right now (site.guardCount — see BillingSite's doc
-  // comment in services/siteBilling.ts) so an invoice can never bill for more guards than are
-  // really deployed there. Unlike the man-hours reconciliation above, there's no acknowledge-and-
-  // override path for this one — a headcount that doesn't exist at the site is always wrong, not
-  // just a discrepancy worth double-checking, so updateRow's headcount clamp (below) stops it
-  // from ever being typed in the first place; this is a second guard rail on top of that, in case
-  // the site's guard count changes (a guard leaves) after the line items were already entered.
+  // Total headcount typed across every row of every location, capped against how many guard
+  // posts the site's Client Site Requirement actually calls for (site.guardCount — see
+  // BillingSite's doc comment in services/siteBilling.ts) so an invoice can never bill for more
+  // guards than the client's contract covers at this site. Unlike the man-hours reconciliation
+  // above, there's no acknowledge-and-override path for this one — a headcount above the
+  // contracted post count is always wrong, not just a discrepancy worth double-checking, so
+  // updateRow's headcount clamp (below) stops it from ever being typed in the first place; this
+  // is a second guard rail on top of that, in case the requirement changes (Guards & Shifts gets
+  // edited) after the line items were already entered.
   const totalHeadcount = lineGroups.reduce(
     (sum, g) => sum + g.rows.reduce((s, r) => s + (r.headcount || 0), 0),
     0
@@ -689,11 +691,11 @@ export default function InvoiceGenerator() {
         </div>
 
         {/* Hard cap, not a soft warning like the Duty Roster reconciliation above — a headcount
-            that exceeds how many guards are actually active at this site is always a data-entry
-            mistake, so there's no acknowledge-and-override here (see headcountExceedsSite's doc
-            comment and canSave). Only shown once the site's real guard count is known (see
-            BillingSite.guardCount) — a site with no Duty Roster guard data yet behaves exactly as
-            before this feature existed. */}
+            that exceeds the site's Client Site Requirement is always a data-entry mistake, so
+            there's no acknowledge-and-override here (see headcountExceedsSite's doc comment and
+            canSave). Only shown once the site's requirement is known (see BillingSite.guardCount)
+            — a site with no Client Site Requirement configured yet behaves exactly as before this
+            feature existed. */}
         {siteGuardCount != null && (
           <div
             className={`rounded-lg px-3 py-2 text-sm mb-3 ${
@@ -701,12 +703,14 @@ export default function InvoiceGenerator() {
             }`}
           >
             <p className="font-medium">
-              Headcount: {totalHeadcount} / {siteGuardCount} guard{siteGuardCount === 1 ? '' : 's'} deployed at this site
+              Headcount: {totalHeadcount} / {siteGuardCount} guard post{siteGuardCount === 1 ? '' : 's'} required at
+              this site
             </p>
             {headcountExceedsSite && (
               <p className="text-xs mt-0.5 opacity-90">
-                This site only has {siteGuardCount} active guard{siteGuardCount === 1 ? '' : 's'} on Duty Roster right
-                now — reduce the headcount below before this invoice can be saved.
+                This site's Client Site Requirement (Duty Roster &gt; Guards &amp; Shifts) only calls for{' '}
+                {siteGuardCount} guard post{siteGuardCount === 1 ? '' : 's'} — reduce the headcount below before this
+                invoice can be saved.
               </p>
             )}
           </div>
