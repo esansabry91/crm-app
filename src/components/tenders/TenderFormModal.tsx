@@ -18,7 +18,7 @@ interface Props {
   profile: UserProfile;
   brands: Brand[];
   branches: Branch[];
-  staffOptions: UserProfile[]; // selectable owners (admin only sees full list)
+  staffOptions: UserProfile[]; // full active roster (admin only) — narrowed to Branch Managers below
   editing: Tender | null; // null = creating new
 }
 
@@ -51,6 +51,19 @@ export default function TenderFormModal({
   const isClosedStage = stage === 'Won' || stage === 'Lost';
   const today = () => new Date().toISOString().slice(0, 10);
 
+  // Only a Branch Manager can be assigned as a tender's owner going forward — an Admin/Developer
+  // account can still reassign a tender (they drive this dropdown), just never TO themselves or
+  // another Admin/Developer. Whoever the tender is CURRENTLY owned by is still shown even if
+  // that's not a Branch Manager (e.g. one of the tenders an Admin/Developer test account already
+  // owns from before this restriction existed) — otherwise the dropdown would silently show
+  // nothing selected the moment you opened Edit Tender on one of those.
+  const branchManagerOptions = staffOptions.filter((s) => s.role === 'branchManager');
+  const currentOwnerOption = staffOptions.find((s) => s.uid === ownerUid);
+  const ownerSelectOptions =
+    currentOwnerOption && !branchManagerOptions.some((s) => s.uid === currentOwnerOption.uid)
+      ? [currentOwnerOption, ...branchManagerOptions]
+      : branchManagerOptions;
+
   // Shown whenever the tender is currently sitting in Submitted, or already has a submittedDate
   // from having passed through it before (even if it's since moved on to Negotiation/Won/Lost, or
   // regressed to an earlier stage) — so the date stays visible for the "time to convert" math
@@ -76,18 +89,24 @@ export default function TenderFormModal({
     } else {
       setClientName('');
       setBrandId(brands[0]?.id || '');
-      setDepartment(profile.department || 'HQ');
+      // A Branch Manager creating their own tender still defaults to themselves; an Admin/
+      // Developer defaults to the first available Branch Manager instead of themselves, since
+      // they're no longer a choice in the Tender Owner dropdown below (see ownerSelectOptions) —
+      // falls back to self only in the (should-never-happen) case no Branch Manager account
+      // exists yet, so the form still has a valid owner to submit.
+      const defaultOwner = isAdmin ? staffOptions.find((s) => s.role === 'branchManager') : profile;
+      setDepartment((defaultOwner || profile).department || 'HQ');
       setContractStart('');
       setContractEnd('');
       setTenderValue('');
       setStage('New Lead');
-      setOwnerUid(profile.uid);
+      setOwnerUid((defaultOwner || profile).uid);
       setNotes('');
       setClosedDateField('');
       setSubmittedDateField('');
     }
     setError(null);
-  }, [open, editing, brands, profile]);
+  }, [open, editing, brands, profile, isAdmin, staffOptions]);
 
   // Default the closed-date field to today the moment someone switches stage to Won/Lost,
   // so it's never left blank — but don't clobber a value they've already backfilled.
@@ -425,7 +444,7 @@ export default function TenderFormModal({
               disabled={!isAdmin}
             >
               {isAdmin ? (
-                staffOptions.map((s) => (
+                ownerSelectOptions.map((s) => (
                   <option key={s.uid} value={s.uid}>
                     {s.name}
                   </option>
