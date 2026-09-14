@@ -1,13 +1,13 @@
 // Core domain types shared across the app.
 
 /**
- * 'dutyStaff' is a separate, narrower role from 'branchManager' — a "Staff" account can ONLY
- * reach the Duty Roster tab (see hideFromStaff in ProtectedRoute/App.tsx and the nav gating in
- * AppLayout); it has no access to Pipeline, Pipeline Analysis, Active/Past Projects, or
- * Admin Settings. Deliberately NOT called 'staff' — that string is still in flight as the
- * legacy value some old 'branchManager' accounts haven't been migrated off yet (see the
- * migration banner in UserManager.tsx); reusing it here would make the two unrelated meanings
- * indistinguishable for any account caught mid-migration.
+ * 'dutyStaff' is a separate, narrower role from 'branchManager' — an "Operation Staff" account
+ * (the UI label; see ROLE_LABELS in UserManager.tsx) can ONLY reach the Duty Roster tab (see
+ * hideFromStaff in ProtectedRoute/App.tsx and the nav gating in AppLayout); it has no access to
+ * Pipeline, Pipeline Analysis, Active/Past Projects, or Admin Settings. Deliberately NOT called
+ * 'staff' — that string is still in flight as the legacy value some old 'branchManager' accounts
+ * haven't been migrated off yet (see the migration banner in UserManager.tsx); reusing it here
+ * would make the two unrelated meanings indistinguishable for any account caught mid-migration.
  *
  * 'payroll' is Duty-Roster-only like 'dutyStaff' (same hideFromStaff gating), but strictly
  * view/export — it can see every tab in the Duty Roster tool across every branch/site, but
@@ -15,6 +15,13 @@
  * lives in public/duty-roster/index.html (state.isPayroll / the "readonly-mode" body class) and
  * in firestore.rules (isPayroll() is read-only everywhere); this Role value is just what routes
  * an account into that mode.
+ *
+ * 'hr' is identical to 'payroll' in every respect above (view/export-only, every-branch Duty
+ * Roster access — see state.isPayrollLike in public/duty-roster/index.html and isPayrollLike()
+ * in firestore.rules) EXCEPT it additionally gets full normal access to Guard Bank (/guards,
+ * /bufferGuards — see hidePayrollOnly in ProtectedRoute.tsx, which only ever excludes literal
+ * 'payroll', and isHr()/isPayroll() in firestore.rules, which /guards and /bufferGuards
+ * deliberately keep checking separately so HR isn't swept into Payroll's Guard Bank lockout).
  *
  * 'finance' is Branch Collection-only — see hideFromFinance in ProtectedRoute/App.tsx and the
  * nav gating in AppLayout — and even within Branch Collection it only reaches the Invoices,
@@ -24,21 +31,44 @@
  * existing invoice's status/amount paid in the Invoices tab, same as branchManager — see
  * isFinance() in firestore.rules, which is added alongside isBranchManager() to the
  * /invoices update rule but deliberately left out of the create rule.
+ *
+ * 'ceo', 'director', and 'tenderController' are deliberately just full HQ Admin access under a
+ * different job title — see isAdminRole() below and isAdmin() in firestore.rules, both of which
+ * treat them exactly like 'admin'. They do NOT get 'developer's isTestData auto-tagging — only a
+ * literal 'developer' account does (see shouldStampTestData() in services/settings.ts).
  */
-export type Role = 'admin' | 'branchManager' | 'dutyStaff' | 'payroll' | 'developer' | 'finance';
+export type Role =
+  | 'admin'
+  | 'branchManager'
+  | 'dutyStaff'
+  | 'payroll'
+  | 'developer'
+  | 'finance'
+  | 'hr'
+  | 'ceo'
+  | 'director'
+  | 'tenderController';
 
 /**
  * True for any role that should get full administrative access throughout the app — currently
- * 'admin' and 'developer'. 'developer' exists purely so the account owner can sign in as a
+ * 'admin', 'developer', 'ceo', 'director', and 'tenderController' (see the Role doc comment
+ * above for why the latter three exist as their own role values instead of everyone just being
+ * created as 'admin'). 'developer' exists purely so the account owner can sign in as a
  * dedicated testing account with the exact same access as a real admin, while every record it
  * creates gets auto-tagged isTestData: true (see shouldStampTestData() in services/settings.ts —
  * purely role-based, not tied to any shared/global setting) — so testing under this role can
  * never get mixed up with genuine data real staff/admin accounts create at the same time.
- * Always use this helper instead of comparing `role === 'admin'` directly, so a developer
- * account is never accidentally left out of an admin-gated check.
+ * Always use this helper instead of comparing `role === 'admin'` directly, so a developer (or
+ * ceo/director/tenderController) account is never accidentally left out of an admin-gated check.
  */
 export function isAdminRole(role: Role | string | undefined | null): boolean {
-  return role === 'admin' || role === 'developer';
+  return (
+    role === 'admin' ||
+    role === 'developer' ||
+    role === 'ceo' ||
+    role === 'director' ||
+    role === 'tenderController'
+  );
 }
 
 /** The 8 fixed pipeline stages, in kanban column order. */

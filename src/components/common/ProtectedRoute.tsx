@@ -13,9 +13,11 @@ export default function ProtectedRoute({
   children: ReactNode;
   adminOnly?: boolean;
   /**
-   * The "Staff" role can only ever reach Duty Roster — every other route passes this so a
-   * Staff account bounces straight there instead of landing wherever this route would show.
-   * "Payroll" accounts are Duty-Roster-only in the same way, so they're gated by this too.
+   * The "Operation Staff" role can only ever reach Duty Roster — every other route passes this
+   * so an Operation Staff account bounces straight there instead of landing wherever this route
+   * would show. "Payroll" and "HR" accounts are Duty-Roster-only in the same way (HR's only
+   * difference is Guard Bank, handled separately by hidePayrollOnly below), so they're gated by
+   * this too.
    */
   hideFromStaff?: boolean;
   /**
@@ -66,7 +68,7 @@ export default function ProtectedRoute({
     );
   }
 
-  if (hideFromStaff && (profile?.role === 'dutyStaff' || profile?.role === 'payroll')) {
+  if (hideFromStaff && (profile?.role === 'dutyStaff' || profile?.role === 'payroll' || profile?.role === 'hr')) {
     return <Navigate to="/duty-roster" replace />;
   }
 

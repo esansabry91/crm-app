@@ -61,7 +61,10 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {profile?.role !== 'dutyStaff' && profile?.role !== 'payroll' && profile?.role !== 'finance' && (
+        {profile?.role !== 'dutyStaff' &&
+          profile?.role !== 'payroll' &&
+          profile?.role !== 'finance' &&
+          profile?.role !== 'hr' && (
           <>
             <NavLink to="/pipeline" className={navItemClass} onClick={onNavigate}>
               <span aria-hidden>🗂️</span> Pipeline
@@ -107,6 +110,18 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
             <span aria-hidden>🗓️</span> Duty Roster
           </NavLink>
         )}
+        {/* HR is Payroll's Duty Roster reach PLUS full Guard Bank access — see the Role doc
+            comment in types.ts and isHr()/isPayrollLike() in firestore.rules. */}
+        {profile?.role === 'hr' && (
+          <>
+            <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
+              <span aria-hidden>🗓️</span> Duty Roster
+            </NavLink>
+            <NavLink to="/guard-bank" className={navItemClass} onClick={onNavigate}>
+              <span aria-hidden>🛡️</span> Guard Bank
+            </NavLink>
+          </>
+        )}
         {profile?.role === 'finance' && (
           <NavLink to="/branch-collection" className={navItemClass} onClick={onNavigate}>
             <span aria-hidden>🧾</span> Branch Collection
@@ -126,13 +141,21 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
             ? 'HQ Admin'
             : profile?.role === 'developer'
               ? 'Developer'
-              : profile?.role === 'dutyStaff'
-                ? 'Staff'
-                : profile?.role === 'payroll'
-                  ? 'Payroll'
-                  : profile?.role === 'finance'
-                    ? 'Finance'
-                    : 'Branch Manager'}{' '}
+              : profile?.role === 'ceo'
+                ? 'CEO'
+                : profile?.role === 'director'
+                  ? 'Director'
+                  : profile?.role === 'tenderController'
+                    ? 'Tender Controller'
+                    : profile?.role === 'dutyStaff'
+                      ? 'Operation Staff'
+                      : profile?.role === 'payroll'
+                        ? 'Payroll'
+                        : profile?.role === 'hr'
+                          ? 'HR'
+                          : profile?.role === 'finance'
+                            ? 'Finance'
+                            : 'Branch Manager'}{' '}
           ·{' '}
           {profile?.department}
         </p>

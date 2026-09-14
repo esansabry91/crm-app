@@ -16,10 +16,10 @@ import BranchCollectionPage from './pages/BranchCollectionPage';
 import NewTenderWatcher from './components/notifications/NewTenderWatcher';
 import TenderAssignedWatcher from './components/notifications/TenderAssignedWatcher';
 
-/** A "Staff" or "Payroll" account can only ever reach Duty Roster, a "Finance" account can only
- *  ever reach Branch Collection; everyone else's home is Pipeline. */
+/** An "Operation Staff", "Payroll", or "HR" account can only ever reach Duty Roster, a
+ *  "Finance" account can only ever reach Branch Collection; everyone else's home is Pipeline. */
 function defaultRouteFor(role: string | undefined): string {
-  if (role === 'dutyStaff' || role === 'payroll') return '/duty-roster';
+  if (role === 'dutyStaff' || role === 'payroll' || role === 'hr') return '/duty-roster';
   if (role === 'finance') return '/branch-collection';
   return '/pipeline';
 }
@@ -123,10 +123,11 @@ export default function App() {
           <Route
             path="/quotation-calculator"
             element={
-              // hideFromStaff alone restricts this to admin + branchManager + developer — those
-              // are the only roles it doesn't bounce to Duty Roster, since dutyStaff and payroll
-              // are the only roles it excludes. index.html itself (and firestore.rules) also
-              // allow developer, matching isAdminRole()'s treatment of it as admin-equivalent.
+              // hideFromStaff alone restricts this to admin + branchManager + developer +
+              // ceo/director/tenderController — those are the only roles it doesn't bounce to
+              // Duty Roster, since dutyStaff, payroll, and hr are the only roles it excludes.
+              // index.html itself (and firestore.rules) also allow developer/ceo/director/
+              // tenderController, matching isAdminRole()'s treatment of them as admin-equivalent.
               // hideFromFinance keeps Finance out too, same as every other non-Branch-Collection
               // route.
               <ProtectedRoute hideFromStaff hideFromFinance>

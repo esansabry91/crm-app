@@ -9,10 +9,14 @@ import type { Role } from '../../types';
 const ROLE_LABELS: Record<string, string> = {
   branchManager: 'Branch Manager',
   admin: 'HQ Admin',
-  dutyStaff: 'Staff',
+  dutyStaff: 'Operation Staff',
   payroll: 'Payroll',
   developer: 'Developer',
   finance: 'Finance',
+  hr: 'HR',
+  ceo: 'CEO',
+  director: 'Director',
+  tenderController: 'Tender Controller',
 };
 function roleLabel(role: string): string {
   return ROLE_LABELS[role] || role;
@@ -171,8 +175,12 @@ export default function UserManager() {
           <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="input">
             <option value="branchManager">Branch Manager — sees only their own tenders</option>
             <option value="admin">HQ Admin — sees everything</option>
-            <option value="dutyStaff">Staff — Duty Roster only, nothing else</option>
+            <option value="ceo">CEO — full access, same as HQ Admin</option>
+            <option value="director">Director — full access, same as HQ Admin</option>
+            <option value="tenderController">Tender Controller — full access, same as HQ Admin</option>
+            <option value="dutyStaff">Operation Staff — Duty Roster only, nothing else</option>
             <option value="payroll">Payroll — Duty Roster only, view &amp; export only, all branches</option>
+            <option value="hr">HR — same as Payroll, plus full access to Guard Bank</option>
             <option value="developer">Developer — full access like HQ Admin, but every record it creates is auto-tagged as test data</option>
             <option value="finance">Finance — Branch Collection only (Invoices, Debtor List, Revenue)</option>
           </select>
@@ -222,8 +230,12 @@ export default function UserManager() {
                     >
                       <option value="branchManager">Branch Manager</option>
                       <option value="admin">HQ Admin</option>
-                      <option value="dutyStaff">Staff</option>
+                      <option value="ceo">CEO</option>
+                      <option value="director">Director</option>
+                      <option value="tenderController">Tender Controller</option>
+                      <option value="dutyStaff">Operation Staff</option>
                       <option value="payroll">Payroll</option>
+                      <option value="hr">HR</option>
                       <option value="developer">Developer</option>
                       <option value="finance">Finance</option>
                     </select>

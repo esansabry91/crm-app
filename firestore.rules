@@ -11,14 +11,21 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(uid));
     }
 
-    // True only for a signed-in user whose /users/{uid} profile exists, has role "admin" or
-    // "developer" (the account owner's own dedicated testing role — same access as admin, but
-    // its own writes get auto-tagged isTestData: true client-side; see Role's doc comment in
-    // src/types.ts and shouldStampTestData() in src/services/settings.ts), and has not been
-    // deactivated.
+    // True only for a signed-in user whose /users/{uid} profile exists, has not been deactivated,
+    // and has one of the admin-equivalent roles: "admin" (HQ Admin) itself; "developer" (the
+    // account owner's own dedicated testing role — same access as admin, but its own writes get
+    // auto-tagged isTestData: true client-side; see Role's doc comment in src/types.ts and
+    // shouldStampTestData() in src/services/settings.ts); or "ceo"/"director"/"tenderController",
+    // three roles that are deliberately just full HQ Admin access under a different job title —
+    // see the Role doc comment in src/types.ts. None of the three get isDeveloper()'s test-data
+    // auto-tagging below — only a literal "developer" account does.
     function isAdmin() {
       return isSignedIn()
-        && (userDoc(request.auth.uid).data.role == 'admin' || userDoc(request.auth.uid).data.role == 'developer')
+        && (userDoc(request.auth.uid).data.role == 'admin'
+            || userDoc(request.auth.uid).data.role == 'developer'
+            || userDoc(request.auth.uid).data.role == 'ceo'
+            || userDoc(request.auth.uid).data.role == 'director'
+            || userDoc(request.auth.uid).data.role == 'tenderController')
         && userDoc(request.auth.uid).data.active != false;
     }
 
@@ -36,11 +43,32 @@ service cloud.firestore {
     // True only for a signed-in, active user with role "payroll" — a strictly view/export-only
     // Duty Roster role (see the /sites block below). Never grant this function's result write
     // access to anything; it exists so read rules can include payroll alongside admin/HQ
-    // without also handing it the write access those roles get.
+    // without also handing it the write access those roles get. Kept separate from isHr()/
+    // isPayrollLike() below (rather than folding "hr" into this check) so /guards and
+    // /bufferGuards — the one place Payroll and HR deliberately differ — can keep checking this
+    // function alone and stay unaffected by HR's Guard Bank access.
     function isPayroll() {
       return isSignedIn()
         && userDoc(request.auth.uid).data.role == 'payroll'
         && userDoc(request.auth.uid).data.active != false;
+    }
+
+    // True only for a signed-in, active user with role "hr" — same strictly view/export-only,
+    // every-branch Duty Roster reach as isPayroll() above (see isPayrollLike() below), PLUS full
+    // normal access to Guard Bank (/guards, /bufferGuards), which is why those two collections'
+    // rules deliberately check isPayroll() alone rather than isPayrollLike().
+    function isHr() {
+      return isSignedIn()
+        && userDoc(request.auth.uid).data.role == 'hr'
+        && userDoc(request.auth.uid).data.active != false;
+    }
+
+    // Payroll and HR share the exact same Duty-Roster-only, view/export-only, every-branch
+    // access — use this wherever a rule grants or restricts THAT shared behavior. /guards and
+    // /bufferGuards are the one deliberate exception (see isHr()'s doc comment above) and check
+    // isPayroll() alone instead.
+    function isPayrollLike() {
+      return isPayroll() || isHr();
     }
 
     // True only for a signed-in, active user with role "finance" — a Branch-Collection-only
@@ -107,14 +135,15 @@ service cloud.firestore {
     }
 
     // ---- Branch Collection (billing / invoicing) ----
-    // Financial records — readable by any active non-Payroll user (Payroll's Duty Roster access
-    // is strictly view/export and has nothing to do with billing). Only Admin/Developer or a
-    // Branch Manager can create one; Finance can additionally update an existing one (record
-    // payments) but never create — see isFinance()'s doc comment above. Never Payroll, never
-    // dutyStaff/Support-only roles (both already never reach this collection anyway — see
-    // AppLayout.tsx/ProtectedRoute's hideFromStaff gating on the Branch Collection tab).
+    // Financial records — readable by any active non-Payroll/HR user (Payroll's and HR's Duty
+    // Roster access is strictly view/export and has nothing to do with billing). Only
+    // Admin/Developer/CEO/Director/Tender Controller or a Branch Manager can create one; Finance
+    // can additionally update an existing one (record payments) but never create — see
+    // isFinance()'s doc comment above. Never Payroll/HR, never dutyStaff/Support-only roles (none
+    // of them already reach this collection anyway — see AppLayout.tsx/ProtectedRoute's
+    // hideFromStaff gating on the Branch Collection tab).
     match /invoices/{invoiceId} {
-      allow read: if isActiveUser() && !isPayroll();
+      allow read: if isActiveUser() && !isPayrollLike();
       // Finance can update (record payments / change status on an existing invoice) but never
       // create — see isFinance()'s doc comment above for why the two rules deliberately differ.
       allow create: if isActiveUser() && (isAdmin() || isBranchManager());
@@ -134,7 +163,7 @@ service cloud.firestore {
     // increments a counter doc in the same transaction it creates the invoice doc in, so both
     // need to be writable by whoever can create invoices.
     match /invoiceCounters/{counterId} {
-      allow read: if isActiveUser() && !isPayroll();
+      allow read: if isActiveUser() && !isPayrollLike();
       allow write: if isActiveUser() && (isAdmin() || isBranchManager());
     }
 
@@ -174,12 +203,12 @@ service cloud.firestore {
           || (resource.data.stage == 'Won'
               && resource.data.get('pendingReassignment', null) != null
               && resource.data.pendingReassignment.toBranch == myDepartment())
-          // Payroll already reads every branch's Duty Roster sites (see canReadSite() below) —
-          // including, now, each site's Summary Report Rate/Amount columns, which resolve live
-          // off this same tender doc's guardRateMode/guardRate/guardRatePositions (see
-          // subscribeTenderRate() in public/duty-roster/index.html). Without this, those columns
-          // would silently come up blank for Payroll on every site outside their own department.
-          || (resource.data.stage == 'Won' && isPayroll())
+          // Payroll and HR already read every branch's Duty Roster sites (see canReadSite()
+          // below) — including, now, each site's Summary Report Rate/Amount columns, which
+          // resolve live off this same tender doc's guardRateMode/guardRate/guardRatePositions
+          // (see subscribeTenderRate() in public/duty-roster/index.html). Without this, those
+          // columns would silently come up blank on every site outside their own department.
+          || (resource.data.stage == 'Won' && isPayrollLike())
         );
 
       allow create: if isActiveUser()
@@ -316,7 +345,7 @@ service cloud.firestore {
       // write — kept as a separate function from canReachSite so it's easy to see that the
       // create/update/delete rules below deliberately do NOT call this one.
       function canReadSite(data) {
-        return canReachSite(data) || isPayroll();
+        return canReachSite(data) || isPayrollLike();
       }
       // True only for a Branch Manager accepting a reassignment actually pending to their own
       // branch (see Tender.pendingReassignment / acceptReassignment()) for THIS site's tender —
@@ -334,15 +363,15 @@ service cloud.firestore {
       // read rather than erroring — so without this, the receiving Branch Manager's query would
       // just come back empty and their write would never even attempt to run.
       allow read: if isActiveUser() && (canReadSite(resource.data) || isAcceptingPendingReassignment(resource.data));
-      allow create: if isActiveUser() && !isPayroll() && canReachSite(request.resource.data);
+      allow create: if isActiveUser() && !isPayrollLike() && canReachSite(request.resource.data);
       // Both old and new data must be in reach — the first clause keeps a non-privileged
       // user from touching a site outside their branch at all, the second keeps them from
-      // reassigning a reachable site's branch to one they don't belong to. !isPayroll() blocks
-      // the Payroll role from writing at all, even to a site it can read. The second OR branch
-      // is the one narrow exception: a Branch Manager accepting a pending reassignment (see
+      // reassigning a reachable site's branch to one they don't belong to. !isPayrollLike()
+      // blocks Payroll and HR from writing at all, even to a site either can read. The second
+      // OR branch is the one narrow exception: a Branch Manager accepting a pending reassignment (see
       // isAcceptingPendingReassignment() above) touching the OLD, not-yet-theirs site — limited
       // to exactly the fields acceptReassignment() actually writes.
-      allow update: if isActiveUser() && !isPayroll() && (
+      allow update: if isActiveUser() && !isPayrollLike() && (
         (canReachSite(resource.data) && canReachSite(request.resource.data))
         || (
           isAcceptingPendingReassignment(resource.data)
@@ -366,7 +395,7 @@ service cloud.firestore {
       match /months/{monthKey} {
         allow read: if isActiveUser()
           && canReadSite(get(/databases/$(database)/documents/sites/$(siteId)).data);
-        allow write: if isActiveUser() && !isPayroll()
+        allow write: if isActiveUser() && !isPayrollLike()
           && canReachSite(get(/databases/$(database)/documents/sites/$(siteId)).data);
       }
     }
@@ -418,9 +447,12 @@ service cloud.firestore {
     //
     // Every signed-in, active user except Payroll can read and write — Payroll's Duty Roster
     // access is already view/export-only (see isPayroll()'s own doc comment above), and this
-    // carries the same intent forward. No branch-scoping: a pool guard has no branch yet, and
-    // once deployed their branch is already visible/enforced through the linked /sites doc, so
-    // Guard Bank stays a single firm-wide list for anyone who can see it at all.
+    // carries the same intent forward. HR is deliberately NOT excluded here (unlike everywhere
+    // else isPayroll() shows up) — see isHr()'s doc comment for why HR gets full Guard Bank
+    // access even though it's otherwise Payroll-equivalent. No branch-scoping: a pool guard has
+    // no branch yet, and once deployed their branch is already visible/enforced through the
+    // linked /sites doc, so Guard Bank stays a single firm-wide list for anyone who can see it
+    // at all.
     match /guards/{guardId} {
       allow read, create: if isActiveUser() && !isPayroll();
       // Same general access as create/read, except the archivedAt field (set when an admin hides a

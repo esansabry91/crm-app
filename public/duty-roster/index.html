@@ -1141,8 +1141,13 @@
     myRole: null,          // this signed-in user's CRM role
     isPrivileged: false,   // admin, or department "HQ" — reaches every branch's sites, like elsewhere in the CRM
     isPayroll: false,       // "payroll" role — reaches every branch's sites like a privileged user, but strictly view/export only
+    isHr: false,            // "hr" role — same reach and view/export-only restriction as isPayroll above (see isPayrollLike); the
+                            // one place HR differs from Payroll is Guard Bank, which lives entirely outside this file
+    isPayrollLike: false,   // isPayroll || isHr — the actual condition almost everything below should check; kept as its own
+                            // flag rather than repeating "isPayroll || isHr" everywhere, and distinct from isPayroll itself so
+                            // the couple of spots that display the literal word "Payroll" can still tell the two apart
     isDeveloper: false,     // "developer" role — full access like isPrivileged, but forces isTestData:true on everything it creates (see initDb())
-    canEdit: true,          // false for payroll — drives the read-only lockdown
+    canEdit: true,          // false for payroll/HR — drives the read-only lockdown
     branchFilterValue: "", // currently selected branch in the sitebar's branch filter dropdown (Admin/HQ/Payroll only — "" = all)
     showArchivedSites: false, // "Show archived" checkbox in the sitebar (Admin/HQ/Payroll only) — a closed-out project's site is hidden from the Client Site dropdown by default, this brings it back on demand for historical records/payroll export
     // Mirrors the CRM's settings/app.testingModeEnabled doc (see src/services/settings.ts and
@@ -1519,7 +1524,7 @@
   }
   function openNewSiteModal(){
     const root = $("#modalRoot");
-    const showBranchPicker = state.isPrivileged && !state.isPayroll;
+    const showBranchPicker = state.isPrivileged && !state.isPayrollLike;
     root.innerHTML = `
       <div class="modalveil" id="modalVeil">
         <div class="modalcard">
@@ -1859,7 +1864,7 @@
   // navigation and the two Export to Excel buttons usable.
   const READONLY_EXEMPT_IDS = new Set(["prevMonth", "nextMonth", "prevMonthReport", "nextMonthReport", "exportExcelBtn", "exportTimeAttendanceBtn"]);
   function enforceReadonlyLockdown(){
-    if(!state.isPayroll) return;
+    if(!state.isPayrollLike) return;
     $$(".view input, .view select, .view textarea, .view button").forEach(el => {
       if(READONLY_EXEMPT_IDS.has(el.id) || el.classList.contains("vt")) return;
       el.disabled = true;
@@ -3113,7 +3118,7 @@
     // live recompute. Everyone else keeps seeing their own live refreshed figures regardless of
     // confirmation state, so they can check a number before (or after) confirming without it
     // silently swapping out from under them. See canConfirmCombinedHours()/monthConfirmed().
-    const incoming = state.isPayroll ? (monthConfirmed(monthState) ? monthState.confirmedIncoming : null) : liveIncoming;
+    const incoming = state.isPayrollLike ? (monthConfirmed(monthState) ? monthState.confirmedIncoming : null) : liveIncoming;
     const body = $("#combinedReportBody");
     if(!body) return;
 
@@ -3127,7 +3132,7 @@
     const h = v => n(v).toFixed(1);
 
     if(!incoming){
-      body.innerHTML = state.isPayroll
+      body.innerHTML = state.isPayrollLike
         ? `<tr><td colspan="13" class="empty">Waiting for the branch manager to confirm this month's combined hours.</td></tr>`
         : `<tr><td colspan="13" class="empty">Click "Refresh combined hours" to load this.</td></tr>`;
       return;
@@ -3194,16 +3199,16 @@
     const confirmed = monthConfirmed(ms);
     const canConfirm = canConfirmCombinedHours();
 
-    confirmBtn.hidden = state.isPayroll || !canConfirm || !!confirmed;
+    confirmBtn.hidden = state.isPayrollLike || !canConfirm || !!confirmed;
     confirmBtn.disabled = !liveIncoming;
-    unconfirmBtn.hidden = state.isPayroll || !canConfirm || !confirmed;
-    if(noteEl) noteEl.hidden = state.isPayroll;
+    unconfirmBtn.hidden = state.isPayrollLike || !canConfirm || !confirmed;
+    if(noteEl) noteEl.hidden = state.isPayrollLike;
 
     if(confirmed){
       statusEl.hidden = false;
       statusEl.textContent = `Confirmed by ${confirmed.byName || "someone"} on ${formatConfirmedAt(confirmed.at)}`
-        + (state.isPayroll ? "." : " — Payroll can now view and export this.");
-    } else if(state.isPayroll){
+        + (state.isPayrollLike ? "." : " — Payroll/HR can now view and export this.");
+    } else if(state.isPayrollLike){
       statusEl.hidden = false;
       statusEl.textContent = "Waiting for the branch manager to confirm this month's combined hours.";
     } else {
@@ -4915,7 +4920,7 @@
     // A privileged user (admin, or HQ department) can pick any branch, or leave it
     // unassigned; anyone else can only ever create a site for their own branch — mirrored
     // and enforced server-side in firestore.rules' canReachSite().
-    const assignedBranch = (state.isPrivileged && !state.isPayroll) ? (branch || null) : (state.myDepartment || null);
+    const assignedBranch = (state.isPrivileged && !state.isPayrollLike) ? (branch || null) : (state.myDepartment || null);
     const cfg = { id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false, archivedAt: null, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, isTestData: !!state.isDeveloper, createdAt: nowIso(), updatedAt: nowIso() };
     state.sites.push({id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false});
     state.configsCache[id] = cfg;
@@ -4960,7 +4965,7 @@
     if(!sel) return;
     applyRoleUiLockdown();
     let visibleSites = state.sites;
-    if((state.isPayroll || state.isPrivileged) && state.branchFilterValue){
+    if((state.isPayrollLike || state.isPrivileged) && state.branchFilterValue){
       visibleSites = state.branchFilterValue === "__unassigned__"
         ? state.sites.filter(s => !s.branch)
         : state.sites.filter(s => s.branch === state.branchFilterValue);
@@ -4970,7 +4975,7 @@
     // it always has been for non-privileged roles. Admin/HQ/Payroll can still reach it for
     // historical records or payroll export, via the "Show archived" checkbox next to this
     // dropdown (hidden entirely for everyone else, since they'd have nothing to show).
-    const canSeeArchived = (state.isPrivileged && !state.isPayroll) || state.isPayroll;
+    const canSeeArchived = (state.isPrivileged && !state.isPayrollLike) || state.isPayrollLike;
     const showArchivedLabel = $("#showArchivedLabel");
     if(showArchivedLabel) showArchivedLabel.hidden = !canSeeArchived;
     if(!canSeeArchived || !state.showArchivedSites) visibleSites = visibleSites.filter(s => !s.archived);
@@ -5014,7 +5019,8 @@
   function updateBrandSubtitle(){
     const el = $("#brandSubtitle");
     if(!el) return;
-    if(state.isPayroll) el.textContent = "Payroll — all branches, view & export only";
+    if(state.isHr) el.textContent = "HR — all branches, view & export only";
+    else if(state.isPayroll) el.textContent = "Payroll — all branches, view & export only";
     else if(state.isPrivileged) el.textContent = "Master Schedule";
     else if(state.myDepartment) el.textContent = `${state.myDepartment} — security guard scheduling`;
   }
@@ -5032,7 +5038,7 @@
     const newBtn = $("#newSiteBtn");
     const renameBtn = $("#renameSiteBtn");
     if(!filterSel) return;
-    if(state.isPayroll || state.isPrivileged){
+    if(state.isPayrollLike || state.isPrivileged){
       if(filterLabel) filterLabel.hidden = false;
       filterSel.hidden = false;
       filterSel.innerHTML = `<option value="">All branches</option>` +
@@ -5071,7 +5077,7 @@
   function renderSiteBranchControl(){
     const badge = $("#siteBranchBadge");
     if(!badge) return;
-    if(state.isPayroll || state.isPrivileged){
+    if(state.isPayrollLike || state.isPrivileged){
       badge.hidden = true;
       return;
     }
@@ -5491,7 +5497,12 @@
         }
         state.myUid = authUser.uid;
       }
-      state.isPrivileged = state.myRole === "admin" || state.myRole === "developer" || state.myDepartment === "HQ";
+      // "ceo"/"director"/"tenderController" are deliberately just full HQ Admin access under a
+      // different job title (see the Role doc comment in src/types.ts and isAdmin() in
+      // firestore.rules) — treated as privileged here for the same reason "admin"/"developer" are.
+      state.isPrivileged = state.myRole === "admin" || state.myRole === "developer"
+        || state.myRole === "ceo" || state.myRole === "director" || state.myRole === "tenderController"
+        || state.myDepartment === "HQ";
       // Dedicated testing account (see Role's doc comment in src/types.ts) — full access like
       // admin/HQ (already covered by isPrivileged above), but every site/guard it creates here
       // gets auto-tagged isTestData:true regardless of state.testingModeEnabled, so testing under
@@ -5506,11 +5517,16 @@
       // disables every input/select/button inside the four tab views except navigation and the
       // two Export to Excel buttons, which are explicitly exempted there.
       state.isPayroll = state.myRole === "payroll";
-      state.canEdit = !state.isPayroll;
-      document.body.classList.toggle("readonly-mode", state.isPayroll);
+      // "HR" is the same view/export-only, every-branch Duty Roster role as Payroll — the only
+      // place the two differ is Guard Bank (a separate React page, gated in firestore.rules/
+      // ProtectedRoute.tsx instead), which this console has nothing to do with.
+      state.isHr = state.myRole === "hr";
+      state.isPayrollLike = state.isPayroll || state.isHr;
+      state.canEdit = !state.isPayrollLike;
+      document.body.classList.toggle("readonly-mode", state.isPayrollLike);
       updateBrandSubtitle();
       applyRoleUiLockdown();
-      if(state.isPayroll) render();
+      if(state.isPayrollLike) render();
 
       const branchesSnap = await dbHandle.collection("branches").get().catch(() => ({docs:[]}));
       state.branchOptions = branchesSnap.docs.map(d => (d.data()||{}).name).filter(Boolean);
@@ -5524,7 +5540,7 @@
       // (No orderBy here on purpose — combining it with a where() on a different field would
       // need a composite index; the merged list is sorted client-side below instead.)
       function reachableSiteQueries(){
-        if(state.isPrivileged || state.isPayroll) return [dbHandle.collection("sites")];
+        if(state.isPrivileged || state.isPayrollLike) return [dbHandle.collection("sites")];
         return [
           dbHandle.collection("sites").where("branch", "==", state.myDepartment || null),
           dbHandle.collection("sites").where("branch", "==", null)
