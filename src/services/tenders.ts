@@ -442,6 +442,7 @@ export async function updateActiveProjectDetails(
     contactPerson: string;
     guardsDeployed: number;
     tenderDocNumber: string;
+    scopeOfWork: string;
     clientAlias: string;
     clientAddress: string;
     guardRateMode: 'same' | 'multiple';

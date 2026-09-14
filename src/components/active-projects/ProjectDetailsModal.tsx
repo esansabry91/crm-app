@@ -47,6 +47,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   const [contactPerson, setContactPerson] = useState('');
   const [guardsDeployed, setGuardsDeployed] = useState('');
   const [tenderDocNumber, setTenderDocNumber] = useState('');
+  const [scopeOfWork, setScopeOfWork] = useState('');
   const [clientAlias, setClientAlias] = useState('');
   const [clientAddress, setClientAddress] = useState('');
   const [rateMode, setRateMode] = useState<'same' | 'multiple'>('same');
@@ -73,6 +74,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     setContactPerson(tender.contactPerson || '');
     setGuardsDeployed(tender.guardsDeployed != null ? String(tender.guardsDeployed) : '');
     setTenderDocNumber(tender.tenderDocNumber || '');
+    setScopeOfWork(tender.scopeOfWork || '');
     setDocInfo(
       tender.tenderDocumentName && tender.tenderDocumentUploadedAt
         ? {
@@ -212,6 +214,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
         postcode: postcode.trim(),
         contactPerson: contactPerson.trim(),
         tenderDocNumber: tenderDocNumber.trim(),
+        scopeOfWork: scopeOfWork.trim(),
         clientAlias: clientAlias.trim(),
         clientAddress: clientAddress.trim(),
         ...(guards !== undefined ? { guardsDeployed: guards } : {}),
@@ -311,6 +314,16 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
               onChange={(e) => setTenderDocNumber(e.target.value)}
               className="input"
               placeholder="e.g. IPSB/T-2026/014"
+            />
+          </Field>
+
+          <Field label="Scope of Work">
+            <textarea
+              value={scopeOfWork}
+              onChange={(e) => setScopeOfWork(e.target.value)}
+              className="input"
+              rows={3}
+              placeholder="Summarize what the contract covers — posts, shifts, duties, etc."
             />
           </Field>
 

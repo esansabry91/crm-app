@@ -206,6 +206,11 @@ export interface Tender {
   contactPerson?: string; // on-site or client contact (free text: name, phone, email, etc.)
   guardsDeployed?: number; // number of security guards currently deployed
   tenderDocNumber?: string; // official tender submission document number/ID
+  /** Free-text summary of what the contract actually covers — e.g. which posts/shifts/duties are
+   *  in scope — for anyone picking up this project to see at a glance without digging through the
+   *  Tender Document PDF. Same widened Active Project detail fields as tenderDocNumber above (see
+   *  firestore.rules), so branch-mates/HQ can fill it in without being the owner. */
+  scopeOfWork?: string;
   /**
    * The uploaded tender document PDF (see ProjectDetailsModal's upload widget), stored in
    * Backblaze B2 — never a public URL. `tenderDocumentKey`/`tenderDocumentFileId` are B2's own

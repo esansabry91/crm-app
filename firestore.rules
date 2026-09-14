@@ -214,7 +214,7 @@ service cloud.firestore {
             resource.data.stage == 'Won'
             && (resource.data.activeBranch == myDepartment() || myDepartment() == 'HQ')
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['location', 'state', 'city', 'postcode', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'tenderDocumentKey', 'tenderDocumentFileId', 'tenderDocumentName', 'tenderDocumentSize', 'tenderDocumentUploadedAt', 'clientAlias', 'clientAddress', 'guardRateMode', 'guardRate', 'guardRatePositions', 'closedOut', 'closedOutAt', 'contractEnd', 'tenderValue', 'updatedAt'])
+                 .hasOnly(['location', 'state', 'city', 'postcode', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'scopeOfWork', 'tenderDocumentKey', 'tenderDocumentFileId', 'tenderDocumentName', 'tenderDocumentSize', 'tenderDocumentUploadedAt', 'clientAlias', 'clientAddress', 'guardRateMode', 'guardRate', 'guardRatePositions', 'closedOut', 'closedOutAt', 'contractEnd', 'tenderValue', 'updatedAt'])
           )
           // Accepting a pending reassignment (see Tender.pendingReassignment and
           // acceptReassignment() in services/tenders.ts) — only the Branch Manager (not

@@ -465,7 +465,7 @@ export default function ActiveProjectsPage() {
                 </thead>
                 <tbody>
                   {sorted.map((t) => {
-                    const hasDetails = t.location || t.contactPerson || t.guardsDeployed != null || t.tenderDocNumber;
+                    const hasDetails = t.location || t.contactPerson || t.guardsDeployed != null || t.tenderDocNumber || t.scopeOfWork;
                     return (
                       <tr key={t.id} className="border-b border-slate-50 last:border-0">
                         <td className="px-4 py-3">
