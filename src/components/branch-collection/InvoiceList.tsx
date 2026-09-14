@@ -74,25 +74,47 @@ function lastPayment(inv: Invoice): { amount: number; date: string } | null {
   return null;
 }
 
+/**
+ * Records ONE new installment against an invoice, rather than exposing the invoice's running
+ * `amountPaid` total for direct editing. That older design pre-filled the amount field with the
+ * current cumulative total and left it up to the person to remember to type the NEW cumulative
+ * figure — on a second or later payment they'd naturally type just the amount being paid *right
+ * now* instead, silently overwriting (rather than adding to) what was already recorded and
+ * corrupting the balance. Here the field is always "how much is being paid now" (defaults empty,
+ * capped at the remaining balance), the new cumulative total is computed for the caller, and
+ * every past installment is listed above it (from `paymentLog` — see InvoicePayment's doc
+ * comment in types.ts) so the running total is always visibly the sum of real, individual lines
+ * rather than a figure that has to be trusted blind.
+ */
 function StatusEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
   const { profile } = useAuth();
-  const [amountPaid, setAmountPaid] = useState(invoice.amountPaid);
+  const balance = roundMoney(Math.max(0, invoice.total - invoice.amountPaid));
+  const [addAmount, setAddAmount] = useState(0);
   const [paidDate, setPaidDate] = useState(invoice.paidDate || '');
   const [busy, setBusy] = useState(false);
 
-  // Status is never picked independently of the amount — it's always derived from amountPaid vs
-  // the invoice's total (see deriveInvoiceStatus), and a payment can never be typed in above the
-  // total in the first place (see the onChange below, which clamps as you type), so the two can
-  // never end up disagreeing with each other the way a manually-picked status used to allow.
-  const previewStatus = deriveInvoiceStatus(amountPaid, invoice.total);
+  const clampedAdd = Math.max(0, Math.min(addAmount, balance));
+  // The invoice's new running total — never typed in directly, always derived as
+  // "what was already paid" + "this installment" so the two can never drift apart.
+  const newAmountPaid = clampAmountPaid(invoice.amountPaid + clampedAdd, invoice.total);
+  const previewStatus = deriveInvoiceStatus(newAmountPaid, invoice.total);
+  // Legacy invoices recorded before paymentLog existed have no individual lines to show —
+  // fall back to one synthetic line from the plain amountPaid/paidDate fields (same fallback
+  // lastPayment() above uses) so the history never looks empty when money has, in fact, been paid.
+  const history: { amount: number; date: string; recordedByName?: string }[] | null =
+    invoice.paymentLog && invoice.paymentLog.length > 0
+      ? invoice.paymentLog
+      : invoice.amountPaid > 0
+        ? [{ amount: invoice.amountPaid, date: invoice.paidDate || '', recordedByName: undefined }]
+        : null;
 
   async function save() {
-    if (!profile) return;
+    if (!profile || clampedAdd <= 0) return;
     setBusy(true);
     try {
       await updateInvoiceStatus(
         invoice.id,
-        { amountPaid, total: invoice.total, paidDate: paidDate || undefined, previousAmountPaid: invoice.amountPaid },
+        { amountPaid: newAmountPaid, total: invoice.total, paidDate: paidDate || undefined, previousAmountPaid: invoice.amountPaid },
         { uid: profile.uid, name: profile.name }
       );
       onClose();
@@ -102,30 +124,62 @@ function StatusEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => v
   }
 
   return (
-    <div className="border-t border-slate-100 pt-3 mt-3 flex flex-wrap items-center gap-2">
-      <span className={`px-2.5 py-1.5 text-xs font-medium rounded-lg ${STATUS_COLOR[previewStatus]}`}>
-        {STATUS_LABEL[previewStatus]}
-      </span>
-      <input
-        type="number"
-        value={amountPaid === 0 ? '' : amountPaid}
-        onFocus={(e) => e.target.select()}
-        onChange={(e) => {
-          const raw = e.target.value.replace(/^0+(?=\d)/, '');
-          const parsed = raw === '' ? 0 : Number(raw) || 0;
-          setAmountPaid(clampAmountPaid(parsed, invoice.total));
-        }}
-        max={invoice.total}
-        className="input w-32"
-        placeholder="Amount paid (RM)"
-      />
-      <input type="date" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} className="input" />
-      <button onClick={save} disabled={busy} className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg">
-        {busy ? 'Saving…' : 'Save'}
-      </button>
-      <button onClick={onClose} className="text-xs text-slate-500 hover:underline">
-        Cancel
-      </button>
+    <div className="border-t border-slate-100 pt-3 mt-3">
+      {history && (
+        <div className="mb-2.5 space-y-0.5">
+          <p className="text-xs font-medium text-slate-500">Payment history</p>
+          {history.map((p, i) => (
+            <p key={i} className="text-xs text-slate-500">
+              RM {p.amount.toFixed(2)}
+              {p.date && ` on ${formatShortDate(p.date)}`}
+              {p.recordedByName && ` — recorded by ${p.recordedByName}`}
+            </p>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`px-2.5 py-1.5 text-xs font-medium rounded-lg ${STATUS_COLOR[previewStatus]}`}>
+          {STATUS_LABEL[previewStatus]}
+        </span>
+        {balance <= 0 ? (
+          <span className="text-xs text-slate-400">Fully paid — no balance left to record.</span>
+        ) : (
+          <div>
+            <label className="text-xs text-slate-500 block">Add payment (RM) — balance RM {balance.toFixed(2)}</label>
+            <input
+              type="number"
+              value={addAmount === 0 ? '' : addAmount}
+              onFocus={(e) => e.target.select()}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                const parsed = raw === '' ? 0 : Number(raw) || 0;
+                setAddAmount(Math.max(0, Math.min(parsed, balance)));
+              }}
+              max={balance}
+              className="input w-32"
+              placeholder="0.00"
+            />
+          </div>
+        )}
+        <input type="date" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} className="input" />
+        {balance > 0 && (
+          <button
+            onClick={save}
+            disabled={busy || clampedAdd <= 0}
+            className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg"
+          >
+            {busy ? 'Saving…' : 'Add payment'}
+          </button>
+        )}
+        <button onClick={onClose} className="text-xs text-slate-500 hover:underline">
+          Cancel
+        </button>
+      </div>
+      {clampedAdd > 0 && (
+        <p className="text-xs text-slate-400 mt-1">
+          New balance after this payment: RM {(balance - clampedAdd).toFixed(2)}
+        </p>
+      )}
     </div>
   );
 }
@@ -289,8 +343,14 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
           placeholder="Client address"
           className="input sm:col-span-2"
         />
-        <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className="input" />
-        <input value={contractRef} onChange={(e) => setContractRef(e.target.value)} placeholder="Contract ref" className="input" />
+        <div>
+          <label className="text-xs text-slate-500">Invoice date</label>
+          <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className="input w-full" />
+        </div>
+        <div>
+          <label className="text-xs text-slate-500">Contract ref (from Tender Document No.)</label>
+          <input value={contractRef} onChange={(e) => setContractRef(e.target.value)} placeholder="Contract ref" className="input w-full" />
+        </div>
         <input value={quotationNo} onChange={(e) => setQuotationNo(e.target.value)} placeholder="Quotation no." className="input" />
         <div className="flex items-center gap-1.5">
           <label className="text-xs text-slate-500 whitespace-nowrap">Payment terms (days)</label>
