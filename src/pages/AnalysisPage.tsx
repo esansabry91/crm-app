@@ -69,7 +69,17 @@ export default function AnalysisPage() {
 
   const summary = useMemo(() => pipelineSummary(filtered), [filtered]);
   const stages = useMemo(() => stageBreakdown(filtered), [filtered]);
-  const trend = useMemo(() => pipelineValueTrend(entries), [entries]);
+  // The trend/bridge charts replay each tender's full history log, which has no brand/department
+  // of its own (see TenderHistoryEntry) — so scope it to the history of exactly the tenders
+  // `filtered` already kept (matching those tenders' CURRENT brand/department, same as every
+  // other filtered view on this page) rather than replaying the whole company's history
+  // regardless of the brand/department filter above.
+  const filteredIds = useMemo(() => new Set(filtered.map((t) => t.id)), [filtered]);
+  const filteredEntries = useMemo(
+    () => entries.filter((e) => filteredIds.has(e.tenderId)),
+    [entries, filteredIds]
+  );
+  const trend = useMemo(() => pipelineValueTrend(filteredEntries), [filteredEntries]);
   const brandRows = useMemo(() => brandBreakdown(filtered), [filtered]);
   const staffRows = useMemo(() => staffPerformance(filtered), [filtered]);
 
@@ -89,13 +99,17 @@ export default function AnalysisPage() {
     [filtered, raceDepartments, raceMetric, raceTimeView]
   );
 
-  const bridgePeriods = useMemo(() => pipelineBridgePeriods(entries, bridgeTimeView), [entries, bridgeTimeView]);
+  const bridgePeriods = useMemo(
+    () => pipelineBridgePeriods(filteredEntries, bridgeTimeView),
+    [filteredEntries, bridgeTimeView]
+  );
   const bridgeFoundIndex = bridgePeriodKey ? bridgePeriods.findIndex((p) => p.key === bridgePeriodKey) : -1;
   const bridgeIndex = bridgeFoundIndex >= 0 ? bridgeFoundIndex : bridgePeriods.length - 1;
   const currentBridgePeriod = bridgePeriods[bridgeIndex];
   const bridgeBars = useMemo(
-    () => (currentBridgePeriod ? pipelineValueBridge(entries, bridgeTimeView, currentBridgePeriod.key) : []),
-    [entries, bridgeTimeView, currentBridgePeriod]
+    () =>
+      currentBridgePeriod ? pipelineValueBridge(filteredEntries, bridgeTimeView, currentBridgePeriod.key) : [],
+    [filteredEntries, bridgeTimeView, currentBridgePeriod]
   );
 
   if (!profile) return null;
