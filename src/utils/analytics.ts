@@ -497,6 +497,18 @@ export function activeProjectBridgePeriods(tenders: Tender[], view: BridgeTimeVi
   return periodRangeOptions(view, keys);
 }
 
+/** Best-effort millis for a history entry's server-assigned `createdAt` (a Firestore Timestamp
+ *  once the write is acknowledged) — used only as a tie-breaker in activeProjectValueBridge()'s
+ *  history sort below, for two entries that land on the exact same `timestamp`. `createdAt`
+ *  isn't declared on TenderHistoryEntry itself (it's a Firestore-only bookkeeping field, not
+ *  part of the app's own data model), so this reads it duck-typed rather than widening that
+ *  interface. Returns 0 for a still-pending local write (serverTimestamp() resolves to null
+ *  until the server acks it) — a transient state that self-corrects on the next snapshot. */
+function createdAtMillis(e: TenderHistoryEntry): number {
+  const raw = (e as unknown as { createdAt?: { toMillis?: () => number } }).createdAt;
+  return typeof raw?.toMillis === 'function' ? raw.toMillis() : 0;
+}
+
 /**
  * Builds the Active Project Value bridge for one period (month, quarter, year, or year-to-date):
  * start-of-period active value, plus contracts that newly went active during the period (by
@@ -538,7 +550,17 @@ export function activeProjectValueBridge(
     if (!entriesByTender.has(e.tenderId)) entriesByTender.set(e.tenderId, []);
     entriesByTender.get(e.tenderId)!.push(e);
   }
-  for (const list of entriesByTender.values()) list.sort((a, b) => a.timestamp - b.timestamp);
+  // Sort by `timestamp` first (closedDateToMillis() in services/tenders.ts already makes
+  // same-day actions distinct, so this alone resolves the common case), then by each entry's own
+  // server-assigned `createdAt` to break any remaining tie — two entries genuinely backdated to
+  // the SAME past date — using their true write order instead of Firestore's arbitrary (not
+  // read-order-guaranteed) snapshot order. Without this, a stop that was actually written AFTER
+  // its item's add could replay BEFORE it, misattributing which bar (Equipment Added vs
+  // Equipment Stopped, say) absorbs how much of the change — the period's END total still comes
+  // out right either way (it's a telescoping sum), but the split across bars would be wrong.
+  for (const list of entriesByTender.values()) {
+    list.sort((a, b) => a.timestamp - b.timestamp || createdAtMillis(a) - createdAtMillis(b));
+  }
 
   /** What a tender's value actually was at a given instant, per its own history log. Falls back
    *  to its earliest known entry for an instant before any history exists (the closest available

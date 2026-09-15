@@ -12,7 +12,7 @@ import {
   updateActiveProjectDetails,
   wholeMonthsInclusive,
 } from '../../services/tenders';
-import { formatDate } from '../../utils/format';
+import { formatDate, formatDateTime } from '../../utils/format';
 import {
   deleteTenderDocument,
   openTenderDocument,
@@ -642,6 +642,14 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                   + Add position
                 </button>
               </div>
+            )}
+
+            {tender.lastGuardRateChange && (
+              <p className="text-[11px] text-slate-400 mt-2">
+                Rate last changed from RM {tender.lastGuardRateChange.fromRate.toFixed(2)} to RM{' '}
+                {tender.lastGuardRateChange.toRate.toFixed(2)} on {formatDateTime(tender.lastGuardRateChange.changedAt)} by{' '}
+                {tender.lastGuardRateChange.changedByName}.
+              </p>
             )}
 
             {(() => {

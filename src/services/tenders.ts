@@ -83,8 +83,20 @@ async function addHistoryEntry(
   });
 }
 
-/** yyyy-mm-dd -> epoch millis at local noon (avoids timezone edge cases shifting it to the wrong day). */
+/**
+ * yyyy-mm-dd -> epoch millis for a history entry's timestamp. Returns the exact current instant
+ * when `closedDate` IS today — so multiple backdated-but-actually-live actions taken today on the
+ * same tender (e.g. declare equipment, then stop it, then change Guard Rate, all in one sitting)
+ * get distinct, correctly-ordered timestamps instead of colliding on an identical value. Falls
+ * back to local noon on that date for a genuinely past (or future) date, where there's no real
+ * "time of day" to recover anyway (also avoids timezone edge cases shifting it to the wrong day).
+ * See activeProjectValueBridge()'s history-replay sort in utils/analytics.ts, which additionally
+ * breaks any remaining tie (two genuinely-backdated entries landing on the same past date) using
+ * each entry's own `createdAt` — this only handles the much more common same-day case.
+ */
 function closedDateToMillis(closedDate: string): number {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  if (closedDate === todayStr) return Date.now();
   return new Date(`${closedDate}T12:00:00`).getTime();
 }
 
@@ -556,8 +568,9 @@ export async function applyGuardRateChange(
     ? effectiveGuardRate(tender.guardRateMode, tender.guardRate, tender.guardRatePositions)
     : newEffective;
 
+  const isRealChange = hadPriorRate && newEffective !== oldEffective;
   let valueDelta = 0;
-  if (hadPriorRate && newEffective !== oldEffective) {
+  if (isRealChange) {
     const months = wholeMonthsInclusive(new Date().toISOString().slice(0, 10), tender.contractEnd);
     valueDelta = (newEffective - oldEffective) * STANDARD_MONTHLY_HOURS_PER_GUARD * input.guardsDeployed * months;
   }
@@ -569,6 +582,12 @@ export async function applyGuardRateChange(
     guardRatePositions: input.guardRateMode === 'multiple' ? input.guardRatePositions ?? [] : [],
     tenderValue: newTenderValue,
     updatedAt: Date.now(),
+    // Shown as an inline note in Project Details (see lastGuardRateChange's doc comment in
+    // types.ts) — set on any real rate change, even the rare case where valueDelta itself works
+    // out to 0 (e.g. guardsDeployed is 0), since the rate itself still genuinely changed.
+    ...(isRealChange
+      ? { lastGuardRateChange: { fromRate: oldEffective, toRate: newEffective, changedAt: Date.now(), changedByName: actor.name } }
+      : {}),
   });
 
   if (valueDelta !== 0) {

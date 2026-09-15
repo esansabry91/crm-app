@@ -359,6 +359,15 @@ export interface Tender {
   guardRate?: number; // RM per man-hour, used when guardRateMode is 'same'
   guardRatePositions?: { name: string; rate: number }[]; // RM per man-hour per named position, used when guardRateMode is 'multiple'
   /**
+   * Snapshot of the most recent Guard Rate change (see applyGuardRateChange() in
+   * services/tenders.ts) — shown as an inline note in Project Details ("Rate last changed from
+   * RM X to RM Y on ...") so that's visible without a full history/activity feed. Absent until
+   * the first rate CHANGE after this field was introduced (a first-time rate declaration, with
+   * no prior rate, doesn't set it — that's not a change). Overwritten by each new change; only
+   * the most recent one is kept.
+   */
+  lastGuardRateChange?: { fromRate: number; toRate: number; changedAt: number; changedByName: string };
+  /**
    * Marks a Won tender's project as finished/closed out — it stops appearing in Active Projects
    * (the list, its value totals, and the By Brand / By Branch breakdowns) and shows up in Past
    * Projects instead. Deliberately does NOT touch `stage` or `tenderValue`, and closing out never
