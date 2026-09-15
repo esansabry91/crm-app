@@ -45,11 +45,14 @@ export default function PipelinePage() {
   // commits (see the onDropStage handler below and SubmissionDateModal.tsx).
   const [pendingSubmission, setPendingSubmission] = useState<Tender | null>(null);
   const [headerExpanded, setHeaderExpanded] = useState(true);
-  // Which reminder tile's "Go to list" was clicked, if any — narrows the board down to just the
+  // Which header tile's "Go to list" was clicked, if any — narrows the board down to just the
   // matching cards (still in their real columns) rather than opening a separate list view, since
   // Pipeline has no flat list UI of its own. 'none' shows everything, same as before these tiles
-  // existed.
-  const [reminderFilter, setReminderFilter] = useState<'none' | 'contractEnding' | 'submissionExpiring'>('none');
+  // existed. 'private'/'government' mirror privateTendersCount/governmentTendersCount below
+  // (baseFiltered, every stage) rather than the two reminder tiles' openFiltered scope.
+  const [reminderFilter, setReminderFilter] = useState<
+    'none' | 'contractEnding' | 'submissionExpiring' | 'private' | 'government'
+  >('none');
 
   const staffOptions = useMemo(
     () => (isAdminRole(profile?.role) ? users.filter((u) => u.active !== false) : profile ? [profile] : []),
@@ -114,6 +117,8 @@ export default function PipelinePage() {
 
   const filtered = useMemo(() => {
     if (reminderFilter === 'none') return baseFiltered;
+    if (reminderFilter === 'private') return baseFiltered.filter((t) => t.category === 'Private');
+    if (reminderFilter === 'government') return baseFiltered.filter((t) => t.category === 'Government');
     const ids = new Set((reminderFilter === 'contractEnding' ? contractEndingSoon : submissionExpiringSoon).map((t) => t.id));
     return baseFiltered.filter((t) => ids.has(t.id));
   }, [baseFiltered, reminderFilter, contractEndingSoon, submissionExpiringSoon]);
@@ -222,8 +227,26 @@ export default function PipelinePage() {
                 disabled: submissionExpiringSoon.length === 0,
               }}
             />
-            <StatCard label="Private tenders" value={String(privateTendersCount)} accent="#7c3aed" />
-            <StatCard label="Government tenders" value={String(governmentTendersCount)} accent="#0f766e" />
+            <StatCard
+              label="Private tenders"
+              value={String(privateTendersCount)}
+              accent="#7c3aed"
+              action={{
+                label: 'Go to list',
+                onClick: () => setReminderFilter('private'),
+                disabled: privateTendersCount === 0,
+              }}
+            />
+            <StatCard
+              label="Government tenders"
+              value={String(governmentTendersCount)}
+              accent="#0f766e"
+              action={{
+                label: 'Go to list',
+                onClick: () => setReminderFilter('government'),
+                disabled: governmentTendersCount === 0,
+              }}
+            />
           </div>
         )}
       </header>
@@ -234,7 +257,13 @@ export default function PipelinePage() {
             <span>
               Showing only tenders matching{' '}
               <span className="font-medium">
-                {reminderFilter === 'contractEnding' ? 'Contract ending soon' : 'Submission expiring soon'}
+                {reminderFilter === 'contractEnding'
+                  ? 'Contract ending soon'
+                  : reminderFilter === 'submissionExpiring'
+                  ? 'Submission expiring soon'
+                  : reminderFilter === 'private'
+                  ? 'Private tenders'
+                  : 'Government tenders'}
               </span>{' '}
               ({filtered.length})
             </span>
