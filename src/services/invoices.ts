@@ -104,6 +104,42 @@ export function deriveRateCategoriesFromGuardRate(t: {
   return null;
 }
 
+/** One site's share of a combined invoice's revenue — see getInvoiceSiteAllocations() below. */
+export interface InvoiceSiteAllocation {
+  siteId: string | null;
+  siteName: string;
+  amount: number;
+}
+
+/**
+ * Splits one invoice's `total` (SST included) across every site it billed — see combined
+ * invoicing (Invoice.additionalSiteBills in types.ts) — proportional to each site's own share of
+ * the invoice's pre-SST subTotal, so the allocations for one invoice always sum back to exactly
+ * its own `total` (SST is a flow-through tax, not itself tied to any one site, so it's spread the
+ * same way the underlying revenue is; each site's own pre-SST subTotal is exact — see
+ * InvoiceSiteBill's doc comment — only the SST slice is prorated). A normal single-site invoice
+ * (no additionalSiteBills, still the common case) allocates its whole total to its one site,
+ * unchanged from before this feature existed. Used by the Revenue tab's per-site breakdown.
+ */
+export function getInvoiceSiteAllocations(inv: Invoice): InvoiceSiteAllocation[] {
+  const additional = inv.additionalSiteBills || [];
+  if (additional.length === 0) {
+    return [{ siteId: inv.siteId, siteName: inv.siteName, amount: inv.total }];
+  }
+  if (inv.subTotal === 0) {
+    // Nothing to prorate by (a zero-value invoice, or a data anomaly) — attribute the whole
+    // (zero) total to the primary site rather than dividing by zero.
+    return [{ siteId: inv.siteId, siteName: inv.siteName, amount: inv.total }];
+  }
+  const additionalSubTotal = additional.reduce((sum, b) => sum + b.subTotal, 0);
+  const primarySubTotal = inv.subTotal - additionalSubTotal;
+  const bills = [
+    { siteId: inv.siteId, siteName: inv.siteName, subTotal: primarySubTotal },
+    ...additional.map((b) => ({ siteId: b.siteId, siteName: b.siteName, subTotal: b.subTotal })),
+  ];
+  return bills.map((b) => ({ siteId: b.siteId, siteName: b.siteName, amount: (b.subTotal / inv.subTotal) * inv.total }));
+}
+
 /**
  * Invoice numbers auto-generate as CODE/CODE/CODE/YEAR/RUNNING — e.g. "PZ/KV2/MDEC/2026/05" —
  * from three short codes (Brand.shortCode, Branch.shortCode, Tender.clientAlias), the invoice's

@@ -4,6 +4,7 @@ import {
   backfillInvoiceBranches,
   diagnoseInvoiceBranches,
   backfillInvoiceStatuses,
+  getInvoiceSiteAllocations,
   type BackfillBranchResult,
   type InvoiceBranchDiagnostic,
   type BackfillStatusResult,
@@ -67,6 +68,19 @@ interface MonthRow {
    *  the same way a confirmed, genuinely-zero discrepancy would — this is what tells those two
    *  apart, since "Total discrepancy: RM 0" alone can't. */
   checkedCount: number;
+}
+
+interface SiteRow {
+  siteId: string | null;
+  siteName: string;
+  /** This site's share of revenue across every matching invoice — see
+   *  getInvoiceSiteAllocations()'s doc comment in services/invoices.ts for how a combined
+   *  invoice's total is split across the sites it billed. */
+  revenue: number;
+  /** How many invoices touched this site at all (fully, or as one site of a combined invoice) —
+   *  NOT how many invoices exist overall, so these counts across every site row can add up to
+   *  more than the total invoice count whenever combined invoicing is in play. */
+  invoiceCount: number;
 }
 
 /**
@@ -177,6 +191,29 @@ export default function RevenuePanel() {
       map.set(key, row);
     }
     return Array.from(map.values()).sort((a, b) => (a.monthKey < b.monthKey ? 1 : -1));
+  }, [filtered]);
+
+  // Revenue attributed to each site touched by the (brand/branch-filtered) invoices above —
+  // see getInvoiceSiteAllocations()'s doc comment for how a combined invoice's total is split
+  // across the sites it billed. All-time, same scope as the "Total revenue (all time)" stat card
+  // below, so the two stay mutually consistent (this table's revenue column sums to that figure).
+  const bySite = useMemo(() => {
+    const map = new Map<string, SiteRow>();
+    for (const inv of filtered) {
+      for (const alloc of getInvoiceSiteAllocations(inv)) {
+        const key = alloc.siteId || `name:${alloc.siteName || 'Unknown site'}`;
+        const row = map.get(key) || {
+          siteId: alloc.siteId,
+          siteName: alloc.siteName || 'Unknown site',
+          revenue: 0,
+          invoiceCount: 0,
+        };
+        row.revenue += alloc.amount;
+        row.invoiceCount += 1;
+        map.set(key, row);
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
   }, [filtered]);
 
   const thisMonthKey = currentMonthKey();
@@ -320,6 +357,48 @@ export default function RevenuePanel() {
                 </tr>
               ))}
               {byMonth.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="py-4 text-xs text-slate-400">
+                    No invoices match these filters yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <h3 className="text-sm font-semibold text-slate-800">Revenue by site</h3>
+        <p className="text-xs text-slate-400 mt-0.5 mb-3">
+          All time, same filters as above. A combined invoice (one invoice billing several sites of the same
+          project — see Branch Collection's Generate Invoice) has its total split across the sites it billed,
+          proportional to each site's own share of the invoice — so this column always adds up to the "Total
+          revenue (all time)" figure above, and a site's own Invoices count includes every combined invoice it
+          was part of, not just the ones billed to it alone.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
+                <th className="py-2 pr-4 font-medium">Site</th>
+                <th className="py-2 pr-4 font-medium text-right">Invoices</th>
+                <th className="py-2 pr-4 font-medium text-right">Revenue (RM)</th>
+                <th className="py-2 font-medium text-right">% of total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bySite.map((row) => (
+                <tr key={row.siteId || row.siteName} className="border-b border-slate-50 last:border-0">
+                  <td className="py-2 pr-4">{row.siteName}</td>
+                  <td className="py-2 pr-4 text-right">{row.invoiceCount}</td>
+                  <td className="py-2 pr-4 text-right font-medium">{row.revenue.toFixed(2)}</td>
+                  <td className="py-2 text-right text-slate-500">
+                    {overall.revenue > 0 ? `${((row.revenue / overall.revenue) * 100).toFixed(1)}%` : '—'}
+                  </td>
+                </tr>
+              ))}
+              {bySite.length === 0 && (
                 <tr>
                   <td colSpan={4} className="py-4 text-xs text-slate-400">
                     No invoices match these filters yet.
