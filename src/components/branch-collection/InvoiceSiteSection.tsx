@@ -78,30 +78,42 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
     setDiscrepancyAcknowledged(false);
     setRateCatalog(site.billingRates || []);
     setRateSourceIsOwnSite(false);
+    setTenderEquipment([]);
     if (!site.tenderId) {
-      setTenderEquipment([]);
       return;
     }
     const tenderId = site.tenderId;
     let cancelled = false;
-    Promise.all([getDoc(doc(db, 'tenders', tenderId)), getTenderSiteDetails(tenderId, site.id)])
-      .then(([snap, siteDetails]) => {
-        if (cancelled || !snap.exists()) return;
-        const t = snap.data() as {
-          guardRateMode?: 'same' | 'multiple';
-          guardRate?: number;
-          guardRatePositions?: { name: string; rate: number }[];
-          additionalEquipment?: TenderEquipmentItem[];
-        };
-        const rateSource = siteDetails ?? t;
+    // Independent reads, not Promise.all — a branch that manages this specific additional site
+    // (see the canReachTenderSiteDetails() firestore.rules clause for a site's own branch) can
+    // read this site's siteDetails doc without being able to read the parent tender doc at all
+    // (that stays gated to the tender's OWNING branch/admin/HQ/owner). Promise.all would reject
+    // the whole load — silently falling back to this site's plain Duty Roster billingRates —
+    // the instant the tender-doc half alone hit permission-denied, even though the siteDetails
+    // half (the one that actually matters for a non-owning branch) came back fine. Each read is
+    // caught on its own so one being unreachable never blocks the other.
+    const tenderPromise = getDoc(doc(db, 'tenders', tenderId)).catch(() => null);
+    const siteDetailsPromise = getTenderSiteDetails(tenderId, site.id).catch(() => null);
+    Promise.all([tenderPromise, siteDetailsPromise]).then(([snap, siteDetails]) => {
+      if (cancelled) return;
+      const t = snap && snap.exists()
+        ? (snap.data() as {
+            guardRateMode?: 'same' | 'multiple';
+            guardRate?: number;
+            guardRatePositions?: { name: string; rate: number }[];
+            additionalEquipment?: TenderEquipmentItem[];
+          })
+        : null;
+      const rateSource = siteDetails ?? t;
+      if (rateSource) {
         const derived = deriveRateCategoriesFromGuardRate(rateSource);
         if (derived) {
           setRateCatalog(derived);
           setRateSourceIsOwnSite(!!siteDetails);
         }
-        setTenderEquipment((siteDetails ? siteDetails.additionalEquipment : t.additionalEquipment) || []);
-      })
-      .catch(() => {});
+      }
+      setTenderEquipment((siteDetails ? siteDetails.additionalEquipment : t?.additionalEquipment) || []);
+    });
     return () => {
       cancelled = true;
     };

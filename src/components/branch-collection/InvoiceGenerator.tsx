@@ -184,52 +184,64 @@ export default function InvoiceGenerator() {
     if (site?.tenderId) {
       const tenderId = site.tenderId;
       const thisSiteId = site.id;
-      Promise.all([
-        getDoc(doc(db, 'tenders', tenderId)),
-        // This site's own tenders/{tenderId}/siteDetails/{siteId} doc, if it has one — see
-        // TenderSiteDetails in types.ts. Only an ADDITIONAL linked site (never the primary one)
-        // ever has one, and only once its Guard Rate/Equipment have actually been saved there.
-        getTenderSiteDetails(tenderId, thisSiteId),
-      ])
-        .then(([snap, siteDetails]) => {
-          if (!snap.exists()) return;
-          const t = snap.data() as {
-            brandId?: string;
-            clientName?: string;
-            clientAlias?: string;
-            clientAddress?: string;
-            tenderDocNumber?: string;
-            guardRateMode?: 'same' | 'multiple';
-            guardRate?: number;
-            guardRatePositions?: { name: string; rate: number }[];
-            additionalEquipment?: TenderEquipmentItem[];
-          };
-          if (t.brandId) setBrandId(t.brandId);
-          if (t.clientName) setClientName(t.clientName);
-          setClientAlias(t.clientAlias || '');
-          setClientAddress(t.clientAddress || '');
-          setContractRef(t.tenderDocNumber || '');
+      // Independent reads, not Promise.all — a branch that manages this specific site but
+      // doesn't own the parent tender (see ProjectDetailsModal.tsx's "Managing Branch" picker
+      // and firestore.rules' canAssignSiteBranchViaTender()) can read this site's own
+      // siteDetails doc without being able to read the parent tender doc at all. Promise.all
+      // would reject the whole load — leaving brand/client/rate/equipment completely blank —
+      // the instant the tender-doc half alone hit permission-denied, even though the siteDetails
+      // half (denormalized with exactly the fields a delegated branch needs to invoice its own
+      // site — see TenderSiteDetails' doc comment in types.ts) came back fine.
+      const tenderPromise = getDoc(doc(db, 'tenders', tenderId)).catch(() => null);
+      // This site's own tenders/{tenderId}/siteDetails/{siteId} doc, if it has one — see
+      // TenderSiteDetails in types.ts. Only an ADDITIONAL linked site (never the primary one)
+      // ever has one, and only once its Guard Rate/Equipment have actually been saved there.
+      const siteDetailsPromise = getTenderSiteDetails(tenderId, thisSiteId).catch(() => null);
+      Promise.all([tenderPromise, siteDetailsPromise]).then(([snap, siteDetails]) => {
+        const t = snap && snap.exists()
+          ? (snap.data() as {
+              brandId?: string;
+              clientName?: string;
+              clientAlias?: string;
+              clientAddress?: string;
+              tenderDocNumber?: string;
+              guardRateMode?: 'same' | 'multiple';
+              guardRate?: number;
+              guardRatePositions?: { name: string; rate: number }[];
+              additionalEquipment?: TenderEquipmentItem[];
+            })
+          : null;
+        if (!t && !siteDetails) return;
+        const brandId = t?.brandId || siteDetails?.brandId;
+        const clientNameValue = t?.clientName || siteDetails?.clientName;
+        if (brandId) setBrandId(brandId);
+        if (clientNameValue) setClientName(clientNameValue);
+        setClientAlias(t?.clientAlias || siteDetails?.clientAlias || '');
+        setClientAddress(t?.clientAddress || siteDetails?.clientAddress || '');
+        setContractRef(t?.tenderDocNumber || siteDetails?.tenderDocNumber || '');
 
-          // Billing rate categories mirror this project's own Guard Rate (Active Projects >
-          // Project Details) whenever one's been configured there, instead of being retyped a
-          // second time here — see deriveRateCategoriesFromGuardRate's doc comment. For a
-          // multi-site project, the tender's own top-level guardRateMode/guardRate/
-          // guardRatePositions/additionalEquipment belong to its PRIMARY site only (see
-          // TenderSiteDetails' doc comment in types.ts) — an ADDITIONAL site with its own saved
-          // siteDetails doc uses THAT instead, so its invoice reflects its own rate rather than
-          // silently inheriting the primary site's. Falls back to the tender's top-level fields
-          // (same as before this distinction existed) for the primary site itself, or for an
-          // additional site that hasn't had its own rate/equipment saved yet.
-          const rateSource = siteDetails ?? t;
+        // Billing rate categories mirror this project's own Guard Rate (Active Projects >
+        // Project Details) whenever one's been configured there, instead of being retyped a
+        // second time here — see deriveRateCategoriesFromGuardRate's doc comment. For a
+        // multi-site project, the tender's own top-level guardRateMode/guardRate/
+        // guardRatePositions/additionalEquipment belong to its PRIMARY site only (see
+        // TenderSiteDetails' doc comment in types.ts) — an ADDITIONAL site with its own saved
+        // siteDetails doc uses THAT instead, so its invoice reflects its own rate rather than
+        // silently inheriting the primary site's. Falls back to the tender's top-level fields
+        // (same as before this distinction existed) for the primary site itself, or for an
+        // additional site that hasn't had its own rate/equipment saved yet — and, when the
+        // tender doc itself is unreadable, to whatever siteDetails alone has.
+        const rateSource = siteDetails ?? t;
+        if (rateSource) {
           const derived = deriveRateCategoriesFromGuardRate(rateSource);
           if (derived) {
             setRateDraft(derived);
             setRatesFromGuardRate(true);
             setRateSourceIsOwnSite(!!siteDetails);
           }
-          setTenderEquipment((siteDetails ? siteDetails.additionalEquipment : t.additionalEquipment) || []);
-        })
-        .catch(() => {});
+        }
+        setTenderEquipment((siteDetails ? siteDetails.additionalEquipment : t?.additionalEquipment) || []);
+      });
     } else {
       setClientAlias('');
       setContractRef('');
@@ -495,13 +507,24 @@ export default function InvoiceGenerator() {
   const additionalSitesValid = additionalSiteIds.every((id) => additionalBillsById[id]?.canSave === true);
 
   // Sites eligible to be combined onto this invoice via "+ Add another site" below — siblings of
-  // the primary `site` sharing its tenderId (the same multi-site project), excluding the primary
-  // site itself, archived sites, and ones already added. Empty (and the picker hidden) whenever
-  // the primary site has no linked tender or no other linked sites — same as before this feature
-  // existed.
+  // the primary `site` sharing its tenderId (the same multi-site project) AND its branch,
+  // excluding the primary site itself, archived sites, and ones already added. The branch match
+  // matters now that a multi-site project's additional sites can be delegated to a DIFFERENT
+  // branch than the project's own (see ProjectDetailsModal.tsx's "Managing Branch" picker and
+  // firestore.rules' canAssignSiteBranchViaTender()) — without it, one combined invoice (one
+  // invoice number, one branch-coded sequence — see services/invoices.ts) could end up billing
+  // a site that isn't this branch's to invoice at all. Empty (and the picker hidden) whenever
+  // the primary site has no linked tender or no other same-branch linked sites — same as before
+  // this feature existed.
   const combinableSites = site
     ? sites.filter(
-        (s) => s.tenderId && s.tenderId === site.tenderId && s.id !== site.id && !s.archived && !additionalSiteIds.includes(s.id)
+        (s) =>
+          s.tenderId &&
+          s.tenderId === site.tenderId &&
+          s.id !== site.id &&
+          s.branch === site.branch &&
+          !s.archived &&
+          !additionalSiteIds.includes(s.id)
       )
     : [];
 

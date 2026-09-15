@@ -326,6 +326,19 @@ service cloud.firestore {
               get(/databases/$(database)/documents/tenders/$(tenderId)).data.activeBranch == myDepartment()
               || myDepartment() == 'HQ'
             )
+          )
+          // A branch that doesn't own the parent tender but DOES manage this specific
+          // additional site (its own /sites/{siteId} doc — see createTenderSite() in
+          // services/tenders.ts) can still reach just THAT site's own siteDetails doc, on a
+          // Won project, mirroring canReachSite() below. Scoped narrowly: the site must
+          // actually be linked to THIS tender (tenderId match, so a stray/mismatched siteId
+          // can't be used to probe an unrelated site's branch) and that site's own `branch`
+          // field must name this user's department — the parent tender's activeBranch is
+          // irrelevant here, unlike every other clause above.
+          || (
+            get(/databases/$(database)/documents/tenders/$(tenderId)).data.stage == 'Won'
+            && get(/databases/$(database)/documents/sites/$(siteId)).data.get('tenderId', null) == tenderId
+            && get(/databases/$(database)/documents/sites/$(siteId)).data.get('branch', null) == myDepartment()
           );
       }
       match /siteDetails/{siteId} {
@@ -389,12 +402,35 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/tenders/$(oldData.tenderId)).data.pendingReassignment.toBranch == myDepartment();
       }
 
+      // True when the NEW site doc names a tenderId this user owns or manages (mirrors the
+      // tenders update rule's own owner/activeBranch/HQ reach) — lets "+ Add Site" in Project
+      // Details (createTenderSite() in services/tenders.ts) delegate a newly-linked site to
+      // ANY branch, not just the creator's own, so a multi-site project's owning branch can
+      // hand an additional site off to whichever branch will actually run it. Deliberately
+      // create-only (not folded into canReachSite() itself, and not applied to update) — an
+      // already-existing site's branch keeps changing only through the paths that already
+      // handle it (a plain same-branch edit, or the pendingReassignment flow above).
+      function canAssignSiteBranchViaTender(data) {
+        return data.get('tenderId', null) != null
+          && (
+            get(/databases/$(database)/documents/tenders/$(data.tenderId)).data.ownerUid == request.auth.uid
+            || (
+              get(/databases/$(database)/documents/tenders/$(data.tenderId)).data.stage == 'Won'
+              && (
+                get(/databases/$(database)/documents/tenders/$(data.tenderId)).data.activeBranch == myDepartment()
+                || myDepartment() == 'HQ'
+              )
+            )
+          );
+      }
+
       // The second clause matters: acceptReassignment() in services/tenders.ts queries sites by
       // tenderId BEFORE it can update one, and a query silently drops documents the caller can't
       // read rather than erroring — so without this, the receiving Branch Manager's query would
       // just come back empty and their write would never even attempt to run.
       allow read: if isActiveUser() && (canReadSite(resource.data) || isAcceptingPendingReassignment(resource.data));
-      allow create: if isActiveUser() && !isPayrollLike() && canReachSite(request.resource.data);
+      allow create: if isActiveUser() && !isPayrollLike()
+        && (canReachSite(request.resource.data) || canAssignSiteBranchViaTender(request.resource.data));
       // Both old and new data must be in reach — the first clause keeps a non-privileged
       // user from touching a site outside their branch at all, the second keeps them from
       // reassigning a reachable site's branch to one they don't belong to. !isPayrollLike()
@@ -408,6 +444,22 @@ service cloud.firestore {
           isAcceptingPendingReassignment(resource.data)
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['branch', 'tenderId', 'archived', 'archivedAt', 'updatedAt'])
+        )
+        // The other narrow exception: saveTenderSiteLocationDetails() in services/tenders.ts
+        // re-syncs a linked site's denormalized name/clientName/branch onto this doc right
+        // after "+ Add Site" (createTenderSite()) delegates it to a different branch — without
+        // this, that resync would immediately fail canReachSite() the instant the delegated
+        // branch differs from the caller's own, since the caller is the TENDER's owning branch,
+        // not necessarily this site's new one. Same tenderId-ownership check as create's
+        // canAssignSiteBranchViaTender() above, tenderId itself pinned unchanged, and — unlike
+        // that unrestricted create — limited to exactly these cosmetic/denormalized fields, so
+        // an owning branch that doesn't also run this site still can't touch its guards, roster
+        // config, or anything else about it.
+        || (
+          canAssignSiteBranchViaTender(resource.data)
+          && request.resource.data.tenderId == resource.data.tenderId
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['name', 'clientName', 'branch', 'updatedAt'])
         )
       );
       // Manual deletion through the console UI has been removed entirely — for every role,

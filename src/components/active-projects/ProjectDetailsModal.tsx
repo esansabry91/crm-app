@@ -28,6 +28,7 @@ import {
   type TenderDocumentInfo,
 } from '../../services/tenderDocuments';
 import { useTenderSites } from '../../hooks/useTenderSites';
+import { useBranches } from '../../hooks/useBranches';
 import LinkedSiteDetailsCard from './LinkedSiteDetailsCard';
 
 interface Props {
@@ -120,8 +121,22 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   // under the same contract. Kept last since it's purely additive UI; every field above this
   // still refers only to the project's first/original site.
   const { sites: linkedSites, loading: linkedSitesLoading } = useTenderSites(tender?.id ?? null);
+  // Branch list for the "Managing Branch" picker below — same source UserManager.tsx and Duty
+  // Roster's own "assign to branch" picker use, "HQ" filtered out the same way Duty Roster's
+  // does (see public/duty-roster/index.html's branchOptions.filter(b => b !== "HQ")): HQ
+  // oversees every branch's sites rather than being a branch that runs one itself.
+  const { branches } = useBranches();
   const [addSiteOpen, setAddSiteOpen] = useState(false);
   const [addSiteName, setAddSiteName] = useState('');
+  // Which branch will manage this additional site's Duty Roster/billing going forward —
+  // defaults to the project's own branch (today's only behavior, unchanged for a single-branch
+  // project) but can be pointed at a different branch to delegate this one site to it (see
+  // "what if a tender project... each site is managed by different branch" — createTenderSite()'s
+  // branchOverride param and firestore.rules' canAssignSiteBranchViaTender()). Re-defaulted
+  // every time the form opens via the reset below, not just once, since a modal reused across
+  // different tenders would otherwise carry over a stale branch from whichever project was open
+  // last.
+  const [addSiteBranch, setAddSiteBranch] = useState('');
   // Same required fields as the project's first/original site's own Location/Contact section
   // above (see that section's own required-ness) — a linked site can't be added half-empty; its
   // Location/Contact details are captured up front, in the same action that creates it, rather
@@ -164,6 +179,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   const resetAddSiteForm = () => {
     setAddSiteOpen(false);
     setAddSiteName('');
+    setAddSiteBranch('');
     setAddSiteLocation('');
     setAddSiteState('');
     setAddSiteCity('');
@@ -201,6 +217,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
 
   const addSiteReady =
     addSiteName.trim() !== '' &&
+    addSiteBranch.trim() !== '' &&
     addSiteLocation.trim() !== '' &&
     addSiteState.trim() !== '' &&
     addSiteCity.trim() !== '' &&
@@ -1128,6 +1145,26 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                     disabled={addSiteBusy}
                   />
                 </Field>
+                <Field label="Managing Branch">
+                  <select
+                    value={addSiteBranch}
+                    onChange={(e) => setAddSiteBranch(e.target.value)}
+                    className="input"
+                    disabled={addSiteBusy}
+                  >
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.name}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Defaults to this project's own branch. Pick a different branch if this site
+                    will run under a different one — that branch will then manage this site's own
+                    Duty Roster, Guard Rate, and invoicing, without needing access to the rest of
+                    this project.
+                  </p>
+                </Field>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Location">
                     <input
@@ -1347,18 +1384,26 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                     disabled={!addSiteReady || addSiteBusy}
                     onClick={async () => {
                       let activeTender = workingTender || tender;
-                      const branch = activeTender.activeBranch || activeTender.department || null;
+                      const branch = addSiteBranch.trim() || activeTender.activeBranch || activeTender.department || null;
                       const siteName = addSiteName.trim();
                       setAddSiteBusy(true);
                       setAddSiteError(null);
                       try {
-                        const siteId = await createTenderSite(activeTender, siteName, actor);
+                        const siteId = await createTenderSite(activeTender, siteName, actor, branch);
                         await saveTenderSiteLocationDetails(activeTender.id, siteId, siteName, branch, activeTender.clientName, {
                           location: addSiteLocation.trim(),
                           state: addSiteState.trim(),
                           city: addSiteCity.trim(),
                           postcode: addSitePostcode.trim(),
                           contactPerson: addSiteContact.trim(),
+                          // setDoc()/updateDoc() reject `undefined` field values outright
+                          // (this project doesn't set ignoreUndefinedProperties) — these three
+                          // are optional on Tender, so an older/incomplete project without them
+                          // would otherwise throw here and silently break "Add Site" entirely.
+                          clientAlias: activeTender.clientAlias || null,
+                          clientAddress: activeTender.clientAddress || null,
+                          tenderDocNumber: activeTender.tenderDocNumber || null,
+                          brandId: activeTender.brandId,
                         });
 
                         const wantsRate =
@@ -1437,7 +1482,11 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
             ) : (
               <button
                 type="button"
-                onClick={() => setAddSiteOpen(true)}
+                onClick={() => {
+                  const activeTender = workingTender || tender;
+                  setAddSiteBranch((activeTender && (activeTender.activeBranch || activeTender.department)) || '');
+                  setAddSiteOpen(true);
+                }}
                 className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 whitespace-nowrap"
               >
                 + Add Site

@@ -239,6 +239,21 @@ export interface TenderSiteDetails {
   city?: string;
   postcode?: string;
   contactPerson?: string;
+  // Denormalized copies of the parent tender's own clientAlias/clientAddress/tenderDocNumber/
+  // brandId — kept in sync by saveTenderSiteLocationDetails() every time someone with full
+  // access to the parent tender (its owner, admin, HQ, or its owning branch) saves this site's
+  // location details. Exist ONLY so a branch this site has been delegated to (see
+  // canAssignSiteBranchViaTender() in firestore.rules) — which can read this siteDetails doc but
+  // NOT the parent tenders/{tenderId} doc itself — can still generate a correctly-addressed,
+  // correctly-numbered invoice for its own site (InvoiceGenerator.tsx's invoice numbering keys
+  // off clientAlias; the printed invoice needs clientAddress) without being granted read access
+  // to the rest of the shared project record (tenderValue, other sites' pricing, etc.). See
+  // InvoiceGenerator.tsx's site-switch effect for where these are read as a fallback.
+  clientName?: string;
+  clientAlias?: string | null;
+  clientAddress?: string | null;
+  tenderDocNumber?: string | null;
+  brandId?: string;
   guardRateMode?: 'same' | 'multiple';
   guardRate?: number;
   guardRatePositions?: { name: string; rate: number }[];

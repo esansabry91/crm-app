@@ -661,14 +661,18 @@ export async function applyGuardRateChange(
  * roster setup (guards, shifts, the actual schedule) happens separately, straight through the
  * Duty Roster tab, whenever staff get to it.
  *
- * Branch is taken from the tender itself (activeBranch, falling back to department) rather than
- * asked for here — every linked site under one contract runs under the same branch as the
- * project. Returns the new site's id (Firestore's own doc id space, not Duty Roster's
- * newId("site") helper, which only that vanilla-JS app can generate — an ordinary auto-id
- * serves exactly the same purpose here).
+ * Branch defaults to the tender's own (activeBranch, falling back to department) when the
+ * caller doesn't pass one — most linked sites under one contract still run under the same
+ * branch as the project. The caller MAY instead pass a different branch explicitly (see the
+ * "Managing Branch" picker in ProjectDetailsModal.tsx's "+ Add Site" form) to delegate this one
+ * additional site to a different branch entirely — see firestore.rules'
+ * canAssignSiteBranchViaTender() for the matching access-control widening that makes this
+ * write actually go through. Returns the new site's id (Firestore's own doc id space, not Duty
+ * Roster's newId("site") helper, which only that vanilla-JS app can generate — an ordinary
+ * auto-id serves exactly the same purpose here).
  */
-export async function createTenderSite(tender: Tender, siteName: string, actor: Actor): Promise<string> {
-  const branch = tender.activeBranch || tender.department || null;
+export async function createTenderSite(tender: Tender, siteName: string, actor: Actor, branchOverride?: string | null): Promise<string> {
+  const branch = branchOverride !== undefined ? branchOverride : tender.activeBranch || tender.department || null;
   const ref = doc(collection(db, 'sites'));
   const nowIsoStr = new Date().toISOString();
   // See Tender.isTestData's doc comment in types.ts and shouldStampTestData()'s own doc comment
@@ -786,15 +790,31 @@ export async function getTenderSiteDetails(tenderId: string, siteId: string): Pr
 }
 
 /** Saves an additional site's Location/Contact fields — the per-site equivalent of
- *  updateActiveProjectDetails() below, minus the fields (tenderDocNumber, scopeOfWork, etc.)
- *  that stay project-wide rather than per-site. Creates the siteDetails doc on first save. */
+ *  updateActiveProjectDetails() below, minus the fields (scopeOfWork, etc.) that stay
+ *  project-wide rather than per-site. Creates the siteDetails doc on first save.
+ *
+ *  input.clientAlias/clientAddress/tenderDocNumber/brandId are denormalized straight from the
+ *  parent tender (see TenderSiteDetails' doc comment in types.ts for why) — every caller here
+ *  already has full read access to that tender (it's the one they're saving THIS site's details
+ *  from), so passing its own current values through on every save keeps the copy from drifting
+ *  if the project's client alias/address/tender doc number/brand ever change later. */
 export async function saveTenderSiteLocationDetails(
   tenderId: string,
   siteId: string,
   siteName: string,
   branch: string | null,
   clientName: string,
-  input: { location?: string; state?: string; city?: string; postcode?: string; contactPerson?: string }
+  input: {
+    location?: string;
+    state?: string;
+    city?: string;
+    postcode?: string;
+    contactPerson?: string;
+    clientAlias?: string | null;
+    clientAddress?: string | null;
+    tenderDocNumber?: string | null;
+    brandId?: string;
+  }
 ): Promise<void> {
   await setDoc(
     tenderSiteDetailsRef(tenderId, siteId),
@@ -802,6 +822,11 @@ export async function saveTenderSiteLocationDetails(
       dutyRosterSiteId: siteId,
       siteName,
       branch: branch || null,
+      // Denormalized alongside clientAlias/clientAddress/tenderDocNumber/brandId in `input`
+      // (see TenderSiteDetails' doc comment) — same reasoning, just passed as its own positional
+      // param here rather than folded into `input` since every existing caller already has it
+      // at hand under that name.
+      clientName,
       ...input,
       updatedAt: Date.now(),
       createdAt: Date.now(),

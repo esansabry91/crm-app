@@ -124,6 +124,13 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
         city: city.trim(),
         postcode: postcode.trim(),
         contactPerson: contactPerson.trim(),
+        // setDoc()/updateDoc() reject `undefined` field values outright (this project
+        // doesn't set ignoreUndefinedProperties) — these three are optional on Tender, so an
+        // older/incomplete project without them would otherwise throw here.
+        clientAlias: tender.clientAlias || null,
+        clientAddress: tender.clientAddress || null,
+        tenderDocNumber: tender.tenderDocNumber || null,
+        brandId: tender.brandId,
       });
 
       const wantsRate =
