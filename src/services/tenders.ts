@@ -608,11 +608,10 @@ export async function applyGuardRateChange(
 /**
  * Multi-site support (Active Projects > Project Details > "Linked Sites") — a project whose
  * client has more than one worksite/roster under the SAME contract can link additional Duty
- * Roster sites to it via "+ Add Site" (see handleTenderDeepLinkIfNeeded()'s `newSite=1` flag in
- * public/duty-roster/index.html). The functions below are the per-site equivalents of
- * addTenderEquipment()/stopTenderEquipmentItem()/removeTenderEquipmentItem()/
- * applyGuardRateChange() above, operating on ONE additional site's own
- * tenders/{tenderId}/siteDetails/{dutyRosterSiteId} doc instead of the Tender document's
+ * Roster sites to it via "+ Add Site" (see createTenderSite() just below). The functions after
+ * it are the per-site equivalents of addTenderEquipment()/stopTenderEquipmentItem()/
+ * removeTenderEquipmentItem()/applyGuardRateChange() above, operating on ONE additional site's
+ * own tenders/{tenderId}/siteDetails/{dutyRosterSiteId} doc instead of the Tender document's
  * top-level fields — see TenderSiteDetails' doc comment in types.ts for the full data-model
  * rationale (the first/original site of every project keeps using the top-level fields
  * unchanged; only a SECOND-or-later linked site gets a siteDetails doc at all).
@@ -624,6 +623,67 @@ export async function applyGuardRateChange(
  * Active Project Value Bridge keeps working unchanged (combined across all of a project's
  * sites — splitting it per site is not part of this first slice).
  */
+
+/**
+ * Links a new Duty Roster site to this tender straight from Project Details' "+ Add Site" —
+ * writes the exact same `sites/{id}` document shape public/duty-roster/index.html's own
+ * createSite() does (same field set, same default shift pattern via defaultSite() there),
+ * mirrored here so the new site opens normally the moment someone switches to the Duty Roster
+ * tab: an empty guard list and a default DN/12h shift pattern ready to configure, same as any
+ * site created the usual way. Deliberately does NOT navigate to Duty Roster or open anything —
+ * roster setup (guards, shifts, the actual schedule) happens separately, straight through the
+ * Duty Roster tab, whenever staff get to it.
+ *
+ * Branch is taken from the tender itself (activeBranch, falling back to department) rather than
+ * asked for here — every linked site under one contract runs under the same branch as the
+ * project. Returns the new site's id (Firestore's own doc id space, not Duty Roster's
+ * newId("site") helper, which only that vanilla-JS app can generate — an ordinary auto-id
+ * serves exactly the same purpose here).
+ */
+export async function createTenderSite(tender: Tender, siteName: string): Promise<string> {
+  const branch = tender.activeBranch || tender.department || null;
+  const ref = doc(collection(db, 'sites'));
+  const nowIsoStr = new Date().toISOString();
+  await setDoc(ref, {
+    id: ref.id,
+    name: siteName,
+    branch,
+    tenderId: tender.id,
+    archived: false,
+    archivedAt: null,
+    guards: [],
+    // Mirrors public/duty-roster/index.html's own defaultSite() — a DN (day/night) pattern,
+    // one post per shift, standard 12h shifts starting 7am, 8 normal hours/day before OT.
+    site: {
+      pattern: 'DN',
+      postsU: 1,
+      postsDay: 1,
+      postsNight: 1,
+      postsWd: 1,
+      postsWe: 1,
+      postsWdDay: 1,
+      postsWdNight: 1,
+      postsWeDay: 1,
+      postsWeNight: 1,
+      shiftsWdDay: [12],
+      shiftsWdNight: [12],
+      shiftsWeDay: [12],
+      shiftsWeNight: [12],
+      nightStart: 19,
+      hoursDay: 24,
+      daysWeek: 7,
+      shiftHrs: 12,
+      rosterStart: 7,
+      normalHoursPerDay: 8,
+    },
+    restRule: { restDaysPerWeek: 1, minRestHours: 12 },
+    isSample: false,
+    isTestData: false,
+    createdAt: nowIsoStr,
+    updatedAt: nowIsoStr,
+  });
+  return ref.id;
+}
 
 function tenderSiteDetailsRef(tenderId: string, siteId: string) {
   return doc(db, 'tenders', tenderId, 'siteDetails', siteId);

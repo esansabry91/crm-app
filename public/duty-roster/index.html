@@ -1225,12 +1225,6 @@
   // latches true the first time it's acted on so later site-list updates don't re-trigger it.
   const deepLinkParams = new URLSearchParams(location.search);
   const deepLinkTenderId = deepLinkParams.get("tenderId");
-  // Set by Project Details' "+ Add Site" button (ProjectDetailsModal.tsx) to link a SECOND (or
-  // later) site to a tenderId that already has one — handleTenderDeepLinkIfNeeded() below skips
-  // its normal "already linked, just switch to it" behavior when this is set, and always
-  // creates a fresh site instead. Absent/false for the normal single-site deep link used
-  // everywhere else (Active Projects' own "Duty Roster" action).
-  const deepLinkNewSite = deepLinkParams.get("newSite") === "1";
   let deepLinkHandled = false;
 
   const state = {
@@ -5391,7 +5385,7 @@
     if(!deepLinkTenderId || deepLinkHandled) return;
     const existing = state.sites.find(s => s.tenderId === deepLinkTenderId);
     deepLinkHandled = true;
-    if(existing && !deepLinkNewSite){
+    if(existing){
       if(state.currentSiteId !== existing.id) switchSite(existing.id);
       return;
     }

@@ -5,6 +5,7 @@ import type { Role, Tender } from '../../types';
 import {
   addTenderEquipment,
   applyGuardRateChange,
+  createTenderSite,
   effectiveGuardRate,
   removeTenderEquipmentItem,
   STANDARD_MONTHLY_HOURS_PER_GUARD,
@@ -109,6 +110,8 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   const { sites: linkedSites } = useTenderSites(tender?.id ?? null);
   const [addSiteOpen, setAddSiteOpen] = useState(false);
   const [addSiteName, setAddSiteName] = useState('');
+  const [addSiteBusy, setAddSiteBusy] = useState(false);
+  const [addSiteError, setAddSiteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !tender) return;
@@ -873,32 +876,53 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                 Projects first to create its first site before linking a second one here.
               </p>
             ) : addSiteOpen ? (
-              <div className="flex items-center gap-2">
-                <input
-                  value={addSiteName}
-                  onChange={(e) => setAddSiteName(e.target.value)}
-                  placeholder="New site name"
-                  className="input flex-1"
-                />
-                <button
-                  type="button"
-                  disabled={!addSiteName.trim()}
-                  onClick={() => {
-                    const activeTender = workingTender || tender;
-                    const url = `/duty-roster?tenderId=${encodeURIComponent(activeTender.id)}&clientName=${encodeURIComponent(
-                      addSiteName.trim()
-                    )}&branch=${encodeURIComponent(activeTender.activeBranch || activeTender.department)}&newSite=1`;
-                    window.open(url, '_blank', 'noopener');
-                    setAddSiteOpen(false);
-                    setAddSiteName('');
-                  }}
-                  className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 disabled:opacity-60 whitespace-nowrap"
-                >
-                  Open Duty Roster to create
-                </button>
-                <button type="button" onClick={() => setAddSiteOpen(false)} className="text-xs text-slate-400 hover:text-slate-600">
-                  Cancel
-                </button>
+              <div>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={addSiteName}
+                    onChange={(e) => setAddSiteName(e.target.value)}
+                    placeholder="New site name"
+                    className="input flex-1"
+                    disabled={addSiteBusy}
+                  />
+                  <button
+                    type="button"
+                    disabled={!addSiteName.trim() || addSiteBusy}
+                    onClick={async () => {
+                      const activeTender = workingTender || tender;
+                      setAddSiteBusy(true);
+                      setAddSiteError(null);
+                      try {
+                        await createTenderSite(activeTender, addSiteName.trim());
+                        setAddSiteOpen(false);
+                        setAddSiteName('');
+                      } catch (err) {
+                        setAddSiteError(err instanceof Error ? err.message : 'Failed to add site.');
+                      } finally {
+                        setAddSiteBusy(false);
+                      }
+                    }}
+                    className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 disabled:opacity-60 whitespace-nowrap"
+                  >
+                    {addSiteBusy ? 'Adding…' : 'Add Site'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddSiteOpen(false);
+                      setAddSiteError(null);
+                    }}
+                    disabled={addSiteBusy}
+                    className="text-xs text-slate-400 hover:text-slate-600 disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {addSiteError && <p className="text-xs text-rose-600 mt-1">{addSiteError}</p>}
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Adds the site right away, ready to go — set up its guards and roster from the
+                  Duty Roster tab whenever you're ready.
+                </p>
               </div>
             ) : (
               <button
