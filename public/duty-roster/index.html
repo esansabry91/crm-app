@@ -5507,7 +5507,14 @@
         : `<option value="">No client sites in this branch</option>`;
     } else {
       sel.innerHTML = visibleSites.map(s => {
-        const label = s.clientName && s.clientName !== s.name ? `${s.clientName} — ${s.name}` : s.name;
+        // Once a specific client is selected in the Client dropdown above, every option here is
+        // already that one client's own site — repeating "CLIENT — " on each option is just
+        // noise at that point (and made the dropdown look like it hadn't respected the Client
+        // filter at all). The client-name prefix only earns its place when sites from more than
+        // one client are mixed together in the list, i.e. "All clients" is selected.
+        const label = !state.clientFilterValue && s.clientName && s.clientName !== s.name
+          ? `${s.clientName} — ${s.name}`
+          : s.name;
         return `<option value="${s.id}">${escapeHtml(label)}${s.archived ? " (Archived)" : ""}</option>`;
       }).join("");
       const currentStillVisible = state.currentSiteId && visibleSites.some(s => s.id === state.currentSiteId);
