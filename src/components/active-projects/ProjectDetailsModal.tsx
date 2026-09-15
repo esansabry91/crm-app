@@ -8,6 +8,7 @@ import {
   createTenderSite,
   effectiveGuardRate,
   removeTenderEquipmentItem,
+  saveTenderSiteLocationDetails,
   STANDARD_MONTHLY_HOURS_PER_GUARD,
   stopTenderEquipmentItem,
   updateActiveProjectDetails,
@@ -110,8 +111,38 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   const { sites: linkedSites } = useTenderSites(tender?.id ?? null);
   const [addSiteOpen, setAddSiteOpen] = useState(false);
   const [addSiteName, setAddSiteName] = useState('');
+  // Same required fields as the project's first/original site's own Location/Contact section
+  // above (see that section's own required-ness) — a linked site can't be added half-empty; its
+  // Location/Contact details are captured up front, in the same action that creates it, rather
+  // than left for someone to remember to fill in later on a bare, unlabeled card. Guard Rate and
+  // Additional Equipment stay optional here too, matching the first site's own form — those are
+  // filled in afterwards, from the site's own card, once it exists.
+  const [addSiteLocation, setAddSiteLocation] = useState('');
+  const [addSiteState, setAddSiteState] = useState('');
+  const [addSiteCity, setAddSiteCity] = useState('');
+  const [addSitePostcode, setAddSitePostcode] = useState('');
+  const [addSiteContact, setAddSiteContact] = useState('');
   const [addSiteBusy, setAddSiteBusy] = useState(false);
   const [addSiteError, setAddSiteError] = useState<string | null>(null);
+
+  const resetAddSiteForm = () => {
+    setAddSiteOpen(false);
+    setAddSiteName('');
+    setAddSiteLocation('');
+    setAddSiteState('');
+    setAddSiteCity('');
+    setAddSitePostcode('');
+    setAddSiteContact('');
+    setAddSiteError(null);
+  };
+
+  const addSiteReady =
+    addSiteName.trim() !== '' &&
+    addSiteLocation.trim() !== '' &&
+    addSiteState.trim() !== '' &&
+    addSiteCity.trim() !== '' &&
+    addSitePostcode.trim() !== '' &&
+    addSiteContact.trim() !== '';
 
   useEffect(() => {
     if (!open || !tender) return;
@@ -876,26 +907,89 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                 Projects first to create its first site before linking a second one here.
               </p>
             ) : addSiteOpen ? (
-              <div>
-                <div className="flex items-center gap-2">
+              <div className="border border-slate-200 rounded-lg p-3 space-y-3">
+                <Field label="Site Name">
                   <input
                     value={addSiteName}
                     onChange={(e) => setAddSiteName(e.target.value)}
-                    placeholder="New site name"
-                    className="input flex-1"
+                    placeholder="e.g. Menara KL"
+                    className="input"
                     disabled={addSiteBusy}
                   />
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Location">
+                    <input
+                      value={addSiteLocation}
+                      onChange={(e) => setAddSiteLocation(e.target.value)}
+                      placeholder="Worksite address"
+                      className="input"
+                      disabled={addSiteBusy}
+                    />
+                  </Field>
+                  <Field label="Contact Person">
+                    <input
+                      value={addSiteContact}
+                      onChange={(e) => setAddSiteContact(e.target.value)}
+                      className="input"
+                      disabled={addSiteBusy}
+                    />
+                  </Field>
+                  <Field label="State">
+                    <input
+                      value={addSiteState}
+                      onChange={(e) => setAddSiteState(e.target.value)}
+                      className="input"
+                      disabled={addSiteBusy}
+                    />
+                  </Field>
+                  <Field label="City">
+                    <input
+                      value={addSiteCity}
+                      onChange={(e) => setAddSiteCity(e.target.value)}
+                      className="input"
+                      disabled={addSiteBusy}
+                    />
+                  </Field>
+                  <Field label="Postcode">
+                    <input
+                      value={addSitePostcode}
+                      onChange={(e) => setAddSitePostcode(e.target.value)}
+                      className="input"
+                      disabled={addSiteBusy}
+                    />
+                  </Field>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  All fields above are required to add the site. Its Guard Rate and Additional
+                  Equipment can be filled in afterwards, from the site's own card below — set up
+                  its guards and roster from the Duty Roster tab whenever you're ready.
+                </p>
+                {addSiteError && <p className="text-xs text-rose-600">{addSiteError}</p>}
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    disabled={!addSiteName.trim() || addSiteBusy}
+                    disabled={!addSiteReady || addSiteBusy}
                     onClick={async () => {
                       const activeTender = workingTender || tender;
                       setAddSiteBusy(true);
                       setAddSiteError(null);
                       try {
-                        await createTenderSite(activeTender, addSiteName.trim());
-                        setAddSiteOpen(false);
-                        setAddSiteName('');
+                        const siteId = await createTenderSite(activeTender, addSiteName.trim());
+                        await saveTenderSiteLocationDetails(
+                          activeTender.id,
+                          siteId,
+                          addSiteName.trim(),
+                          activeTender.activeBranch || activeTender.department || null,
+                          {
+                            location: addSiteLocation.trim(),
+                            state: addSiteState.trim(),
+                            city: addSiteCity.trim(),
+                            postcode: addSitePostcode.trim(),
+                            contactPerson: addSiteContact.trim(),
+                          }
+                        );
+                        resetAddSiteForm();
                       } catch (err) {
                         setAddSiteError(err instanceof Error ? err.message : 'Failed to add site.');
                       } finally {
@@ -908,21 +1002,13 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setAddSiteOpen(false);
-                      setAddSiteError(null);
-                    }}
+                    onClick={resetAddSiteForm}
                     disabled={addSiteBusy}
                     className="text-xs text-slate-400 hover:text-slate-600 disabled:opacity-60"
                   >
                     Cancel
                   </button>
                 </div>
-                {addSiteError && <p className="text-xs text-rose-600 mt-1">{addSiteError}</p>}
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Adds the site right away, ready to go — set up its guards and roster from the
-                  Duty Roster tab whenever you're ready.
-                </p>
               </div>
             ) : (
               <button
