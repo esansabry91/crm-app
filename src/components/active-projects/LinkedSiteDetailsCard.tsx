@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { Role, Tender } from '../../types';
 import {
   addTenderSiteEquipment,
@@ -177,19 +178,34 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
 
   return (
     <div className="border border-slate-200 rounded-lg overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100 text-left"
-      >
-        <span className="text-sm font-medium text-slate-700">
-          {site.name}
-          {site.branch && <span className="text-slate-400 font-normal"> · {site.branch}</span>}
-        </span>
-        <span className="text-xs text-slate-400">
-          {site.activeGuardCount} guard{site.activeGuardCount === 1 ? '' : 's'} {expanded ? '▲' : '▼'}
-        </span>
-      </button>
+      <div className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100">
+        <button type="button" onClick={() => setExpanded((v) => !v)} className="flex-1 text-left">
+          <span className="text-sm font-medium text-slate-700">
+            {site.name}
+            {site.branch && <span className="text-slate-400 font-normal"> · {site.branch}</span>}
+          </span>
+        </button>
+        <div className="flex items-center gap-3">
+          {/* Deep-links straight to this exact site in the Duty Roster console (see the
+              siteId deep-link handling in public/duty-roster/index.html) — the tender-level
+              "Duty Roster" tab link in ActiveProjectsPage.tsx only ever reaches this project's
+              primary/first site, so this is the only way to open an ADDITIONAL site's own
+              roster directly rather than hunting for it via the sitebar's Client Site filter. */}
+          <Link
+            to={`/duty-roster?tenderId=${encodeURIComponent(tender.id)}&siteId=${encodeURIComponent(site.id)}&clientName=${encodeURIComponent(tender.clientName)}&branch=${encodeURIComponent(site.branch || tender.activeBranch || tender.department || '')}`}
+            className="text-xs font-medium text-blue-600 hover:text-blue-700"
+          >
+            Duty Roster
+          </Link>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-xs text-slate-400"
+          >
+            {site.activeGuardCount} guard{site.activeGuardCount === 1 ? '' : 's'} {expanded ? '▲' : '▼'}
+          </button>
+        </div>
+      </div>
 
       {expanded && (
         <div className="p-3 space-y-4">

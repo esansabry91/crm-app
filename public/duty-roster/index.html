@@ -1223,10 +1223,16 @@
   // DutyRosterPage.tsx and the "Duty Roster" action in ActiveProjectsPage.tsx) so the console
   // can auto-create-or-select the ONE site tied to that tender instead of a branch user ever
   // touching New/Rename/Delete — see handleTenderDeepLinkIfNeeded(), createSite()'s tenderId
-  // param, and applyRoleUiLockdown()'s canManageSites. Read once at load; deepLinkHandled
-  // latches true the first time it's acted on so later site-list updates don't re-trigger it.
+  // param, and applyRoleUiLockdown()'s canManageSites. A project with more than one linked site
+  // (see TenderSiteDetails in the CRM's types.ts) additionally passes &siteId=... — from each
+  // extra site's own "Duty Roster" link in LinkedSiteDetailsCard.tsx — naming exactly which
+  // already-created site to land on, since a bare tenderId can only ever resolve to that
+  // tender's single earliest-created/primary site (see handleTenderDeepLinkIfNeeded()). Read
+  // once at load; deepLinkHandled latches true the first time it's acted on so later site-list
+  // updates don't re-trigger it.
   const deepLinkParams = new URLSearchParams(location.search);
   const deepLinkTenderId = deepLinkParams.get("tenderId");
+  const deepLinkSiteId = deepLinkParams.get("siteId");
   let deepLinkHandled = false;
 
   const state = {
@@ -1310,7 +1316,7 @@
       // the real site-creation path still runs once the live site list is known (that used to be
       // the bug here — this local stand-in claiming deepLinkHandled first left the real one never
       // firing, falling back to whatever site was already selected/first for the branch instead).
-      if(deepLinkTenderId && !deepLinkHandled){
+      if(deepLinkTenderId && !deepLinkSiteId && !deepLinkHandled){
         const id = newId("site");
         const cfg = makeSampleConfig();
         cfg.id = id; cfg.createdAt = nowIso();
@@ -5397,7 +5403,22 @@
   // otherwise creates it. No-ops once handled, and no-ops entirely when there's no deep link —
   // safe to call on every site-list update.
   function handleTenderDeepLinkIfNeeded(){
-    if(!deepLinkTenderId || deepLinkHandled) return;
+    if(deepLinkHandled) return;
+    if(deepLinkSiteId){
+      // Targeting one specific already-created site (see the top-of-file doc comment) — no
+      // create-if-missing fallback here, unlike the bare-tenderId path below: this site was
+      // created from the CRM before its "Duty Roster" link could ever be clicked, so if it
+      // isn't in state.sites yet this user just can't reach it (wrong branch, archived and
+      // hidden, or a bad id) — leave deepLinkHandled false and let the normal site list/empty
+      // state speak for itself rather than guessing.
+      const existing = state.sites.find(s => s.id === deepLinkSiteId);
+      if(existing){
+        deepLinkHandled = true;
+        if(state.currentSiteId !== existing.id) switchSite(existing.id);
+      }
+      return;
+    }
+    if(!deepLinkTenderId) return;
     const existing = state.sites.find(s => s.tenderId === deepLinkTenderId);
     deepLinkHandled = true;
     if(existing){
@@ -5897,7 +5918,7 @@
     // state.currentSiteId unset, and render() shows the genuine "no sites" empty state rather
     // than ever fabricating a generic "Site 1" (there's no db to persist one to here anyway, and
     // no way for it to ever become a real site later without one).
-    if(!state.sites.length && deepLinkTenderId){
+    if(!state.sites.length && deepLinkTenderId && !deepLinkSiteId){
       const id = newId("site");
       const cfg = makeSampleConfig();
       cfg.id = id; cfg.createdAt = nowIso();
@@ -6041,7 +6062,7 @@
           // A pending tenderId deep link (see top of file) means we're about to create the one
           // site that tender actually needs anyway — skip the generic seed and create the real
           // one directly, instead of leaving an unused "Site 1" sitting alongside it.
-          if(deepLinkTenderId && !deepLinkHandled){
+          if(deepLinkTenderId && !deepLinkSiteId && !deepLinkHandled){
             deepLinkHandled = true;
             createSite(
               deepLinkParams.get("clientName") || "New site",

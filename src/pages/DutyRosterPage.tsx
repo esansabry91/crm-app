@@ -12,11 +12,14 @@ declare const __APP_BUILD_ID__: string;
  * block at the top of index.html for how.
  *
  * Active Projects links here with ?tenderId=...&clientName=...&branch=... (see the "Duty
- * Roster" action in ActiveProjectsPage.tsx) — forwarded straight through onto the iframe's own
- * src query string unchanged, so index.html's own bootstrap code (not this file) can read them
- * with location.search and auto-create-or-select the one site tied to that tender. Visiting
- * /duty-roster with no params (e.g. from the main nav) omits the query string entirely and the
- * console falls back to its normal manual site picker.
+ * Roster" action in ActiveProjectsPage.tsx), or, from one specific additional linked site's own
+ * card (see LinkedSiteDetailsCard.tsx), the same params plus &siteId=... naming that exact
+ * site — forwarded straight through onto the iframe's own src query string unchanged, so
+ * index.html's own bootstrap code (not this file) can read them with location.search and
+ * auto-create-or-select the tender's one primary site (bare tenderId) or select that exact
+ * already-created site (tenderId + siteId together) — see handleTenderDeepLinkIfNeeded() there.
+ * Visiting /duty-roster with no params (e.g. from the main nav) omits the query string entirely
+ * and the console falls back to its normal manual site picker.
  */
 export default function DutyRosterPage() {
   const [searchParams] = useSearchParams();
