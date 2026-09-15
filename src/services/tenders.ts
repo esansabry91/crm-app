@@ -641,10 +641,20 @@ export async function applyGuardRateChange(
  * newId("site") helper, which only that vanilla-JS app can generate — an ordinary auto-id
  * serves exactly the same purpose here).
  */
-export async function createTenderSite(tender: Tender, siteName: string): Promise<string> {
+export async function createTenderSite(tender: Tender, siteName: string, actor: Actor): Promise<string> {
   const branch = tender.activeBranch || tender.department || null;
   const ref = doc(collection(db, 'sites'));
   const nowIsoStr = new Date().toISOString();
+  // See Tender.isTestData's doc comment in types.ts and shouldStampTestData()'s own doc comment
+  // in services/settings.ts — every Duty Roster site a developer account creates, anywhere in
+  // the app (this "+ Add Site" path included), is supposed to be automatically tagged as test
+  // data. This used to be hardcoded to `false` unconditionally instead, which silently broke
+  // that guarantee for every site created this way: untagged as real data, it was invisible to
+  // both "Delete all test data" (queries isTestData == true) and TestingDataTool.tsx's "not yet
+  // sorted" review list (filters isTestData === undefined) — a site created this way had no path
+  // back to being cleaned up at all. See TestingDataTool.tsx's site lookup for fixing any site
+  // that was already created this way before this fix landed.
+  const isTestData = await shouldStampTestData(actor.role);
   await setDoc(ref, {
     id: ref.id,
     name: siteName,
@@ -680,7 +690,7 @@ export async function createTenderSite(tender: Tender, siteName: string): Promis
     },
     restRule: { restDaysPerWeek: 1, minRestHours: 12 },
     isSample: false,
-    isTestData: false,
+    isTestData,
     createdAt: nowIsoStr,
     updatedAt: nowIsoStr,
   });

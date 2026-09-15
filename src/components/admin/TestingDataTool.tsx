@@ -120,6 +120,20 @@ export default function TestingDataTool() {
   const untaggedBuffer = useMemo(() => bufferGuards.filter((b) => b.isTestData === undefined), [bufferGuards]);
   const untaggedSites = useMemo(() => sites.filter((s) => s.isTestData === undefined), [sites]);
 
+  // A site created via "+ Add Site" before createTenderSite()'s own isTestData bug was fixed
+  // (see its doc comment in services/tenders.ts) got hardcoded isTestData: false at creation —
+  // never `undefined` — so it never shows up in untaggedSites above and "Delete all test data"
+  // can never reach it either. This is the only way back to fixing one of those: search by name
+  // (deliberately NOT a full site listing by default — most sites here are real production data
+  // and shouldn't be one accidental click away from getting tagged as test data) and flip its
+  // tag directly.
+  const [siteLookupQuery, setSiteLookupQuery] = useState('');
+  const siteLookupMatches = useMemo(() => {
+    const needle = siteLookupQuery.trim().toLowerCase();
+    if (!needle) return [];
+    return sites.filter((s) => s.name.toLowerCase().includes(needle)).slice(0, 25);
+  }, [sites, siteLookupQuery]);
+
   const taggedCount =
     tenders.filter((t) => t.isTestData).length +
     guards.filter((g) => g.isTestData).length +
@@ -272,6 +286,42 @@ export default function TestingDataTool() {
           <code className="font-mono">node scripts/purge-test-data.mjs --test-data</code>, if
           you'd rather run it that way.
         </p>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <h4 className="text-sm font-semibold text-slate-800">Look up a site to fix its tag</h4>
+        <p className="text-xs text-slate-400 mt-0.5 max-w-2xl">
+          For a Duty Roster site that's stuck on the wrong tag and never showed up in "not yet
+          sorted" below (see createTenderSite()'s doc comment in services/tenders.ts for why that
+          could happen). Search by name and flip its tag directly — marking it as test data here
+          makes it eligible for "Delete all test data" above.
+        </p>
+        <input
+          type="text"
+          value={siteLookupQuery}
+          onChange={(e) => setSiteLookupQuery(e.target.value)}
+          placeholder="Type a site name…"
+          className="mt-3 w-full max-w-sm rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
+        />
+        {siteLookupQuery.trim() !== '' && (
+          siteLookupMatches.length === 0 ? (
+            <p className="text-xs text-slate-400 mt-3">No sites match "{siteLookupQuery.trim()}".</p>
+          ) : (
+            <div className="mt-2">
+              {siteLookupMatches.map((s) => (
+                <TestDataRow
+                  key={s.id}
+                  label={s.name}
+                  sub={`${s.branch || 'Unassigned branch'} — currently tagged ${
+                    s.isTestData === undefined ? 'not yet sorted' : s.isTestData ? 'test data' : 'real data'
+                  }`}
+                  flagged={!!s.isTestData}
+                  onToggle={(next) => updateDoc(doc(db, 'sites', s.id), { isTestData: next, updatedAt: new Date().toISOString() })}
+                />
+              ))}
+            </div>
+          )
+        )}
       </div>
 
       {untaggedTenders.length === 0 && untaggedSites.length === 0 && untaggedGuards.length === 0 && untaggedBuffer.length === 0 ? (

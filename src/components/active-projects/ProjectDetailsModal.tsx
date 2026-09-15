@@ -1305,7 +1305,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                       setAddSiteBusy(true);
                       setAddSiteError(null);
                       try {
-                        const siteId = await createTenderSite(activeTender, siteName);
+                        const siteId = await createTenderSite(activeTender, siteName, actor);
                         await saveTenderSiteLocationDetails(activeTender.id, siteId, siteName, branch, activeTender.clientName, {
                           location: addSiteLocation.trim(),
                           state: addSiteState.trim(),
