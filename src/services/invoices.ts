@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { shouldStampTestData } from './settings';
-import type { Invoice, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceStatus, Role } from '../types';
+import type { Invoice, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceSiteBill, InvoiceStatus, Role, SiteBillingRate } from '../types';
 
 function invoicesCollection() {
   return collection(db, 'invoices');
@@ -74,6 +74,34 @@ export function sumLineGroups(lineGroups: InvoiceLineGroup[]): number {
  *  equipment rows are a separate flat list, not nested inside lineGroups' location grouping. */
 export function sumEquipmentRows(equipmentRows: InvoiceEquipmentRow[] | undefined): number {
   return (equipmentRows || []).reduce((sum, row) => sum + row.amount, 0);
+}
+
+/** Derives this invoice's billing rate categories straight from a tender's (or a site's own
+ *  siteDetails override's) Guard Rate setup (Active Projects > Project Details — see
+ *  Tender.guardRateMode's doc comment in types.ts), so the same rate never has to be typed once
+ *  there and again on an invoice. 'multiple' mode maps each named position directly to a
+ *  category of the same name/rate; 'same' mode has no position names to draw from, so it becomes
+ *  a single "Security Guard" category at the flat rate. Returns null when there's no Guard Rate
+ *  configured yet (undefined mode, or a 'same' rate of 0) — callers fall back to the site's own
+ *  saved billingRates in that case, so a project that hasn't set one up yet keeps working exactly
+ *  as before. Exported (moved here from InvoiceGenerator.tsx) so InvoiceSiteSection.tsx — an
+ *  additional site's billing section within a combined invoice — can derive its own site's rates
+ *  the same way without importing back from InvoiceGenerator.tsx. */
+export function deriveRateCategoriesFromGuardRate(t: {
+  guardRateMode?: 'same' | 'multiple';
+  guardRate?: number;
+  guardRatePositions?: { name: string; rate: number }[];
+}): SiteBillingRate[] | null {
+  if (t.guardRateMode === 'multiple') {
+    const positions = (t.guardRatePositions || []).filter((p) => p.name.trim());
+    return positions.length > 0
+      ? positions.map((p) => ({ category: p.name, hourlyRate: p.rate }))
+      : null;
+  }
+  if (t.guardRateMode === 'same' && t.guardRate) {
+    return [{ category: 'Security Guard', hourlyRate: t.guardRate }];
+  }
+  return null;
 }
 
 /**
@@ -151,6 +179,12 @@ export interface NewInvoiceInput {
   paymentTermsDays: number;
   lineGroups: InvoiceLineGroup[];
   equipmentRows?: InvoiceEquipmentRow[];
+  /** Extra sites combined into this same invoice beyond the primary one described by
+   *  siteId/siteName/lineGroups/equipmentRows above — see InvoiceSiteBill's doc comment in
+   *  types.ts. Each entry's subTotal is computed here in createInvoice(), the same way the
+   *  invoice's own overall subTotal is, so callers only need to supply lineGroups/equipmentRows
+   *  per additional site. Absent/empty for a normal single-site invoice. */
+  additionalSiteBills?: { siteId: string; siteName: string; lineGroups: InvoiceLineGroup[]; equipmentRows: InvoiceEquipmentRow[] }[];
   sstRate: number;
   signatoryName?: string;
   signatoryTitle?: string;
@@ -174,7 +208,17 @@ type Actor = { uid: string; name: string; role?: Role };
  */
 export async function createInvoice(input: NewInvoiceInput, actor: Actor): Promise<{ id: string; invoiceNo: string }> {
   const now = Date.now();
-  const subTotal = sumLineGroups(input.lineGroups) + sumEquipmentRows(input.equipmentRows);
+  const additionalBills: InvoiceSiteBill[] = (input.additionalSiteBills || []).map((b) => ({
+    siteId: b.siteId,
+    siteName: b.siteName,
+    lineGroups: b.lineGroups,
+    equipmentRows: b.equipmentRows,
+    subTotal: sumLineGroups(b.lineGroups) + sumEquipmentRows(b.equipmentRows),
+  }));
+  const subTotal =
+    sumLineGroups(input.lineGroups) +
+    sumEquipmentRows(input.equipmentRows) +
+    additionalBills.reduce((sum, b) => sum + b.subTotal, 0);
   const sstAmount = roundMoney(subTotal * input.sstRate);
   const total = roundMoney(subTotal + sstAmount);
   const isTestData = await shouldStampTestData(actor.role);
@@ -222,6 +266,7 @@ export async function createInvoice(input: NewInvoiceInput, actor: Actor): Promi
       paymentTermsDays: input.paymentTermsDays,
       lineGroups: input.lineGroups,
       equipmentRows: input.equipmentRows || [],
+      additionalSiteBills: additionalBills,
       signatoryName: input.signatoryName || '',
       signatoryTitle: input.signatoryTitle || '',
       subTotal,

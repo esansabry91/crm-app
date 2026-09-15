@@ -645,6 +645,27 @@ export interface InvoiceEquipmentRow {
   amount: number;
 }
 
+/**
+ * One additional site's billing section within a combined invoice — see the "combine invoicing"
+ * design: a single invoice can bill several sites of the same multi-site tender together, laid
+ * out "grouped by site" (one invoice number, one PDF, but each site keeps its own guard-rate
+ * categories/headcount cap/equipment as its own labeled section with its own subtotal, rolling up
+ * into one grand total). The Invoice's own top-level siteId/siteName/lineGroups/equipmentRows
+ * continue to describe the FIRST (primary-selected) site exactly as before this feature — this
+ * array holds any EXTRA sites added on top of that first one. Absent/empty on every invoice that
+ * bills only one site (the original, still-default shape).
+ */
+export interface InvoiceSiteBill {
+  siteId: string;
+  siteName: string;
+  lineGroups: InvoiceLineGroup[];
+  equipmentRows: InvoiceEquipmentRow[];
+  /** This site's own subtotal (its lineGroups + equipmentRows amounts), computed and stored the
+   *  same way Invoice.subTotal is, so it never silently drifts and prints instantly without
+   *  re-deriving it. Folded into the invoice's overall subTotal/sstAmount/total. */
+  subTotal: number;
+}
+
 /** 'void' marks an invoice that was wrongly generated and cancelled — see voidInvoice() in
  *  services/invoices.ts. A voided invoice keeps its invoiceNo (numbering is never reused/reset)
  *  and stays visible in the Invoices list for audit purposes, but is excluded from the Debtor
@@ -706,6 +727,10 @@ export interface Invoice {
    *  InvoiceEquipmentRow's doc comment. Absent/empty on invoices saved before this feature
    *  existed, and on any invoice that never had equipment added to it. */
   equipmentRows?: InvoiceEquipmentRow[];
+  /** Extra sites combined into this same invoice beyond the primary one described by the
+   *  top-level siteId/siteName/lineGroups/equipmentRows — see InvoiceSiteBill's doc comment.
+   *  Absent/empty on every single-site invoice (still the default/common case). */
+  additionalSiteBills?: InvoiceSiteBill[];
   subTotal: number;
   sstRate: number;
   sstAmount: number;

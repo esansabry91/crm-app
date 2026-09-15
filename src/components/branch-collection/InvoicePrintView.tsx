@@ -1,5 +1,7 @@
+import { Fragment } from 'react';
 import { amountToRinggitWords, cardinalWordsLower } from '../../utils/numberToWords';
-import type { Brand, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceStatus } from '../../types';
+import { sumEquipmentRows, sumLineGroups } from '../../services/invoices';
+import type { Brand, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceSiteBill, InvoiceStatus } from '../../types';
 
 export interface InvoicePrintData {
   brand: Brand;
@@ -12,11 +14,23 @@ export interface InvoicePrintData {
   contractRef?: string;
   paymentTermsDays: number;
   billingMonth: string;
+  /** This invoice's primary/first site's name — only shown on the printed layout when
+   *  additionalSiteBills below is non-empty (a combined multi-site invoice), as the divider
+   *  label above its own lineGroups/equipmentRows section. Unused (and unlabeled) on a normal
+   *  single-site invoice, matching the print layout from before this field existed. */
+  siteName?: string;
   lineGroups: InvoiceLineGroup[];
   /** Equipment/add-on rows (e-bikes, drones, etc.) — see InvoiceEquipmentRow's doc comment
    *  in types.ts. Absent/empty for a guard-only invoice, or one saved before this feature
    *  existed. */
   equipmentRows?: InvoiceEquipmentRow[];
+  /** Extra sites combined into this same invoice beyond the primary one above — see
+   *  InvoiceSiteBill's doc comment in types.ts. When non-empty, the line-items table below
+   *  switches from its original flat layout to per-site sections (a bold site-name divider,
+   *  continued NO. numbering, and a per-site subtotal row), one per site, ending in the same
+   *  grand subTotal/sstAmount/total this invoice already carries. Absent/empty for every
+   *  single-site invoice — the original layout. */
+  additionalSiteBills?: InvoiceSiteBill[];
   subTotal: number;
   sstRate: number;
   sstAmount: number;
@@ -66,6 +80,17 @@ export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
   const { brand } = data;
   const displayName = brand.legalName || brand.name;
   const isVoid = data.status === 'void';
+  const hasAdditionalSites = !!(data.additionalSiteBills && data.additionalSiteBills.length > 0);
+  const siteBills: { siteName: string; lineGroups: InvoiceLineGroup[]; equipmentRows: InvoiceEquipmentRow[] }[] = hasAdditionalSites
+    ? [
+        { siteName: data.siteName || 'Site 1', lineGroups: data.lineGroups, equipmentRows: data.equipmentRows || [] },
+        ...(data.additionalSiteBills || []).map((b) => ({
+          siteName: b.siteName,
+          lineGroups: b.lineGroups,
+          equipmentRows: b.equipmentRows,
+        })),
+      ]
+    : [];
 
   return (
     <div className="bg-white text-slate-900 mx-auto" style={{ maxWidth: '850px', fontSize: '13px', position: 'relative' }}>
@@ -204,45 +229,116 @@ export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
               </p>
             </td>
           </tr>
-          {data.lineGroups.map((group, gi) => (
-              <tr key={`${group.location}-header-${gi}`}>
-                <td className="text-center align-top">{gi + 1}</td>
-                <td colSpan={2}>
-                  <p className="font-semibold underline">{group.location}</p>
-                  <table className="w-full text-xs mt-1">
-                    <thead>
-                      <tr className="text-left text-slate-500">
-                        <th className="font-medium pr-2">HEADCOUNT</th>
-                        <th className="font-medium pr-2">RATE</th>
-                        <th className="font-medium pr-2">DAYS</th>
-                        <th className="font-medium text-right pr-2">AMOUNT</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.rows.map((row, ri) => (
-                        <tr key={ri}>
-                          <td className="pr-2 uppercase">
-                            {row.headcount} × {row.category}
+          {hasAdditionalSites ? (
+            (() => {
+              let no = 0;
+              return siteBills.map((siteBill, si) => {
+                const siteSubTotal = sumLineGroups(siteBill.lineGroups) + sumEquipmentRows(siteBill.equipmentRows);
+                return (
+                  <Fragment key={`site-${si}`}>
+                    <tr className="bg-slate-100">
+                      <td colSpan={3} className="font-bold uppercase py-1">
+                        {siteBill.siteName}
+                      </td>
+                    </tr>
+                    {siteBill.lineGroups.map((group, gi) => {
+                      no += 1;
+                      return (
+                        <tr key={`${si}-${group.location}-header-${gi}`}>
+                          <td className="text-center align-top">{no}</td>
+                          <td colSpan={2}>
+                            <p className="font-semibold underline">{group.location}</p>
+                            <table className="w-full text-xs mt-1">
+                              <thead>
+                                <tr className="text-left text-slate-500">
+                                  <th className="font-medium pr-2">HEADCOUNT</th>
+                                  <th className="font-medium pr-2">RATE</th>
+                                  <th className="font-medium pr-2">DAYS</th>
+                                  <th className="font-medium text-right pr-2">AMOUNT</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {group.rows.map((row, ri) => (
+                                  <tr key={ri}>
+                                    <td className="pr-2 uppercase">
+                                      {row.headcount} × {row.category}
+                                    </td>
+                                    <td className="pr-2">{row.rate.toFixed(2)}</td>
+                                    <td className="pr-2">{row.days}</td>
+                                    <td className="text-right pr-2">{formatMoney(row.amount)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
                           </td>
-                          <td className="pr-2">{row.rate.toFixed(2)}</td>
-                          <td className="pr-2">{row.days}</td>
-                          <td className="text-right pr-2">{formatMoney(row.amount)}</td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </td>
-              </tr>
-          ))}
-          {data.equipmentRows?.map((row, ei) => (
-            <tr key={`equipment-${ei}`}>
-              <td className="text-center align-top">{data.lineGroups.length + ei + 1}</td>
-              <td className="align-top uppercase">
-                {row.quantity} × {row.item}
-              </td>
-              <td className="text-right align-top">{formatMoney(row.amount)}</td>
-            </tr>
-          ))}
+                      );
+                    })}
+                    {siteBill.equipmentRows.map((row, ei) => {
+                      no += 1;
+                      return (
+                        <tr key={`${si}-equipment-${ei}`}>
+                          <td className="text-center align-top">{no}</td>
+                          <td className="align-top uppercase">
+                            {row.quantity} × {row.item}
+                          </td>
+                          <td className="text-right align-top">{formatMoney(row.amount)}</td>
+                        </tr>
+                      );
+                    })}
+                    <tr>
+                      <td colSpan={2} className="text-right font-medium italic">
+                        Subtotal — {siteBill.siteName}
+                      </td>
+                      <td className="text-right font-medium italic">{formatMoney(siteSubTotal)}</td>
+                    </tr>
+                  </Fragment>
+                );
+              });
+            })()
+          ) : (
+            <>
+              {data.lineGroups.map((group, gi) => (
+                  <tr key={`${group.location}-header-${gi}`}>
+                    <td className="text-center align-top">{gi + 1}</td>
+                    <td colSpan={2}>
+                      <p className="font-semibold underline">{group.location}</p>
+                      <table className="w-full text-xs mt-1">
+                        <thead>
+                          <tr className="text-left text-slate-500">
+                            <th className="font-medium pr-2">HEADCOUNT</th>
+                            <th className="font-medium pr-2">RATE</th>
+                            <th className="font-medium pr-2">DAYS</th>
+                            <th className="font-medium text-right pr-2">AMOUNT</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.rows.map((row, ri) => (
+                            <tr key={ri}>
+                              <td className="pr-2 uppercase">
+                                {row.headcount} × {row.category}
+                              </td>
+                              <td className="pr-2">{row.rate.toFixed(2)}</td>
+                              <td className="pr-2">{row.days}</td>
+                              <td className="text-right pr-2">{formatMoney(row.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+              ))}
+              {data.equipmentRows?.map((row, ei) => (
+                <tr key={`equipment-${ei}`}>
+                  <td className="text-center align-top">{data.lineGroups.length + ei + 1}</td>
+                  <td className="align-top uppercase">
+                    {row.quantity} × {row.item}
+                  </td>
+                  <td className="text-right align-top">{formatMoney(row.amount)}</td>
+                </tr>
+              ))}
+            </>
+          )}
         </tbody>
       </table>
 

@@ -4,6 +4,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useSitesForBilling, updateSiteBillingRates, updateSiteEquipmentRates } from '../../services/siteBilling';
+import { getTenderSiteDetails } from '../../services/tenders';
 import { useConfirmedMonthSummary } from '../../services/dutyRosterSummary';
 import {
   createInvoice,
@@ -11,11 +12,13 @@ import {
   sumLineGroups,
   sumEquipmentRows,
   peekNextInvoiceNumber,
+  deriveRateCategoriesFromGuardRate,
   INVOICE_HOURS_PER_SHIFT,
   ADDITIONAL_GUARD_CATEGORY,
   isAdditionalGuardCategory,
 } from '../../services/invoices';
 import InvoicePrintView from './InvoicePrintView';
+import InvoiceSiteSection, { type InvoiceSiteSectionData } from './InvoiceSiteSection';
 import type { InvoiceEquipmentRow, InvoiceLineGroup, SiteBillingRate, SiteEquipmentRate, TenderEquipmentItem } from '../../types';
 
 const MONTH_NAMES = [
@@ -34,31 +37,6 @@ function formatBillingMonth(monthValue: string): string {
 function currentMonthValue(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-/** Derives this invoice's billing rate categories straight from the linked tender's own Guard
- *  Rate setup (Active Projects > Project Details — see Tender.guardRateMode's doc comment in
- *  types.ts), so the same rate never has to be typed once there and again here. 'multiple' mode
- *  maps each named position directly to a category of the same name/rate; 'same' mode has no
- *  position names to draw from, so it becomes a single "Security Guard" category at the flat
- *  rate. Returns null when the tender has no Guard Rate configured yet (undefined mode, or a
- *  'same' rate of 0) — callers fall back to the site's own saved billingRates in that case, so a
- *  project that hasn't set one up yet keeps working exactly as before. */
-function deriveRateCategoriesFromGuardRate(t: {
-  guardRateMode?: 'same' | 'multiple';
-  guardRate?: number;
-  guardRatePositions?: { name: string; rate: number }[];
-}): SiteBillingRate[] | null {
-  if (t.guardRateMode === 'multiple') {
-    const positions = (t.guardRatePositions || []).filter((p) => p.name.trim());
-    return positions.length > 0
-      ? positions.map((p) => ({ category: p.name, hourlyRate: p.rate }))
-      : null;
-  }
-  if (t.guardRateMode === 'same' && t.guardRate) {
-    return [{ category: 'Security Guard', hourlyRate: t.guardRate }];
-  }
-  return null;
 }
 
 /**
@@ -139,6 +117,12 @@ export default function InvoiceGenerator() {
   // them, instead of them editing here and wondering why it doesn't stick next time they switch
   // sites away and back.
   const [ratesFromGuardRate, setRatesFromGuardRate] = useState(false);
+  // Whether the Guard Rate/equipment just derived came from THIS site's own siteDetails doc
+  // (an additional linked site with its own saved rate — see TenderSiteDetails in types.ts) as
+  // opposed to the tender's top-level fields (the primary site's own rate, or a fallback for an
+  // additional site with no rate saved yet). Purely for the caption text below — the actual
+  // derivation logic lives in the site-switch effect.
+  const [rateSourceIsOwnSite, setRateSourceIsOwnSite] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ text: string; isError: boolean } | null>(null);
@@ -147,6 +131,15 @@ export default function InvoiceGenerator() {
   // (two invoice numbers) instead of one combined one — see handleSave below. Meaningless (and
   // hidden) whenever only one of the two is present, since there'd be nothing to split.
   const [splitInvoice, setSplitInvoice] = useState(false);
+
+  // "Combine invoicing" — see InvoiceSiteBill's doc comment in types.ts. Extra sites (besides the
+  // primary `site` selected above) billed together on this same invoice, one labeled section
+  // each with its own subtotal. additionalSiteIds is the order they were added in; each site's
+  // actual billing data streams in from its own InvoiceSiteSection via onChange, keyed by id, so
+  // a section that hasn't reported in yet (or was just added) simply isn't folded into the totals
+  // until it has. Mutually exclusive with splitInvoice below — see its own doc comment.
+  const [additionalSiteIds, setAdditionalSiteIds] = useState<string[]>([]);
+  const [additionalBillsById, setAdditionalBillsById] = useState<Record<string, InvoiceSiteSectionData>>({});
 
   // The invoice number's BRAND/BRANCH segments — a saved short code/nickname when the brand or
   // branch has one set (Admin Settings > Branches & Brands), falling back to the full name
@@ -178,12 +171,27 @@ export default function InvoiceGenerator() {
   useEffect(() => {
     setRateDraft(site?.billingRates || []);
     setRatesFromGuardRate(false);
+    setRateSourceIsOwnSite(false);
     setRatesSaved(false);
+    // A combined-invoice site list built for the PREVIOUS primary site makes no sense once the
+    // primary site itself changes — the "+ Add another site" picker only offers siblings of
+    // whichever site is selected up top, so start fresh here the same way the rate/equipment
+    // state above does.
+    setAdditionalSiteIds([]);
+    setAdditionalBillsById({});
     setEquipmentRateDraft(site?.equipmentRates || []);
     setEquipmentRatesSaved(false);
     if (site?.tenderId) {
-      getDoc(doc(db, 'tenders', site.tenderId))
-        .then((snap) => {
+      const tenderId = site.tenderId;
+      const thisSiteId = site.id;
+      Promise.all([
+        getDoc(doc(db, 'tenders', tenderId)),
+        // This site's own tenders/{tenderId}/siteDetails/{siteId} doc, if it has one — see
+        // TenderSiteDetails in types.ts. Only an ADDITIONAL linked site (never the primary one)
+        // ever has one, and only once its Guard Rate/Equipment have actually been saved there.
+        getTenderSiteDetails(tenderId, thisSiteId),
+      ])
+        .then(([snap, siteDetails]) => {
           if (!snap.exists()) return;
           const t = snap.data() as {
             brandId?: string;
@@ -204,15 +212,22 @@ export default function InvoiceGenerator() {
 
           // Billing rate categories mirror this project's own Guard Rate (Active Projects >
           // Project Details) whenever one's been configured there, instead of being retyped a
-          // second time here — see deriveRateCategoriesFromGuardRate's doc comment. Falls back to
-          // whatever's already saved on the site (the pre-existing manual-entry path) for a
-          // project that hasn't set a Guard Rate yet.
-          const derived = deriveRateCategoriesFromGuardRate(t);
+          // second time here — see deriveRateCategoriesFromGuardRate's doc comment. For a
+          // multi-site project, the tender's own top-level guardRateMode/guardRate/
+          // guardRatePositions/additionalEquipment belong to its PRIMARY site only (see
+          // TenderSiteDetails' doc comment in types.ts) — an ADDITIONAL site with its own saved
+          // siteDetails doc uses THAT instead, so its invoice reflects its own rate rather than
+          // silently inheriting the primary site's. Falls back to the tender's top-level fields
+          // (same as before this distinction existed) for the primary site itself, or for an
+          // additional site that hasn't had its own rate/equipment saved yet.
+          const rateSource = siteDetails ?? t;
+          const derived = deriveRateCategoriesFromGuardRate(rateSource);
           if (derived) {
             setRateDraft(derived);
             setRatesFromGuardRate(true);
+            setRateSourceIsOwnSite(!!siteDetails);
           }
-          setTenderEquipment(t.additionalEquipment || []);
+          setTenderEquipment((siteDetails ? siteDetails.additionalEquipment : t.additionalEquipment) || []);
         })
         .catch(() => {});
     } else {
@@ -422,7 +437,20 @@ export default function InvoiceGenerator() {
     return Math.max(0, site.guardCount - usedByOthers);
   }
 
-  const subTotal = sumLineGroups(lineGroups) + sumEquipmentRows(equipmentRows);
+  // This site's own subtotal — kept separate from the combined `subTotal` below because the
+  // Duty Roster discrepancy check further down compares THIS site's confirmed roster against
+  // THIS site's own line items, never against other sites combined onto the same invoice (each
+  // additional site reconciles against its own confirmed roster independently, inside its own
+  // InvoiceSiteSection).
+  const primarySubTotal = sumLineGroups(lineGroups) + sumEquipmentRows(equipmentRows);
+  // Every additional site combined onto this invoice — see additionalSiteIds/additionalBillsById
+  // above and InvoiceSiteSection's onChange. A site that was just added (or hasn't reported in
+  // yet) simply isn't in here until it does.
+  const additionalBills = additionalSiteIds
+    .map((id) => additionalBillsById[id])
+    .filter((b): b is InvoiceSiteSectionData => !!b);
+  const additionalSubTotal = additionalBills.reduce((sum, b) => sum + b.subTotal, 0);
+  const subTotal = primarySubTotal + additionalSubTotal;
   const sstAmount = subTotal * sstRate;
   const total = subTotal + sstAmount;
 
@@ -436,7 +464,7 @@ export default function InvoiceGenerator() {
     0
   );
   const remainingManHours = confirmedSummary ? confirmedSummary.manHours - lineManHours : null;
-  const remainingAmount = confirmedSummary ? confirmedSummary.amount - subTotal : null;
+  const remainingAmount = confirmedSummary ? confirmedSummary.amount - primarySubTotal : null;
   const hasDiscrepancy =
     remainingAmount != null && remainingManHours != null
     && (Math.abs(remainingAmount) > 0.01 || Math.abs(remainingManHours) > 0.05);
@@ -461,10 +489,28 @@ export default function InvoiceGenerator() {
   const siteGuardCount = site?.guardCount ?? null;
   const headcountExceedsSite = siteGuardCount != null && totalHeadcount > siteGuardCount;
 
+  // Every additional site that's been added must itself be ready to bill (has content, and no
+  // blocking discrepancy/headcount issue of its own — see InvoiceSiteSection's own canSave) —
+  // an added-but-empty site would otherwise print a labeled section with nothing in it.
+  const additionalSitesValid = additionalSiteIds.every((id) => additionalBillsById[id]?.canSave === true);
+
+  // Sites eligible to be combined onto this invoice via "+ Add another site" below — siblings of
+  // the primary `site` sharing its tenderId (the same multi-site project), excluding the primary
+  // site itself, archived sites, and ones already added. Empty (and the picker hidden) whenever
+  // the primary site has no linked tender or no other linked sites — same as before this feature
+  // existed.
+  const combinableSites = site
+    ? sites.filter(
+        (s) => s.tenderId && s.tenderId === site.tenderId && s.id !== site.id && !s.archived && !additionalSiteIds.includes(s.id)
+      )
+    : [];
+
   const canSave = !!(
-    profile && brand && site && clientName.trim() && (lineGroups.length > 0 || equipmentRows.length > 0)
+    profile && brand && site && clientName.trim()
+    && (lineGroups.length > 0 || equipmentRows.length > 0 || additionalSiteIds.length > 0)
     && (!hasDiscrepancy || discrepancyAcknowledged)
     && !headcountExceedsSite
+    && additionalSitesValid
   );
 
   async function handleSave() {
@@ -498,10 +544,24 @@ export default function InvoiceGenerator() {
         signatoryTitle: signatoryTitle.trim(),
       };
 
+      // additionalSiteBills carries every combined site's own billing over to createInvoice() —
+      // see InvoiceSiteBill's doc comment in types.ts. Only ever non-empty when additionalSiteIds
+      // is, which itself gates splitInvoice off below (splitting by guard-hours/equipment doesn't
+      // extend to "grouped by site" combined invoicing — see splitInvoice's own doc comment and
+      // the checkbox's visibility condition further down).
+      const additionalSiteBillsInput = additionalBills.map((b) => ({
+        siteId: b.siteId,
+        siteName: b.siteName,
+        lineGroups: b.lineGroups,
+        equipmentRows: b.equipmentRows,
+      }));
+
       // Only actually splits when there's something on both sides to split — a lone guard-hours
       // or lone equipment invoice saves as one invoice regardless of the checkbox, same as
-      // before this feature existed.
-      if (splitInvoice && lineGroups.length > 0 && equipmentRows.length > 0) {
+      // before this feature existed. Never splits when any additional site is combined onto this
+      // invoice — those always save as one combined invoice, matching the "one invoice number,
+      // one PDF" design.
+      if (splitInvoice && additionalSiteIds.length === 0 && lineGroups.length > 0 && equipmentRows.length > 0) {
         const guardResult = await createInvoice(
           { ...shared, lineGroups, equipmentRows: [], discrepancyAmount: remainingAmount, discrepancyAcknowledged },
           actor
@@ -519,13 +579,22 @@ export default function InvoiceGenerator() {
         });
       } else {
         const result = await createInvoice(
-          { ...shared, lineGroups, equipmentRows, discrepancyAmount: remainingAmount, discrepancyAcknowledged },
+          {
+            ...shared,
+            lineGroups,
+            equipmentRows,
+            additionalSiteBills: additionalSiteBillsInput,
+            discrepancyAmount: remainingAmount,
+            discrepancyAcknowledged,
+          },
           actor
         );
         setSaveMessage({ text: `Invoice ${result.invoiceNo} saved — find it in the Invoices tab.`, isError: false });
       }
       setLineGroups([]);
       setEquipmentRows([]);
+      setAdditionalSiteIds([]);
+      setAdditionalBillsById({});
       setPreviewNonce((n) => n + 1);
     } catch (err) {
       setSaveMessage({ text: err instanceof Error ? err.message : 'Could not save invoice.', isError: true });
@@ -574,8 +643,10 @@ export default function InvoiceGenerator() {
               contractRef,
               paymentTermsDays,
               billingMonth,
+              siteName: site?.name || '',
               lineGroups,
               equipmentRows,
+              additionalSiteBills: additionalBills,
               subTotal,
               sstRate,
               sstAmount,
@@ -691,7 +762,9 @@ export default function InvoiceGenerator() {
               <h3 className="text-sm font-semibold text-slate-800">Billing rate categories for {site.name}</h3>
               <p className="text-xs text-slate-400 mt-0.5 mb-3">
                 {ratesFromGuardRate
-                  ? "Pulled from this project's Guard Rate (Active Projects > Project Details) — edit it there to change these."
+                  ? rateSourceIsOwnSite
+                    ? "Pulled from this site's own Guard Rate (Active Projects > Project Details > this site's card) — edit it there to change these."
+                    : "Pulled from this project's Guard Rate (Active Projects > Project Details) — edit it there to change these."
                   : 'Set once, reused every month — each line row below picks from this list.'}
                 {' '}The "Additional Guard (Temporary)" category is exempt from the guard-post
                 cap below — use it for an extra post the client asked for beyond this site's
@@ -794,7 +867,9 @@ export default function InvoiceGenerator() {
               <h3 className="text-sm font-semibold text-slate-800">Equipment / add-on rates for {site.name}</h3>
               <p className="text-xs text-slate-400 mt-0.5 mb-3">
                 {equipmentFromTender
-                  ? "Declared on this project's own Project Details (each with its own start date) — manage items there, not here. Shown below for the billing month selected above."
+                  ? rateSourceIsOwnSite
+                    ? "Declared on this site's own card in Project Details (each with its own start date) — manage items there, not here. Shown below for the billing month selected above."
+                    : "Declared on this project's own Project Details (each with its own start date) — manage items there, not here. Shown below for the billing month selected above."
                   : 'Recurring monthly items — e-bikes, drones, patrol vehicles and similar — billed alongside guard headcount. Set once, reused every month, same as the guard rate categories above.'}
               </p>
             </div>
@@ -1166,6 +1241,62 @@ export default function InvoiceGenerator() {
         {equipmentRows.length === 0 && <p className="text-xs text-slate-400">No equipment added yet.</p>}
       </div>
 
+      {site && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h3 className="text-sm font-semibold text-slate-800">Combine other sites onto this invoice</h3>
+          <p className="text-xs text-slate-400 mt-0.5 mb-3">
+            Bill another site from the same multi-site project together with {site.name} on this same invoice — one
+            invoice number, one PDF, each site its own labeled section below with its own subtotal, rolled into one
+            grand total.
+          </p>
+          {combinableSites.length > 0 ? (
+            <select
+              value=""
+              onChange={(e) => {
+                const id = e.target.value;
+                if (id) setAdditionalSiteIds((prev) => [...prev, id]);
+              }}
+              className="input w-full"
+            >
+              <option value="">+ Add a site…</option>
+              {combinableSites.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} {s.branch ? `(${s.branch})` : ''}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="text-xs text-slate-400">
+              {site.tenderId
+                ? 'No other sites from this project to add.'
+                : "This site has no linked project, so there's nothing to combine it with."}
+            </p>
+          )}
+        </div>
+      )}
+
+      {additionalSiteIds.map((id) => {
+        const additionalSite = sites.find((s) => s.id === id);
+        if (!additionalSite) return null;
+        return (
+          <InvoiceSiteSection
+            key={id}
+            site={additionalSite}
+            billingMonthValue={billingMonthValue}
+            billingMonth={billingMonth}
+            onChange={(data) => setAdditionalBillsById((prev) => ({ ...prev, [id]: data }))}
+            onRemove={() => {
+              setAdditionalSiteIds((prev) => prev.filter((x) => x !== id));
+              setAdditionalBillsById((prev) => {
+                const next = { ...prev };
+                delete next[id];
+                return next;
+              });
+            }}
+          />
+        );
+      })}
+
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <div className="flex justify-end">
           <table className="text-sm">
@@ -1186,7 +1317,7 @@ export default function InvoiceGenerator() {
           </table>
         </div>
 
-        {lineGroups.length > 0 && equipmentRows.length > 0 && (
+        {lineGroups.length > 0 && equipmentRows.length > 0 && additionalSiteIds.length === 0 && (
           <label className="flex items-start gap-2 mt-3 text-xs text-slate-600">
             <input
               type="checkbox"
