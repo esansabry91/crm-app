@@ -36,11 +36,12 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
     <>
       <div className="px-4 py-5 border-b border-slate-100">
         <div className="flex items-center gap-2.5">
-          <div className="h-9 w-12 rounded-lg bg-blue-600 text-white flex items-center justify-center font-semibold text-xs shrink-0">
-            IPSB
-          </div>
+          <img
+            src="/logo-icon.png"
+            alt="Inter Prominent"
+            className="h-9 w-9 rounded-lg object-contain border border-slate-200 shrink-0"
+          />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-slate-900 leading-tight truncate">Inter Prominent</p>
             <p className="text-xs text-slate-400 leading-tight">Customer Relationship Management Portal</p>
           </div>
           {onCollapse && (
@@ -201,9 +202,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <line x1="3" y1="18" x2="21" y2="18" />
           </svg>
         </button>
-        <div className="h-8 w-11 rounded-lg bg-blue-600 text-white flex items-center justify-center font-semibold text-[11px] shrink-0">
-          IPSB
-        </div>
+        <img
+          src="/logo-icon.png"
+          alt="Inter Prominent"
+          className="h-8 w-8 rounded-lg object-contain border border-slate-200 shrink-0"
+        />
         <p className="text-sm font-semibold text-slate-900 truncate">Inter Prominent CRM</p>
       </header>
 

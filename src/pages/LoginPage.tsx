@@ -53,9 +53,11 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-100 px-4">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 h-11 w-16 rounded-xl bg-blue-600 text-white flex items-center justify-center font-semibold text-base">
-            IPSB
-          </div>
+          <img
+            src="/logo-icon.png"
+            alt="Inter Prominent"
+            className="mx-auto mb-3 h-14 w-14 rounded-xl object-contain border border-slate-200"
+          />
           <h1 className="text-xl font-semibold text-slate-900">Customer Relationship Management Portal</h1>
           <p className="text-sm text-slate-500 mt-1">
             {mode === 'signin' ? 'Sign in with your team account' : 'Reset your password'}
