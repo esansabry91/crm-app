@@ -535,6 +535,32 @@ export function effectiveGuardRate(
 }
 
 /**
+ * Estimated CURRENT monthly value one site is contributing — Guard Rate's share
+ * (effectiveGuardRate() * STANDARD_MONTHLY_HOURS_PER_GUARD * guardsDeployed) plus every
+ * equipment item still active this month (not stopped, or stopped in a future month) at
+ * monthlyRate * quantity. This is a SNAPSHOT of what one site is worth per month right now — it
+ * does NOT attempt to attribute any share of the project's actual tenderValue, which is a
+ * cumulative running total built from historical deltas (rate changes, equipment added/stopped)
+ * and stays combined/shared across every linked site by design (see TenderSiteDetails' doc
+ * comment in types.ts). Powers the per-site "Estimated monthly value" summary in
+ * ProjectDetailsModal.tsx's Linked Sites section — a reporting aid only, writes nothing.
+ */
+export function estimatedMonthlySiteValue(
+  guardRateMode: 'same' | 'multiple' | undefined,
+  guardRate: number | undefined,
+  guardRatePositions: { name: string; rate: number }[] | undefined,
+  guardsDeployed: number,
+  equipment: TenderEquipmentItem[] | undefined
+): { guardRateValue: number; equipmentValue: number; total: number } {
+  const guardRateValue = effectiveGuardRate(guardRateMode, guardRate, guardRatePositions) * STANDARD_MONTHLY_HOURS_PER_GUARD * guardsDeployed;
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const equipmentValue = (equipment || [])
+    .filter((eq) => !eq.stoppedDate || eq.stoppedDate.slice(0, 7) >= currentMonth)
+    .reduce((sum, eq) => sum + eq.monthlyRate * eq.quantity, 0);
+  return { guardRateValue, equipmentValue, total: guardRateValue + equipmentValue };
+}
+
+/**
  * Applies a Guard Rate change (Project Details > Guard Rate) to a Won project's tracked contract
  * value — the same "increasing contract value" story as addTenderEquipment(), except Guard Rate
  * is RM per man-hour rather than a fixed monthly fee, so there's no exact monthly total to

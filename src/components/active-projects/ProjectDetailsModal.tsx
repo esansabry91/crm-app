@@ -9,6 +9,7 @@ import {
   applyTenderSiteGuardRateChange,
   createTenderSite,
   effectiveGuardRate,
+  estimatedMonthlySiteValue,
   getTenderSiteDetails,
   removeTenderEquipmentItem,
   resetTenderSiteMode,
@@ -521,6 +522,25 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
       setSiteModeBusy(null);
     }
   };
+
+  // Estimated monthly value by site — a reporting summary only (see estimatedMonthlySiteValue()'s
+  // own doc comment in services/tenders.ts); never written anywhere, and the project's actual
+  // tenderValue stays combined regardless. The primary site (linkedSites[0]) reads its guard
+  // rate/equipment straight off the tender's own top-level fields, same as the rest of this
+  // form; every other site reads its own siteDetails doc via useTenderSites().
+  const valueBreakdown = linkedSites.map((site) => {
+    const guardsDeployed = site.isPrimary ? liveGuardCount ?? activeTenderNow.guardsDeployed ?? 0 : site.activeGuardCount;
+    const guardRateMode = site.isPrimary ? activeTenderNow.guardRateMode : site.details?.guardRateMode;
+    const guardRate = site.isPrimary ? activeTenderNow.guardRate : site.details?.guardRate;
+    const guardRatePositions = site.isPrimary ? activeTenderNow.guardRatePositions : site.details?.guardRatePositions;
+    const equipment = site.isPrimary ? activeTenderNow.additionalEquipment : site.details?.additionalEquipment;
+    return {
+      key: site.id,
+      label: site.name,
+      ...estimatedMonthlySiteValue(guardRateMode, guardRate, guardRatePositions, guardsDeployed, equipment),
+    };
+  });
+  const combinedMonthlyValue = valueBreakdown.reduce((sum, row) => sum + row.total, 0);
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
@@ -1056,6 +1076,33 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                 while the contract value above stays combined)
               </span>
             </p>
+
+            {linkedSites.length > 1 && (
+              <div className="mb-3 rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-2">
+                <p className="text-[11px] font-medium text-slate-500">
+                  Estimated monthly value by site{' '}
+                  <span className="text-slate-400 font-normal">
+                    (guard rate + active equipment, right now — a snapshot for reporting, not a
+                    split of the combined contract value above)
+                  </span>
+                </p>
+                {valueBreakdown.map((row) => (
+                  <div key={row.key} className="text-xs">
+                    <div className="flex items-center justify-between text-slate-700">
+                      <span className="truncate font-medium">{row.label}</span>
+                      <span className="font-medium shrink-0 ml-2">RM {row.total.toFixed(2)}/mo</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      RM {row.guardRateValue.toFixed(2)} guard rate + RM {row.equipmentValue.toFixed(2)} equipment
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-800 pt-2 border-t border-slate-200">
+                  <span>Combined</span>
+                  <span>RM {combinedMonthlyValue.toFixed(2)}/mo</span>
+                </div>
+              </div>
+            )}
 
             {linkedSites.length > 1 && (
               <div className="space-y-2 mb-3">
