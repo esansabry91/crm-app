@@ -1,5 +1,7 @@
 import {
   addDoc,
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -13,7 +15,7 @@ import {
 import { db } from '../firebase';
 import { releaseGuardsFromSite } from './guards';
 import { shouldStampTestData } from './settings';
-import type { Role, Stage, Tender } from '../types';
+import type { Role, Stage, Tender, TenderEquipmentItem } from '../types';
 import { isAdminRole } from '../types';
 
 /** Actor performing an action — `role` is optional only for call-site back-compat; every real
@@ -307,6 +309,111 @@ export async function renewContract(
       type: 'value_change',
       stage: tender.stage,
       value: input.tenderValue,
+      changedByUid: actor.uid,
+      changedByName: actor.name,
+      ownerUid: tender.ownerUid,
+    });
+  }
+}
+
+/** Number of distinct 'YYYY-MM' calendar months from `fromISO` through `toISO`, inclusive (e.g.
+ *  2026-09-15 through 2026-11-30 is 3: September, October, November) — used by
+ *  addTenderEquipment() below to estimate how many months' billing a new equipment item still
+ *  has left on the contract. Never negative (an item starting after the contract's own end
+ *  contributes 0). */
+export function wholeMonthsInclusive(fromISO: string, toISO: string): number {
+  const [fy, fm] = fromISO.split('-').map(Number);
+  const [ty, tm] = toISO.split('-').map(Number);
+  return Math.max(0, (ty - fy) * 12 + (tm - fm) + 1);
+}
+
+/**
+ * Declares one additional equipment/add-on item on a Won project (Active Projects > Project
+ * Details > "Additional Equipment") — e.g. an e-bike or drone the client asked for, on top of
+ * guard headcount. Unlike Branch Collection's site-level SiteEquipmentRate catalog (a plain
+ * fallback list with no value tracking), this bumps the project's own tracked `tenderValue` by an
+ * ESTIMATE of what the item adds to the deal's total worth over what's left of the contract —
+ * `monthlyRate * quantity * wholeMonthsInclusive(startDate, contractEnd)` — and logs that bump as
+ * a `value_change` history entry timestamped to `startDate` itself (not "now"), the same
+ * mechanism renewContract() uses, so the Active Project Value Bridge places the increase in
+ * whichever period the equipment actually started in — including a past period, for equipment
+ * being backfilled after the fact.
+ *
+ * `startDate` is clamped to never be earlier than the tender's own contractStart — equipment
+ * can't predate the contract it's billed under (the Project Details date picker already enforces
+ * this; clamped again here as a second guard rail, same reasoning as InvoiceGenerator's own
+ * headcount cap).
+ *
+ * Mirrors renewContract()'s own permission story: Firestore rules let a branch-mate (or HQ) on
+ * this Won project's activeBranch write `tenderValue`/`additionalEquipment` and log a
+ * `value_change` entry here without being the tender's owner/admin, same as a renewal.
+ */
+export async function addTenderEquipment(
+  tender: Tender,
+  input: { item: string; monthlyRate: number; quantity: number; startDate: string },
+  actor: Actor
+): Promise<void> {
+  const startDate = input.startDate < tender.contractStart ? tender.contractStart : input.startDate;
+  const monthsRemaining = wholeMonthsInclusive(startDate, tender.contractEnd);
+  const valueContribution = input.monthlyRate * input.quantity * monthsRemaining;
+  const newItem: TenderEquipmentItem = {
+    id: crypto.randomUUID(),
+    item: input.item,
+    monthlyRate: input.monthlyRate,
+    quantity: input.quantity,
+    startDate,
+    valueContribution,
+    addedAt: Date.now(),
+  };
+  const newTenderValue = tender.tenderValue + valueContribution;
+
+  await updateDoc(doc(db, 'tenders', tender.id), {
+    additionalEquipment: arrayUnion(newItem),
+    tenderValue: newTenderValue,
+    updatedAt: Date.now(),
+  });
+
+  if (valueContribution !== 0) {
+    await addHistoryEntry(
+      tender.id,
+      {
+        type: 'value_change',
+        stage: tender.stage,
+        value: newTenderValue,
+        changedByUid: actor.uid,
+        changedByName: actor.name,
+        ownerUid: tender.ownerUid,
+      },
+      closedDateToMillis(startDate)
+    );
+  }
+}
+
+/**
+ * Removes one equipment item declared via addTenderEquipment() above, reversing EXACTLY the
+ * `valueContribution` it added at the time (never a value re-derived from today's rate/quantity/
+ * contractEnd, which may have since changed) — floored at 0 so a tenderValue manually lowered
+ * since can't go negative. Unlike the item's own (possibly backdated) startDate, this history
+ * entry is logged at the moment of removal itself: a past period's bridge, already generated
+ * while the item was active, stays exactly as it was; only this period onward reflects the
+ * decrease.
+ */
+export async function removeTenderEquipmentItem(tender: Tender, itemId: string, actor: Actor): Promise<void> {
+  const item = (tender.additionalEquipment || []).find((eq) => eq.id === itemId);
+  if (!item) return;
+  const newTenderValue = Math.max(0, tender.tenderValue - item.valueContribution);
+
+  await updateDoc(doc(db, 'tenders', tender.id), {
+    additionalEquipment: arrayRemove(item),
+    tenderValue: newTenderValue,
+    updatedAt: Date.now(),
+  });
+
+  if (item.valueContribution !== 0) {
+    await addHistoryEntry(tender.id, {
+      type: 'value_change',
+      stage: tender.stage,
+      value: newTenderValue,
       changedByUid: actor.uid,
       changedByName: actor.name,
       ownerUid: tender.ownerUid,

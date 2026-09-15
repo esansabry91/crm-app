@@ -225,10 +225,12 @@ service cloud.firestore {
 
       // Non-owners can additionally update JUST the Active Project detail fields (location,
       // state, city, postcode, contact person, guards deployed, tender doc number/PDF, close-out
-      // status) — PLUS, now, contractEnd/tenderValue for a straight renewal (see renewContract()
-      // in services/tenders.ts and RenewContractModal.tsx) — on a Won tender they can see in
-      // Active Projects — branch-mates in its activeBranch, or anyone in HQ — mirroring the read
-      // rule above. affectedKeys().hasOnly([...]) is what keeps this narrow: any write that also
+      // status) — PLUS contractEnd/tenderValue for a straight renewal (see renewContract() in
+      // services/tenders.ts and RenewContractModal.tsx), and PLUS additionalEquipment/tenderValue
+      // together for declaring/removing an equipment item (see addTenderEquipment()/
+      // removeTenderEquipmentItem(), same reasoning) — on a Won tender they can see in Active
+      // Projects — branch-mates in its activeBranch, or anyone in HQ — mirroring the read rule
+      // above. affectedKeys().hasOnly([...]) is what keeps this narrow: any write that also
       // touches stage, ownerUid, department, etc. falls through and is rejected unless the
       // caller is the owner or an admin. Deliberately does NOT extend contractStart: a renewal
       // continues the same engagement rather than starting a new one, so that field stays
@@ -243,7 +245,7 @@ service cloud.firestore {
             resource.data.stage == 'Won'
             && (resource.data.activeBranch == myDepartment() || myDepartment() == 'HQ')
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['location', 'state', 'city', 'postcode', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'scopeOfWork', 'tenderDocumentKey', 'tenderDocumentFileId', 'tenderDocumentName', 'tenderDocumentSize', 'tenderDocumentUploadedAt', 'clientAlias', 'clientAddress', 'guardRateMode', 'guardRate', 'guardRatePositions', 'closedOut', 'closedOutAt', 'contractEnd', 'tenderValue', 'updatedAt'])
+                 .hasOnly(['location', 'state', 'city', 'postcode', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'scopeOfWork', 'tenderDocumentKey', 'tenderDocumentFileId', 'tenderDocumentName', 'tenderDocumentSize', 'tenderDocumentUploadedAt', 'clientAlias', 'clientAddress', 'guardRateMode', 'guardRate', 'guardRatePositions', 'additionalEquipment', 'closedOut', 'closedOutAt', 'contractEnd', 'tenderValue', 'updatedAt'])
           )
           // Accepting a pending reassignment (see Tender.pendingReassignment and
           // acceptReassignment() in services/tenders.ts) — only the Branch Manager (not
@@ -279,12 +281,14 @@ service cloud.firestore {
           && (
             isAdmin()
             || request.resource.data.ownerUid == request.auth.uid
-            // renewContract() (services/tenders.ts) is the one non-owner, non-admin path that
-            // writes history here — a Branch Manager renewing a Won project they run but didn't
-            // personally sell. Unlike ownerUid above (tied to the writer's own auth.uid, so it
-            // can't be spoofed), a branch match has nothing on the new entry itself binding it to
-            // the truth, so this checks the REAL parent tender's stage/activeBranch via get()
-            // rather than trusting anything the caller put on the entry.
+            // renewContract() and addTenderEquipment()/removeTenderEquipmentItem() (all in
+            // services/tenders.ts) are the non-owner, non-admin paths that write history here — a
+            // Branch Manager renewing, or declaring/removing equipment on, a Won project they run
+            // but didn't personally sell. Unlike ownerUid above (tied to the writer's own
+            // auth.uid, so it can't be spoofed), a branch match has nothing on the new entry
+            // itself binding it to the truth, so this checks the REAL parent tender's
+            // stage/activeBranch via get() rather than trusting anything the caller put on the
+            // entry.
             || (
               request.resource.data.type == 'value_change'
               && get(/databases/$(database)/documents/tenders/$(tenderId)).data.stage == 'Won'

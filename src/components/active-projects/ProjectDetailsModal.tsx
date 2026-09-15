@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import type { Tender } from '../../types';
-import { updateActiveProjectDetails } from '../../services/tenders';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
+import type { Role, Tender } from '../../types';
+import {
+  addTenderEquipment,
+  removeTenderEquipmentItem,
+  updateActiveProjectDetails,
+  wholeMonthsInclusive,
+} from '../../services/tenders';
+import { formatDate } from '../../utils/format';
 import {
   deleteTenderDocument,
   openTenderDocument,
@@ -20,6 +28,10 @@ interface Props {
    * instead, so nobody types a number here that the roster would just overwrite the meaning of.
    */
   liveGuardCount?: number;
+  /** Needed for the Additional Equipment section below — addTenderEquipment()/
+   *  removeTenderEquipmentItem() log a history entry attributed to whoever's making the change,
+   *  same as RenewContractModal's own actor prop. */
+  actor: { uid: string; name: string; role?: Role };
 }
 
 /**
@@ -39,7 +51,7 @@ interface Props {
  * details are first entered), and the Guard Rate section, which is optional since a rate may get
  * finalized separately from the rest of a project's details.
  */
-export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCount }: Props) {
+export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCount, actor }: Props) {
   const [location, setLocation] = useState('');
   const [stateName, setStateName] = useState('');
   const [city, setCity] = useState('');
@@ -65,6 +77,22 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   const [docError, setDocError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Additional Equipment (see TenderEquipmentItem's doc comment in types.ts) — saves immediately
+  // per item, like the tender document upload/delete above, rather than being staged until this
+  // form's own "Save Details" button (which never touches tenderValue/additionalEquipment).
+  // `workingTender` is a locally-refreshed copy of the `tender` prop: the prop itself is a
+  // point-in-time snapshot the parent page took when this modal was opened (see
+  // ActiveProjectsPage's detailsTender), so without this, adding a SECOND item in the same modal
+  // session would compute its value bump against a stale tenderValue instead of the one the
+  // first add just wrote.
+  const [workingTender, setWorkingTender] = useState<Tender | null>(null);
+  const [eqItem, setEqItem] = useState('');
+  const [eqRate, setEqRate] = useState('');
+  const [eqQty, setEqQty] = useState('');
+  const [eqStartDate, setEqStartDate] = useState('');
+  const [eqBusy, setEqBusy] = useState<string | null>(null); // 'add', an item id being removed, or null
+  const [eqError, setEqError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!open || !tender) return;
     setLocation(tender.location || '');
@@ -87,6 +115,13 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     setDocError(null);
     setClientAlias(tender.clientAlias || '');
     setClientAddress(tender.clientAddress || '');
+    setWorkingTender(tender);
+    setEqItem('');
+    setEqRate('');
+    setEqQty('');
+    const todayStr = new Date().toISOString().slice(0, 10);
+    setEqStartDate(tender.contractStart && tender.contractStart > todayStr ? tender.contractStart : todayStr);
+    setEqError(null);
     setRateMode(tender.guardRateMode === 'multiple' ? 'multiple' : 'same');
     setFlatRate(tender.guardRate != null ? String(tender.guardRate) : '');
     setPositions(
@@ -140,6 +175,67 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
       setDocError(err instanceof Error ? err.message : 'Could not delete the document.');
     } finally {
       setDocBusy('idle');
+    }
+  };
+
+  // Re-reads the tender doc after a write below so a second add/remove in the same modal
+  // session computes against the value the FIRST one just wrote, not the stale prop — see
+  // workingTender's own doc comment above.
+  const refreshWorkingTender = async () => {
+    if (!tender) return;
+    const snap = await getDoc(doc(db, 'tenders', tender.id));
+    if (snap.exists()) setWorkingTender({ id: snap.id, ...(snap.data() as Omit<Tender, 'id'>) });
+  };
+
+  const handleAddEquipment = async () => {
+    const activeTender = workingTender || tender;
+    if (!activeTender) return;
+    setEqError(null);
+    const name = eqItem.trim();
+    const rate = Number(eqRate);
+    const qty = Number(eqQty);
+    if (!name) { setEqError('Enter the equipment name.'); return; }
+    if (!Number.isFinite(rate) || rate < 0) { setEqError('Enter a valid monthly rate.'); return; }
+    if (!Number.isFinite(qty) || qty <= 0) { setEqError('Enter a valid quantity.'); return; }
+    if (!eqStartDate) { setEqError('Pick a start date.'); return; }
+    setEqBusy('add');
+    try {
+      await addTenderEquipment(
+        activeTender,
+        { item: name, monthlyRate: rate, quantity: qty, startDate: eqStartDate },
+        actor
+      );
+      await refreshWorkingTender();
+      setEqItem('');
+      setEqRate('');
+      setEqQty('');
+      setEqStartDate(new Date().toISOString().slice(0, 10));
+    } catch (err) {
+      setEqError(err instanceof Error ? err.message : 'Could not add this equipment item.');
+    } finally {
+      setEqBusy(null);
+    }
+  };
+
+  const handleRemoveEquipment = async (itemId: string, label: string) => {
+    const activeTender = workingTender || tender;
+    if (!activeTender) return;
+    if (
+      !window.confirm(
+        `Remove "${label}" from this project's Additional Equipment? This reverses the value it added to this project's tracked contract value.`
+      )
+    ) {
+      return;
+    }
+    setEqError(null);
+    setEqBusy(itemId);
+    try {
+      await removeTenderEquipmentItem(activeTender, itemId, actor);
+      await refreshWorkingTender();
+    } catch (err) {
+      setEqError(err instanceof Error ? err.message : 'Could not remove this equipment item.');
+    } finally {
+      setEqBusy(null);
     }
   };
 
@@ -490,6 +586,118 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                 </button>
               </div>
             )}
+          </div>
+
+          <div className="pt-2 border-t border-slate-100">
+            <p className="block text-xs font-medium text-slate-500 mb-2">
+              Additional Equipment{' '}
+              <span className="text-slate-400 font-normal">
+                (optional — e-bikes, drones and similar, billed alongside guard headcount; add an
+                item from day one of the contract or mid-way through it)
+              </span>
+            </p>
+
+            {(() => {
+              const activeTender = workingTender || tender;
+              const items = [...(activeTender.additionalEquipment || [])].sort((a, b) =>
+                a.startDate < b.startDate ? -1 : a.startDate > b.startDate ? 1 : 0
+              );
+              const previewRate = Number(eqRate) || 0;
+              const previewQty = Number(eqQty) || 0;
+              const previewStart =
+                eqStartDate && eqStartDate < activeTender.contractStart
+                  ? activeTender.contractStart
+                  : eqStartDate;
+              const previewMonths = previewStart
+                ? wholeMonthsInclusive(previewStart, activeTender.contractEnd)
+                : 0;
+              const previewValue = previewRate * previewQty * previewMonths;
+
+              return (
+                <>
+                  {items.length > 0 && (
+                    <div className="space-y-1.5 mb-3">
+                      {items.map((eq) => (
+                        <div key={eq.id} className="flex items-center gap-2 text-sm bg-slate-50 rounded-lg px-3 py-2">
+                          <div className="flex-1 min-w-0">
+                            <span className="text-slate-700 font-medium">{eq.item}</span>{' '}
+                            <span className="text-slate-500">
+                              RM {eq.monthlyRate.toFixed(2)} × {eq.quantity} / month, from {formatDate(eq.startDate)}
+                            </span>
+                          </div>
+                          <span className="text-xs text-slate-400 whitespace-nowrap">
+                            +RM {eq.valueContribution.toFixed(2)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEquipment(eq.id, eq.item)}
+                            disabled={eqBusy !== null}
+                            className="text-xs font-medium text-rose-500 hover:text-rose-600 disabled:opacity-60 shrink-0"
+                          >
+                            {eqBusy === eq.id ? 'Removing…' : 'Remove'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        value={eqItem}
+                        onChange={(e) => setEqItem(e.target.value)}
+                        placeholder="e.g. E-bike"
+                        className="input flex-1"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={eqRate}
+                        onChange={(e) => setEqRate(e.target.value)}
+                        placeholder="RM/month"
+                        className="input w-24"
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        step="1"
+                        value={eqQty}
+                        onChange={(e) => setEqQty(e.target.value)}
+                        placeholder="Qty"
+                        className="input w-16"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        value={eqStartDate}
+                        min={activeTender.contractStart || undefined}
+                        max={activeTender.contractEnd || undefined}
+                        onChange={(e) => setEqStartDate(e.target.value)}
+                        className="input"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddEquipment}
+                        disabled={eqBusy !== null}
+                        className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 disabled:opacity-60 whitespace-nowrap"
+                      >
+                        {eqBusy === 'add' ? 'Adding…' : '+ Add equipment'}
+                      </button>
+                    </div>
+                    {eqItem.trim() && eqRate.trim() && eqQty.trim() && eqStartDate && (
+                      <p className="text-[11px] text-slate-400">
+                        Adds an estimated RM {previewValue.toFixed(2)} to this project's tracked contract
+                        value ({previewMonths} month{previewMonths === 1 ? '' : 's'} remaining from{' '}
+                        {formatDate(previewStart)} to contract end).
+                      </p>
+                    )}
+                    {eqError && <p className="text-xs text-rose-600">{eqError}</p>}
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
           {error && <p className="text-sm text-rose-600">{error}</p>}

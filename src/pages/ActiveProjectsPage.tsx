@@ -688,6 +688,7 @@ export default function ActiveProjectsPage() {
         tender={detailsTender}
         onClose={() => setDetailsTender(null)}
         liveGuardCount={detailsTender ? liveGuardCounts.get(detailsTender.id) : undefined}
+        actor={{ uid: profile.uid, name: profile.name, role: profile.role }}
       />
 
       {profile && (

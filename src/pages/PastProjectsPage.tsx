@@ -168,6 +168,7 @@ export default function PastProjectsPage() {
         open={detailsTender !== null}
         tender={detailsTender}
         onClose={() => setDetailsTender(null)}
+        actor={{ uid: profile.uid, name: profile.name, role: profile.role }}
       />
     </div>
   );

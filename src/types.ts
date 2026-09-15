@@ -165,6 +165,37 @@ export interface Brand {
   shortCode?: string;
 }
 
+/**
+ * One additional equipment/add-on item declared on a Won project's own Project Details (e.g. an
+ * e-bike or drone the client asked for), in addition to guard headcount — see the "Additional
+ * Equipment" section of ProjectDetailsModal.tsx, and addTenderEquipment()/
+ * removeTenderEquipmentItem() in services/tenders.ts, which are the only ways this array is ever
+ * written (never hand-edited elsewhere). Declared once per item, with its own `startDate` so an
+ * item added mid-contract (not just from day one) is dated correctly — never earlier than the
+ * tender's own contractStart. `valueContribution` is the one-time bump this item added to
+ * tenderValue when it was declared (monthlyRate * quantity * whole months from startDate through
+ * contractEnd at that moment — see wholeMonthsInclusive() in services/tenders.ts) — an ESTIMATE
+ * of what this item adds to the deal's total worth over what's left of the contract, logged as
+ * its own `value_change` history entry (same mechanism renewContract() uses) so the Active
+ * Project Value Bridge picks it up as a value increase in the period it actually started, and so
+ * removing the item later (removeTenderEquipmentItem()) can reverse EXACTLY this amount rather
+ * than one re-derived from today's (possibly since-changed) rate/quantity/contractEnd.
+ * Deliberately separate from Branch Collection's SiteEquipmentRate below, which stays a
+ * site-level fallback catalog (no start date, no value tracking) for a site with no linked
+ * project, or one that hasn't declared equipment here yet.
+ */
+export interface TenderEquipmentItem {
+  id: string;
+  item: string;
+  monthlyRate: number;
+  quantity: number;
+  /** ISO date (yyyy-mm-dd) this equipment became part of the contract — never earlier than the
+   *  tender's own contractStart. */
+  startDate: string;
+  valueContribution: number;
+  addedAt: number;
+}
+
 export interface Tender {
   id: string;
   clientName: string;
@@ -174,6 +205,9 @@ export interface Tender {
   contractStart: string; // ISO date (yyyy-mm-dd)
   contractEnd: string; // ISO date (yyyy-mm-dd)
   tenderValue: number; // in RM
+  /** Equipment/add-ons declared on this project beyond guard headcount — see
+   *  TenderEquipmentItem's doc comment above. Absent/empty on a project with none declared. */
+  additionalEquipment?: TenderEquipmentItem[];
   stage: Stage;
   ownerUid: string;
   ownerName: string; // denormalized
@@ -471,14 +505,19 @@ export interface SiteBillingRate {
  * A recurring monthly add-on item billed alongside guard headcount — e-bikes, drones, patrol
  * vehicles, and similar equipment a client needs at a site, in addition to guard posts. Stored as
  * `sites/{id}.equipmentRates` (mirrors SiteBillingRate/`billingRates`'s own pattern exactly: set
- * once per site in the invoice generator, then reused every month so only quantity needs to be
- * typed per invoice). Deliberately a flat monthly rate, not an hourly one like guard categories —
- * equipment isn't billed per shift, so InvoiceEquipmentRow below has no headcount/days/hours
- * multiplication, just quantity * monthlyRate.
+ * once per site in the invoice generator, then reused every month). Deliberately a flat monthly
+ * rate, not an hourly one like guard categories — equipment isn't billed per shift, so
+ * InvoiceEquipmentRow below has no headcount/days/hours multiplication, just quantity *
+ * monthlyRate. `quantity` is this item's usual month-to-month count at this site (e.g. "2
+ * e-bikes") — saved here so InvoiceGenerator's equipment rows prefill it too, the same way
+ * monthlyRate already did, since most sites need the same count every month; still a plain
+ * editable number per invoice for the odd month it actually changes. Optional/defaults to 0 so
+ * sites/items saved before this field existed keep working.
  */
 export interface SiteEquipmentRate {
   item: string;
   monthlyRate: number;
+  quantity?: number;
 }
 
 /** One row within an invoice line group — one guard category's headcount/days/rate for one

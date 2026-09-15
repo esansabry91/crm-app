@@ -16,7 +16,7 @@ import {
   isAdditionalGuardCategory,
 } from '../../services/invoices';
 import InvoicePrintView from './InvoicePrintView';
-import type { InvoiceEquipmentRow, InvoiceLineGroup, SiteBillingRate, SiteEquipmentRate } from '../../types';
+import type { InvoiceEquipmentRow, InvoiceLineGroup, SiteBillingRate, SiteEquipmentRate, TenderEquipmentItem } from '../../types';
 
 const MONTH_NAMES = [
   'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
@@ -117,9 +117,22 @@ export default function InvoiceGenerator() {
   const [ratesSaving, setRatesSaving] = useState(false);
   const [ratesSaved, setRatesSaved] = useState(false);
   // Same pattern as rateDraft/ratesSaving/ratesSaved above, for the equipment/add-on rate list.
+  // equipmentRateDraft doubles as BOTH the manually-typed site-level fallback catalog AND the
+  // read-only display of whatever the linked project's own Project Details has declared (mirrors
+  // rateDraft/ratesFromGuardRate's exact pattern) — see the derivation effect below for how it's
+  // populated from one source or the other depending on equipmentFromTender.
   const [equipmentRateDraft, setEquipmentRateDraft] = useState<SiteEquipmentRate[]>([]);
   const [equipmentRatesSaving, setEquipmentRatesSaving] = useState(false);
   const [equipmentRatesSaved, setEquipmentRatesSaved] = useState(false);
+  // Every equipment item declared on the linked project's Project Details, unfiltered by month —
+  // see TenderEquipmentItem's doc comment in types.ts. Re-filtered by billing month in the
+  // derivation effect below (unlike Guard Rate, an item's eligibility depends on its own
+  // startDate against whichever month is on screen, not just whether one's configured at all).
+  const [tenderEquipment, setTenderEquipment] = useState<TenderEquipmentItem[]>([]);
+  // Whether equipmentRateDraft currently reflects Project Details (read-only here, "+ Add item"/
+  // "Save equipment rates" hidden — manage it there instead) rather than this site's own manual
+  // fallback catalog. Same role as ratesFromGuardRate above, but re-evaluated per billing month.
+  const [equipmentFromTender, setEquipmentFromTender] = useState(false);
   // Whether the categories currently shown came from the linked tender's Project Details > Guard
   // Rate (see deriveRateCategoriesFromGuardRate below) rather than this site's own manually-typed
   // billingRates — purely so the section below can tell the user where to actually go to change
@@ -130,6 +143,10 @@ export default function InvoiceGenerator() {
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  // When both guard hours and equipment are on this invoice, bill them as two separate invoices
+  // (two invoice numbers) instead of one combined one — see handleSave below. Meaningless (and
+  // hidden) whenever only one of the two is present, since there'd be nothing to split.
+  const [splitInvoice, setSplitInvoice] = useState(false);
 
   // The invoice number's BRAND/BRANCH segments — a saved short code/nickname when the brand or
   // branch has one set (Admin Settings > Branches & Brands), falling back to the full name
@@ -177,6 +194,7 @@ export default function InvoiceGenerator() {
             guardRateMode?: 'same' | 'multiple';
             guardRate?: number;
             guardRatePositions?: { name: string; rate: number }[];
+            additionalEquipment?: TenderEquipmentItem[];
           };
           if (t.brandId) setBrandId(t.brandId);
           if (t.clientName) setClientName(t.clientName);
@@ -194,14 +212,36 @@ export default function InvoiceGenerator() {
             setRateDraft(derived);
             setRatesFromGuardRate(true);
           }
+          setTenderEquipment(t.additionalEquipment || []);
         })
         .catch(() => {});
     } else {
       setClientAlias('');
       setContractRef('');
+      setTenderEquipment([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId]);
+
+  // Re-derives equipmentRateDraft/equipmentFromTender whenever the linked project's declared
+  // equipment, the billing month, or the site's own manual fallback catalog changes. An item only
+  // counts once its startDate has actually arrived for the month on screen (see
+  // TenderEquipmentItem's doc comment) — so switching Billing Month can itself flip which source
+  // is in effect, unlike Guard Rate above which never depends on the month.
+  useEffect(() => {
+    const eligible = tenderEquipment.filter((eq) => eq.startDate.slice(0, 7) <= billingMonthValue);
+    if (eligible.length > 0) {
+      setEquipmentRateDraft(
+        eligible.map((eq) => ({ item: eq.item, monthlyRate: eq.monthlyRate, quantity: eq.quantity }))
+      );
+      setEquipmentFromTender(true);
+    } else {
+      setEquipmentRateDraft(site?.equipmentRates || []);
+      setEquipmentFromTender(false);
+    }
+    setEquipmentRatesSaved(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenderEquipment, billingMonthValue, site?.equipmentRates]);
 
   // Auto-fill the signatory from the site's branch whenever the site (or the branches list)
   // changes — still a plain editable field afterward, same "manual entry, auto-filled" pattern
@@ -259,7 +299,7 @@ export default function InvoiceGenerator() {
     setEquipmentRatesSaved(false);
     try {
       const cleaned = equipmentRateDraft
-        .map((r) => ({ item: r.item.trim(), monthlyRate: Number(r.monthlyRate) || 0 }))
+        .map((r) => ({ item: r.item.trim(), monthlyRate: Number(r.monthlyRate) || 0, quantity: Number(r.quantity) || 0 }))
         .filter((r) => r.item);
       await updateSiteEquipmentRates(site.id, cleaned);
       setEquipmentRateDraft(cleaned);
@@ -326,9 +366,11 @@ export default function InvoiceGenerator() {
 
   function addEquipmentRow() {
     const first = equipmentRateDraft[0];
+    const quantity = first?.quantity || 0;
+    const monthlyRate = first?.monthlyRate || 0;
     setEquipmentRows((prev) => [
       ...prev,
-      { item: first?.item || '', quantity: 0, monthlyRate: first?.monthlyRate || 0, amount: 0 },
+      { item: first?.item || '', quantity, monthlyRate, amount: quantity * monthlyRate },
     ]);
   }
   function removeEquipmentRow(i: number) {
@@ -346,7 +388,7 @@ export default function InvoiceGenerator() {
   }
   function handleEquipmentItemChange(i: number, item: string) {
     const match = equipmentRateDraft.find((r) => r.item === item);
-    updateEquipmentRow(i, { item, monthlyRate: match ? match.monthlyRate : 0 });
+    updateEquipmentRow(i, { item, monthlyRate: match ? match.monthlyRate : 0, quantity: match?.quantity || 0 });
   }
 
   /** How much headcount is left to give this one row without pushing the invoice's total past
@@ -423,38 +465,58 @@ export default function InvoiceGenerator() {
     setSaving(true);
     setSaveMessage(null);
     try {
-      const result = await createInvoice(
-        {
-          brandId: brand.id,
-          brandName: brand.name,
-          brandCode,
-          branchId: matchedBranch?.id || null,
-          branchName: matchedBranch?.name || site.branch || '',
-          siteId: site.id,
-          siteName: site.name,
-          tenderId: site.tenderId,
-          clientName: clientName.trim(),
-          clientAddress: clientAddress.trim(),
-          attnName: attnName.trim(),
-          branchCode,
-          clientAlias: clientAlias.trim() || clientName.trim(),
-          invoiceDate,
-          billingMonth,
-          billingMonthKey: billingMonthValue,
-          contractRef: contractRef.trim(),
-          quotationNo: quotationNo.trim(),
-          paymentTermsDays,
-          lineGroups,
-          equipmentRows,
-          sstRate,
-          signatoryName: signatoryName.trim(),
-          signatoryTitle: signatoryTitle.trim(),
-          discrepancyAmount: remainingAmount,
-          discrepancyAcknowledged,
-        },
-        { uid: profile.uid, name: profile.name, role: profile.role }
-      );
-      setSaveMessage({ text: `Invoice ${result.invoiceNo} saved — find it in the Invoices tab.`, isError: false });
+      const actor = { uid: profile.uid, name: profile.name, role: profile.role };
+      const shared = {
+        brandId: brand.id,
+        brandName: brand.name,
+        brandCode,
+        branchId: matchedBranch?.id || null,
+        branchName: matchedBranch?.name || site.branch || '',
+        siteId: site.id,
+        siteName: site.name,
+        tenderId: site.tenderId,
+        clientName: clientName.trim(),
+        clientAddress: clientAddress.trim(),
+        attnName: attnName.trim(),
+        branchCode,
+        clientAlias: clientAlias.trim() || clientName.trim(),
+        invoiceDate,
+        billingMonth,
+        billingMonthKey: billingMonthValue,
+        contractRef: contractRef.trim(),
+        quotationNo: quotationNo.trim(),
+        paymentTermsDays,
+        sstRate,
+        signatoryName: signatoryName.trim(),
+        signatoryTitle: signatoryTitle.trim(),
+      };
+
+      // Only actually splits when there's something on both sides to split — a lone guard-hours
+      // or lone equipment invoice saves as one invoice regardless of the checkbox, same as
+      // before this feature existed.
+      if (splitInvoice && lineGroups.length > 0 && equipmentRows.length > 0) {
+        const guardResult = await createInvoice(
+          { ...shared, lineGroups, equipmentRows: [], discrepancyAmount: remainingAmount, discrepancyAcknowledged },
+          actor
+        );
+        // The equipment-only invoice has nothing to reconcile against Duty Roster's confirmed
+        // man-hours — that discrepancy check is specifically about guard hours — so it's never
+        // flagged/acknowledged on this half.
+        const equipmentResult = await createInvoice(
+          { ...shared, lineGroups: [], equipmentRows, discrepancyAmount: null, discrepancyAcknowledged: false },
+          actor
+        );
+        setSaveMessage({
+          text: `Invoices ${guardResult.invoiceNo} (guard hours) and ${equipmentResult.invoiceNo} (equipment) saved — find them in the Invoices tab.`,
+          isError: false,
+        });
+      } else {
+        const result = await createInvoice(
+          { ...shared, lineGroups, equipmentRows, discrepancyAmount: remainingAmount, discrepancyAcknowledged },
+          actor
+        );
+        setSaveMessage({ text: `Invoice ${result.invoiceNo} saved — find it in the Invoices tab.`, isError: false });
+      }
       setLineGroups([]);
       setEquipmentRows([]);
       setPreviewNonce((n) => n + 1);
@@ -724,66 +786,99 @@ export default function InvoiceGenerator() {
             <div>
               <h3 className="text-sm font-semibold text-slate-800">Equipment / add-on rates for {site.name}</h3>
               <p className="text-xs text-slate-400 mt-0.5 mb-3">
-                Recurring monthly items — e-bikes, drones, patrol vehicles and similar — billed alongside
-                guard headcount. Set once, reused every month, same as the guard rate categories above.
+                {equipmentFromTender
+                  ? "Declared on this project's own Project Details (each with its own start date) — manage items there, not here. Shown below for the billing month selected above."
+                  : 'Recurring monthly items — e-bikes, drones, patrol vehicles and similar — billed alongside guard headcount. Set once, reused every month, same as the guard rate categories above.'}
               </p>
             </div>
-            <button
-              onClick={() => setEquipmentRateDraft((prev) => [...prev, { item: '', monthlyRate: 0 }])}
-              className="shrink-0 text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
-            >
-              + Add item
-            </button>
-          </div>
-          <div className="space-y-2">
-            {equipmentRateDraft.map((r, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <input
-                  value={r.item}
-                  onChange={(e) =>
-                    setEquipmentRateDraft((prev) => prev.map((row, j) => (j === i ? { ...row, item: e.target.value } : row)))
-                  }
-                  placeholder="e.g. E-bike"
-                  className="input flex-1"
-                />
-                <span className="text-xs text-slate-400">RM</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={r.monthlyRate === 0 ? '' : r.monthlyRate}
-                  onFocus={(e) => e.target.select()}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/^0+(?=\d)/, '');
-                    setEquipmentRateDraft((prev) =>
-                      prev.map((row, j) => (j === i ? { ...row, monthlyRate: raw === '' ? 0 : Number(raw) || 0 } : row))
-                    );
-                  }}
-                  placeholder="0.00"
-                  className="input w-28"
-                />
-                <span className="text-xs text-slate-400">/ month</span>
-                <button
-                  onClick={() => setEquipmentRateDraft((prev) => prev.filter((_, j) => j !== i))}
-                  className="text-xs text-rose-500 hover:text-rose-700 shrink-0"
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-            {equipmentRateDraft.length === 0 && (
-              <p className="text-xs text-slate-400">No equipment items yet — add one above.</p>
+            {!equipmentFromTender && (
+              <button
+                onClick={() => setEquipmentRateDraft((prev) => [...prev, { item: '', monthlyRate: 0, quantity: 0 }])}
+                className="shrink-0 text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
+              >
+                + Add item
+              </button>
             )}
           </div>
-          <div className="flex items-center gap-3 mt-3">
-            <button
-              onClick={handleSaveEquipmentRates}
-              disabled={equipmentRatesSaving}
-              className="px-3 py-2 text-sm font-medium text-white bg-slate-700 hover:bg-slate-800 disabled:opacity-60 rounded-lg"
-            >
-              {equipmentRatesSaving ? 'Saving…' : 'Save equipment rates'}
-            </button>
-            {equipmentRatesSaved && <span className="text-xs text-emerald-600">Saved.</span>}
+          <div className="space-y-2">
+            {equipmentRateDraft.map((r, i) =>
+              equipmentFromTender ? (
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <span className="flex-1 text-slate-700">{r.item}</span>
+                  <span className="text-slate-500">
+                    RM {r.monthlyRate.toFixed(2)} / month × {r.quantity || 0}
+                  </span>
+                </div>
+              ) : (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    value={r.item}
+                    onChange={(e) =>
+                      setEquipmentRateDraft((prev) => prev.map((row, j) => (j === i ? { ...row, item: e.target.value } : row)))
+                    }
+                    placeholder="e.g. E-bike"
+                    className="input flex-1"
+                  />
+                  <span className="text-xs text-slate-400">RM</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={r.monthlyRate === 0 ? '' : r.monthlyRate}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                      setEquipmentRateDraft((prev) =>
+                        prev.map((row, j) => (j === i ? { ...row, monthlyRate: raw === '' ? 0 : Number(raw) || 0 } : row))
+                      );
+                    }}
+                    placeholder="0.00"
+                    className="input w-28"
+                  />
+                  <span className="text-xs text-slate-400">/ month</span>
+                  <span className="text-xs text-slate-400 pl-2">Qty</span>
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    value={r.quantity ? r.quantity : ''}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                      setEquipmentRateDraft((prev) =>
+                        prev.map((row, j) => (j === i ? { ...row, quantity: raw === '' ? 0 : Number(raw) || 0 } : row))
+                      );
+                    }}
+                    placeholder="0"
+                    className="input w-16"
+                    title="Usual monthly quantity — prefills the invoice row, still editable per month."
+                  />
+                  <button
+                    onClick={() => setEquipmentRateDraft((prev) => prev.filter((_, j) => j !== i))}
+                    className="text-xs text-rose-500 hover:text-rose-700 shrink-0"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )
+            )}
+            {equipmentRateDraft.length === 0 && (
+              <p className="text-xs text-slate-400">
+                {equipmentFromTender ? 'No equipment declared yet.' : 'No equipment items yet — add one above.'}
+              </p>
+            )}
           </div>
+          {!equipmentFromTender && (
+            <div className="flex items-center gap-3 mt-3">
+              <button
+                onClick={handleSaveEquipmentRates}
+                disabled={equipmentRatesSaving}
+                className="px-3 py-2 text-sm font-medium text-white bg-slate-700 hover:bg-slate-800 disabled:opacity-60 rounded-lg"
+              >
+                {equipmentRatesSaving ? 'Saving…' : 'Save equipment rates'}
+              </button>
+              {equipmentRatesSaved && <span className="text-xs text-emerald-600">Saved.</span>}
+            </div>
+          )}
         </div>
       )}
 
@@ -1083,6 +1178,22 @@ export default function InvoiceGenerator() {
             </tbody>
           </table>
         </div>
+
+        {lineGroups.length > 0 && equipmentRows.length > 0 && (
+          <label className="flex items-start gap-2 mt-3 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={splitInvoice}
+              onChange={(e) => setSplitInvoice(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              Bill equipment on a separate invoice from guard hours — saves two invoices (two
+              invoice numbers) instead of one combined invoice. Preview below still shows the
+              combined figures either way.
+            </span>
+          </label>
+        )}
 
         {saveMessage && (
           <p className={`text-xs mt-3 ${saveMessage.isError ? 'text-rose-600' : 'text-emerald-600'}`}>{saveMessage.text}</p>
