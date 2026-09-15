@@ -210,6 +210,44 @@ export interface TenderEquipmentItem {
   stopValueReversal?: number;
 }
 
+/**
+ * Per-site override for a project that has MORE THAN ONE linked Duty Roster site under the same
+ * contract (see "+ Add Site" in ProjectDetailsModal.tsx, and the `newSite=1` deep-link flag
+ * handled by handleTenderDeepLinkIfNeeded() in public/duty-roster/index.html, which lets a
+ * second-or-later site attach to a tenderId that already has one linked).
+ *
+ * Stored at tenders/{tenderId}/siteDetails/{dutyRosterSiteId} - one doc per EXTRA site, keyed by
+ * that site's own Duty Roster site id (a direct 1:1 lookup). Deliberately NOT created for the
+ * first/original site of a project: that site's guard rate, location, and equipment continue to
+ * live on the Tender document's own top-level fields exactly as before this feature existed
+ * (guardRateMode/guardRate/guardRatePositions/additionalEquipment/location/state/city/postcode/
+ * contactPerson/lastGuardRateChange). This keeps every project that has only ever had one site -
+ * effectively all of them as of this field's introduction - completely unmigrated; they simply
+ * never get a siteDetails doc, and every existing reader of the top-level fields keeps working
+ * unchanged.
+ *
+ * Contract value (tenderValue) is NOT part of this - it stays combined/shared at the Tender
+ * level no matter how many sites are linked. Invoicing similarly stays combined per-tender for
+ * now; splitting an invoice by site is an explicitly deferred fast-follow, not built yet.
+ */
+export interface TenderSiteDetails {
+  dutyRosterSiteId: string; // = the doc id; duplicated here for convenience once spread out of a query
+  siteName: string; // denormalized from the Duty Roster site's own name, for display without a join
+  branch?: string | null; // denormalized from the Duty Roster site's own branch
+  location?: string;
+  state?: string;
+  city?: string;
+  postcode?: string;
+  contactPerson?: string;
+  guardRateMode?: 'same' | 'multiple';
+  guardRate?: number;
+  guardRatePositions?: { name: string; rate: number }[];
+  lastGuardRateChange?: { fromRate: number; toRate: number; changedAt: number; changedByName: string };
+  additionalEquipment?: TenderEquipmentItem[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Tender {
   id: string;
   clientName: string;

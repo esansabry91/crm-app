@@ -19,6 +19,8 @@ import {
   uploadTenderDocument,
   type TenderDocumentInfo,
 } from '../../services/tenderDocuments';
+import { useTenderSites } from '../../hooks/useTenderSites';
+import LinkedSiteDetailsCard from './LinkedSiteDetailsCard';
 
 interface Props {
   open: boolean;
@@ -100,6 +102,13 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   // in services/tenders.ts) — at most one at a time — and the date drafted into it.
   const [stoppingItemId, setStoppingItemId] = useState<string | null>(null);
   const [stopDateDraft, setStopDateDraft] = useState('');
+
+  // Linked Sites (see useTenderSites' own doc comment) — a project with more than one worksite
+  // under the same contract. Kept last since it's purely additive UI; every field above this
+  // still refers only to the project's first/original site.
+  const { sites: linkedSites } = useTenderSites(tender?.id ?? null);
+  const [addSiteOpen, setAddSiteOpen] = useState(false);
+  const [addSiteName, setAddSiteName] = useState('');
 
   useEffect(() => {
     if (!open || !tender) return;
@@ -838,6 +847,68 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                 </>
               );
             })()}
+          </div>
+
+          <div className="pt-2 border-t border-slate-100">
+            <p className="block text-xs font-medium text-slate-500 mb-2">
+              Linked Sites{' '}
+              <span className="text-slate-400 font-normal">
+                (optional — for a client with more than one worksite/roster under this same
+                contract; each linked site gets its own Location, Guard Rate and Additional
+                Equipment below, while the contract value above stays combined)
+              </span>
+            </p>
+
+            {linkedSites.length > 1 && (
+              <div className="space-y-2 mb-3">
+                {linkedSites.slice(1).map((site) => (
+                  <LinkedSiteDetailsCard key={site.id} tender={workingTender || tender} site={site} actor={actor} />
+                ))}
+              </div>
+            )}
+
+            {linkedSites.length === 0 ? (
+              <p className="text-xs text-slate-400">
+                This project doesn't have a Duty Roster site yet — open "Duty Roster" from Active
+                Projects first to create its first site before linking a second one here.
+              </p>
+            ) : addSiteOpen ? (
+              <div className="flex items-center gap-2">
+                <input
+                  value={addSiteName}
+                  onChange={(e) => setAddSiteName(e.target.value)}
+                  placeholder="New site name"
+                  className="input flex-1"
+                />
+                <button
+                  type="button"
+                  disabled={!addSiteName.trim()}
+                  onClick={() => {
+                    const activeTender = workingTender || tender;
+                    const url = `/duty-roster?tenderId=${encodeURIComponent(activeTender.id)}&clientName=${encodeURIComponent(
+                      addSiteName.trim()
+                    )}&branch=${encodeURIComponent(activeTender.activeBranch || activeTender.department)}&newSite=1`;
+                    window.open(url, '_blank', 'noopener');
+                    setAddSiteOpen(false);
+                    setAddSiteName('');
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 disabled:opacity-60 whitespace-nowrap"
+                >
+                  Open Duty Roster to create
+                </button>
+                <button type="button" onClick={() => setAddSiteOpen(false)} className="text-xs text-slate-400 hover:text-slate-600">
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAddSiteOpen(true)}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 whitespace-nowrap"
+              >
+                + Add Site
+              </button>
+            )}
           </div>
 
           {error && <p className="text-sm text-rose-600">{error}</p>}

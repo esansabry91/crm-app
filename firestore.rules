@@ -307,6 +307,31 @@ service cloud.firestore {
         allow update: if false;
         allow delete: if isAdmin();
       }
+
+      // ---- Multi-site override (see TenderSiteDetails in types.ts) ----
+      // One doc per EXTRA linked Duty Roster site — never for a project's first/original site,
+      // which keeps using this tender document's own top-level fields (guardRateMode,
+      // additionalEquipment, location, etc.) exactly as before this feature existed. Reachable
+      // by the same people who can reach the parent tender itself: its owner, an admin, or (on
+      // a Won project) a branch-mate in its activeBranch or anyone in HQ — mirroring the
+      // widened Active-Project-detail update rule above. Deliberately no hasOnly() field
+      // allowlist here (unlike that rule) — every field on this doc IS a per-site detail field,
+      // so there is nothing narrower to carve out.
+      function canReachTenderSiteDetails() {
+        return isAdmin()
+          || get(/databases/$(database)/documents/tenders/$(tenderId)).data.ownerUid == request.auth.uid
+          || (
+            get(/databases/$(database)/documents/tenders/$(tenderId)).data.stage == 'Won'
+            && (
+              get(/databases/$(database)/documents/tenders/$(tenderId)).data.activeBranch == myDepartment()
+              || myDepartment() == 'HQ'
+            )
+          );
+      }
+      match /siteDetails/{siteId} {
+        allow read: if isActiveUser() && canReachTenderSiteDetails();
+        allow write: if isActiveUser() && canReachTenderSiteDetails();
+      }
     }
 
     // ---- Duty Roster (public/duty-roster/index.html, embedded via an <iframe> on

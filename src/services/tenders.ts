@@ -5,9 +5,11 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   Timestamp,
@@ -15,7 +17,7 @@ import {
 import { db } from '../firebase';
 import { releaseGuardsFromSite } from './guards';
 import { shouldStampTestData } from './settings';
-import type { Role, Stage, Tender, TenderEquipmentItem } from '../types';
+import type { Role, Stage, Tender, TenderEquipmentItem, TenderSiteDetails } from '../types';
 import { isAdminRole } from '../types';
 
 /** Actor performing an action — `role` is optional only for call-site back-compat; every real
@@ -591,6 +593,255 @@ export async function applyGuardRateChange(
   });
 
   if (valueDelta !== 0) {
+    await addHistoryEntry(tender.id, {
+      type: 'value_change',
+      stage: tender.stage,
+      value: newTenderValue,
+      changedByUid: actor.uid,
+      changedByName: actor.name,
+      ownerUid: tender.ownerUid,
+      valueChangeReason: 'guard_rate',
+    });
+  }
+}
+
+/**
+ * Multi-site support (Active Projects > Project Details > "Linked Sites") — a project whose
+ * client has more than one worksite/roster under the SAME contract can link additional Duty
+ * Roster sites to it via "+ Add Site" (see handleTenderDeepLinkIfNeeded()'s `newSite=1` flag in
+ * public/duty-roster/index.html). The functions below are the per-site equivalents of
+ * addTenderEquipment()/stopTenderEquipmentItem()/removeTenderEquipmentItem()/
+ * applyGuardRateChange() above, operating on ONE additional site's own
+ * tenders/{tenderId}/siteDetails/{dutyRosterSiteId} doc instead of the Tender document's
+ * top-level fields — see TenderSiteDetails' doc comment in types.ts for the full data-model
+ * rationale (the first/original site of every project keeps using the top-level fields
+ * unchanged; only a SECOND-or-later linked site gets a siteDetails doc at all).
+ *
+ * Contract value (tenderValue) stays combined/shared at the Tender level regardless of which
+ * site an equipment/rate change belongs to — every function below still updates
+ * `tenders/{tenderId}`'s own tenderValue and logs the same value_change history entries
+ * (equipment_increase/equipment_decrease/guard_rate) that the single-site functions do, so the
+ * Active Project Value Bridge keeps working unchanged (combined across all of a project's
+ * sites — splitting it per site is not part of this first slice).
+ */
+
+function tenderSiteDetailsRef(tenderId: string, siteId: string) {
+  return doc(db, 'tenders', tenderId, 'siteDetails', siteId);
+}
+
+/** One-off read of an additional site's override doc — null if it hasn't been saved to yet
+ *  (a freshly-created site via "+ Add Site" has none until its first Save). */
+export async function getTenderSiteDetails(tenderId: string, siteId: string): Promise<TenderSiteDetails | null> {
+  const snap = await getDoc(tenderSiteDetailsRef(tenderId, siteId));
+  return snap.exists() ? (snap.data() as TenderSiteDetails) : null;
+}
+
+/** Saves an additional site's Location/Contact fields — the per-site equivalent of
+ *  updateActiveProjectDetails() below, minus the fields (tenderDocNumber, scopeOfWork, etc.)
+ *  that stay project-wide rather than per-site. Creates the siteDetails doc on first save. */
+export async function saveTenderSiteLocationDetails(
+  tenderId: string,
+  siteId: string,
+  siteName: string,
+  branch: string | null,
+  input: { location?: string; state?: string; city?: string; postcode?: string; contactPerson?: string }
+): Promise<void> {
+  await setDoc(
+    tenderSiteDetailsRef(tenderId, siteId),
+    {
+      dutyRosterSiteId: siteId,
+      siteName,
+      branch: branch || null,
+      ...input,
+      updatedAt: Date.now(),
+      createdAt: Date.now(),
+    },
+    { merge: true }
+  );
+}
+
+/** Per-site equivalent of addTenderEquipment() — see that function's doc comment for the value
+ *  estimate/history logic, unchanged here except that the equipment list itself lives on the
+ *  site's own siteDetails doc rather than the Tender document. */
+export async function addTenderSiteEquipment(
+  tender: Tender,
+  siteId: string,
+  siteName: string,
+  branch: string | null,
+  siteDetails: TenderSiteDetails | null,
+  input: { item: string; monthlyRate: number; quantity: number; startDate: string },
+  actor: Actor
+): Promise<void> {
+  const startDate = input.startDate < tender.contractStart ? tender.contractStart : input.startDate;
+  const monthsRemaining = wholeMonthsInclusive(startDate, tender.contractEnd);
+  const valueContribution = input.monthlyRate * input.quantity * monthsRemaining;
+  const newItem: TenderEquipmentItem = {
+    id: crypto.randomUUID(),
+    item: input.item,
+    monthlyRate: input.monthlyRate,
+    quantity: input.quantity,
+    startDate,
+    valueContribution,
+    addedAt: Date.now(),
+  };
+  const newEquipment = [...(siteDetails?.additionalEquipment || []), newItem];
+
+  await setDoc(
+    tenderSiteDetailsRef(tender.id, siteId),
+    {
+      dutyRosterSiteId: siteId,
+      siteName: siteDetails?.siteName || siteName,
+      branch: siteDetails?.branch ?? branch ?? null,
+      additionalEquipment: newEquipment,
+      updatedAt: Date.now(),
+      createdAt: siteDetails?.createdAt || Date.now(),
+    },
+    { merge: true }
+  );
+
+  const newTenderValue = tender.tenderValue + valueContribution;
+  await updateDoc(doc(db, 'tenders', tender.id), { tenderValue: newTenderValue, updatedAt: Date.now() });
+
+  if (valueContribution !== 0) {
+    await addHistoryEntry(
+      tender.id,
+      {
+        type: 'value_change',
+        stage: tender.stage,
+        value: newTenderValue,
+        changedByUid: actor.uid,
+        changedByName: actor.name,
+        ownerUid: tender.ownerUid,
+        valueChangeReason: 'equipment_increase',
+      },
+      closedDateToMillis(startDate)
+    );
+  }
+}
+
+/** Per-site equivalent of stopTenderEquipmentItem() — see that function's doc comment. */
+export async function stopTenderSiteEquipmentItem(
+  tender: Tender,
+  siteId: string,
+  siteDetails: TenderSiteDetails,
+  itemId: string,
+  stopDate: string,
+  actor: Actor
+): Promise<void> {
+  const item = (siteDetails.additionalEquipment || []).find((eq) => eq.id === itemId);
+  if (!item) return;
+  if (item.stoppedDate) throw new Error('This equipment item has already been stopped.');
+
+  const clampedStop = stopDate < item.startDate ? item.startDate : stopDate;
+  const monthsAfterStop = wholeMonthsInclusive(firstOfNextMonth(clampedStop), tender.contractEnd);
+  const reversal = Math.min(item.valueContribution, item.monthlyRate * item.quantity * monthsAfterStop);
+  const updatedItem: TenderEquipmentItem = { ...item, stoppedDate: clampedStop, stopValueReversal: reversal };
+  const newEquipment = (siteDetails.additionalEquipment || []).map((eq) => (eq.id === itemId ? updatedItem : eq));
+
+  await setDoc(tenderSiteDetailsRef(tender.id, siteId), { additionalEquipment: newEquipment, updatedAt: Date.now() }, { merge: true });
+
+  const newTenderValue = Math.max(0, tender.tenderValue - reversal);
+  await updateDoc(doc(db, 'tenders', tender.id), { tenderValue: newTenderValue, updatedAt: Date.now() });
+
+  if (reversal !== 0) {
+    await addHistoryEntry(
+      tender.id,
+      {
+        type: 'value_change',
+        stage: tender.stage,
+        value: newTenderValue,
+        changedByUid: actor.uid,
+        changedByName: actor.name,
+        ownerUid: tender.ownerUid,
+        valueChangeReason: 'equipment_decrease',
+      },
+      closedDateToMillis(clampedStop)
+    );
+  }
+}
+
+/** Per-site equivalent of removeTenderEquipmentItem() — see that function's doc comment. */
+export async function removeTenderSiteEquipmentItem(
+  tender: Tender,
+  siteId: string,
+  siteDetails: TenderSiteDetails,
+  itemId: string,
+  actor: Actor
+): Promise<void> {
+  const item = (siteDetails.additionalEquipment || []).find((eq) => eq.id === itemId);
+  if (!item) return;
+  const remaining = item.valueContribution - (item.stopValueReversal || 0);
+  const newEquipment = (siteDetails.additionalEquipment || []).filter((eq) => eq.id !== itemId);
+
+  await setDoc(tenderSiteDetailsRef(tender.id, siteId), { additionalEquipment: newEquipment, updatedAt: Date.now() }, { merge: true });
+
+  const newTenderValue = Math.max(0, tender.tenderValue - remaining);
+  await updateDoc(doc(db, 'tenders', tender.id), { tenderValue: newTenderValue, updatedAt: Date.now() });
+
+  if (remaining !== 0) {
+    await addHistoryEntry(tender.id, {
+      type: 'value_change',
+      stage: tender.stage,
+      value: newTenderValue,
+      changedByUid: actor.uid,
+      changedByName: actor.name,
+      ownerUid: tender.ownerUid,
+      valueChangeReason: 'equipment_decrease',
+    });
+  }
+}
+
+/** Per-site equivalent of applyGuardRateChange() — see that function's doc comment. `siteDetails`
+ *  null (first-ever rate set for this site) is treated the same way as an unset
+ *  tender.guardRateMode there: written, but no value/history change. */
+export async function applyTenderSiteGuardRateChange(
+  tender: Tender,
+  siteId: string,
+  siteName: string,
+  branch: string | null,
+  siteDetails: TenderSiteDetails | null,
+  input: {
+    guardRateMode: 'same' | 'multiple';
+    guardRate?: number;
+    guardRatePositions?: { name: string; rate: number }[];
+    guardsDeployed: number;
+  },
+  actor: Actor
+): Promise<void> {
+  const hadPriorRate = siteDetails?.guardRateMode != null;
+  const newEffective = effectiveGuardRate(input.guardRateMode, input.guardRate, input.guardRatePositions);
+  const oldEffective = hadPriorRate
+    ? effectiveGuardRate(siteDetails!.guardRateMode, siteDetails!.guardRate, siteDetails!.guardRatePositions)
+    : newEffective;
+
+  const isRealChange = hadPriorRate && newEffective !== oldEffective;
+  let valueDelta = 0;
+  if (isRealChange) {
+    const months = wholeMonthsInclusive(new Date().toISOString().slice(0, 10), tender.contractEnd);
+    valueDelta = (newEffective - oldEffective) * STANDARD_MONTHLY_HOURS_PER_GUARD * input.guardsDeployed * months;
+  }
+
+  await setDoc(
+    tenderSiteDetailsRef(tender.id, siteId),
+    {
+      dutyRosterSiteId: siteId,
+      siteName: siteDetails?.siteName || siteName,
+      branch: siteDetails?.branch ?? branch ?? null,
+      guardRateMode: input.guardRateMode,
+      guardRate: input.guardRateMode === 'same' ? input.guardRate ?? 0 : 0,
+      guardRatePositions: input.guardRateMode === 'multiple' ? input.guardRatePositions ?? [] : [],
+      updatedAt: Date.now(),
+      createdAt: siteDetails?.createdAt || Date.now(),
+      ...(isRealChange
+        ? { lastGuardRateChange: { fromRate: oldEffective, toRate: newEffective, changedAt: Date.now(), changedByName: actor.name } }
+        : {}),
+    },
+    { merge: true }
+  );
+
+  if (valueDelta !== 0) {
+    const newTenderValue = Math.max(0, tender.tenderValue + valueDelta);
+    await updateDoc(doc(db, 'tenders', tender.id), { tenderValue: newTenderValue, updatedAt: Date.now() });
     await addHistoryEntry(tender.id, {
       type: 'value_change',
       stage: tender.stage,
