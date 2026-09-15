@@ -286,8 +286,8 @@
   <div class="sitebar">
     <label class="small" style="margin:0;" id="branchFilterLabel" hidden>Branch</label>
     <select id="branchFilter" hidden></select>
-    <label class="small" style="margin:0;">Filter</label>
-    <input type="text" id="clientFilter" placeholder="Client or site name" style="min-width:180px;" />
+    <label class="small" style="margin:0;">Client</label>
+    <select id="clientFilter" style="min-width:180px;"></select>
     <label class="small" style="margin:0;">Client site</label>
     <select id="siteSelect"></select>
     <label class="small" id="showArchivedLabel" style="margin:0;display:flex;align-items:center;gap:4px;" hidden>
@@ -1255,11 +1255,13 @@
     isDeveloper: false,     // "developer" role — full access like isPrivileged, but forces isTestData:true on everything it creates (see initDb())
     canEdit: true,          // false for payroll/HR — drives the read-only lockdown
     branchFilterValue: "", // currently selected branch in the sitebar's branch filter dropdown (Admin/HQ/Payroll only — "" = all)
-    // Free-text filter typed into the sitebar's "Filter" box — narrows the Client Site dropdown
-    // to sites whose clientName OR site name contains this (case-insensitive), so a client with
-    // several linked sites (see TenderSiteDetails in the CRM's types.ts) can be found by
-    // company name even though the dropdown itself lists individual site names. Available to
-    // everyone (unlike branchFilterValue above), since even one branch can have many clients.
+    // Selected value of the sitebar's "Client" dropdown (id="clientFilter") — an exact
+    // clientName, or "" for "All clients". Narrows the Client Site dropdown to just that
+    // client's sites, so a client with several linked sites (see TenderSiteDetails in the CRM's
+    // types.ts) is easy to find even though the Client Site dropdown itself lists individual
+    // site names. See renderClientFilterSelect() for how its own options are populated.
+    // Available to everyone (unlike branchFilterValue above), since even one branch can have
+    // many clients.
     clientFilterValue: "",
     showArchivedSites: false, // "Show archived" checkbox in the sitebar (Admin/HQ/Payroll only) — a closed-out project's site is hidden from the Client Site dropdown by default, this brings it back on demand for historical records/payroll export
     // Mirrors the CRM's settings/app.testingModeEnabled doc (see src/services/settings.ts and
@@ -4671,7 +4673,7 @@
     // renderSiteSelect() lands on for the newly-selected branch, not just the dropdown itself.
     render();
   });
-  $("#clientFilter").addEventListener("input", () => {
+  $("#clientFilter").addEventListener("change", () => {
     state.clientFilterValue = $("#clientFilter").value;
     // Same reasoning as branchFilter's own listener above — a full render() so the rest of the
     // page follows wherever renderSiteSelect() lands the current site once the list narrows.
@@ -5443,6 +5445,32 @@
     render();
   }
 
+  // Populates the Client dropdown (id="clientFilter") with the distinct, non-empty clientName
+  // values found among `scopedSites` — already narrowed to the current Branch filter by the
+  // caller, renderSiteSelect(), so a client with sites only in another branch doesn't show up
+  // as a dead-end option here. A site with no clientName isn't represented by any option (see
+  // renderSiteSelect()'s bare-name fallback label for why a few still exist) — there's no
+  // client to filter it by — but it stays reachable via "All clients".
+  function renderClientFilterSelect(scopedSites){
+    const filterSel = $("#clientFilter");
+    if(!filterSel) return;
+    const clients = Array.from(new Set(
+      scopedSites.map(s => (s.clientName || "").trim()).filter(Boolean)
+    )).sort((a, b) => a.localeCompare(b));
+    const previousValue = state.clientFilterValue;
+    filterSel.innerHTML = `<option value="">All clients</option>` +
+      clients.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+    // Keep the current selection if it's still one of this branch's clients; otherwise reset to
+    // "All clients" instead of silently continuing to filter by a client that just dropped out
+    // of scope (e.g. the Branch filter changed to one that client has no site in).
+    if(previousValue && clients.includes(previousValue)){
+      filterSel.value = previousValue;
+    } else if(previousValue){
+      state.clientFilterValue = "";
+      filterSel.value = "";
+    }
+  }
+
   function renderSiteSelect(){
     const sel = $("#siteSelect");
     if(!sel) return;
@@ -5453,12 +5481,11 @@
         ? state.sites.filter(s => !s.branch)
         : state.sites.filter(s => s.branch === state.branchFilterValue);
     }
-    const clientFilterNeedle = (state.clientFilterValue || "").trim().toLowerCase();
-    if(clientFilterNeedle){
-      visibleSites = visibleSites.filter(s =>
-        (s.name || "").toLowerCase().includes(clientFilterNeedle) ||
-        (s.clientName || "").toLowerCase().includes(clientFilterNeedle)
-      );
+    // Populate the Client dropdown from this branch-scoped list (before narrowing by the client
+    // filter itself below) so its options always match what's actually selectable.
+    renderClientFilterSelect(visibleSites);
+    if(state.clientFilterValue){
+      visibleSites = visibleSites.filter(s => s.clientName === state.clientFilterValue);
     }
     // A closed-out project's site archives itself (see setLinkedSitesArchived() in the CRM's
     // tenders.ts) — hidden from the Client Site dropdown by default for everyone, the same as
@@ -5475,8 +5502,8 @@
       // dropdown show a site from a DIFFERENT branch than the one just picked in the Branch
       // filter, with the read-only branch badge then correctly-but-confusingly disagreeing
       // with it).
-      sel.innerHTML = clientFilterNeedle
-        ? `<option value="">No client sites match "${escapeHtml(state.clientFilterValue)}"</option>`
+      sel.innerHTML = state.clientFilterValue
+        ? `<option value="">No sites for "${escapeHtml(state.clientFilterValue)}"</option>`
         : `<option value="">No client sites in this branch</option>`;
     } else {
       sel.innerHTML = visibleSites.map(s => {
