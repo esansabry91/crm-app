@@ -500,9 +500,13 @@ export function activeProjectBridgePeriods(tenders: Tender[], view: BridgeTimeVi
 /**
  * Builds the Active Project Value bridge for one period (month, quarter, year, or year-to-date):
  * start-of-period active value, plus contracts that newly went active during the period (by
- * `contractStart`), plus/minus any rate changes on projects that stayed active through the
- * period (e.g. a renewal — see renewContract() in services/tenders.ts), minus projects closed
- * out during the period (by `closedOutAt`), equals end-of-period active value.
+ * `contractStart`), plus/minus every mid-contract value change on projects that stayed active
+ * through the period — split into its own bar per cause (Contract Renewed, Equipment Added,
+ * Guard Rate Change, Equipment Stopped, and a catch-all Value Adjustments for anything else —
+ * see TenderHistoryEntry.valueChangeReason's doc comment in types.ts and renewContract()/
+ * addTenderEquipment()/stopTenderEquipmentItem()/applyGuardRateChange() in services/tenders.ts),
+ * minus projects closed out during the period (by `closedOutAt`), equals end-of-period active
+ * value.
  *
  * `tenders` should be every Won tender in scope (active AND already closed-out — see
  * useWonTenders) so closed-out projects still contribute their exit from the period they left in;
@@ -551,10 +555,48 @@ export function activeProjectValueBridge(
     return result;
   }
 
+  /** One bucket per `valueChangeReason` (undefined falls back to 'other') — lets the bars below
+   *  show WHY a project's value moved mid-period (a renewal, new equipment, equipment stopping,
+   *  a guard rate change) instead of lumping every mid-contract change into one generic
+   *  "Value Adjustments" bar. See TenderHistoryEntry.valueChangeReason's doc comment in
+   *  types.ts. */
+  type AdjustReason = 'renewal' | 'equipment_increase' | 'equipment_decrease' | 'guard_rate' | 'other';
+  const reasonTotals: Record<AdjustReason, number> = {
+    renewal: 0,
+    equipment_increase: 0,
+    equipment_decrease: 0,
+    guard_rate: 0,
+    other: 0,
+  };
+
+  /** Walks one tender's own history (already sorted oldest-first) and attributes every real
+   *  value change with a timestamp in (afterMs, atMs] to its own `valueChangeReason` bucket,
+   *  starting from `startingValue` (the tender's value immediately before `afterMs`). The sum of
+   *  every bucket this returns always telescopes to the same net delta the old single `adjustValue`
+   *  accumulator computed (atReference - atStart) — this just keeps a running per-reason split
+   *  instead of only the total. */
+  function accumulateReasonDeltas(
+    list: TenderHistoryEntry[] | undefined,
+    afterMs: number,
+    atMs: number,
+    startingValue: number
+  ) {
+    if (!list) return;
+    let prev = startingValue;
+    for (const e of list) {
+      if (e.timestamp <= afterMs) continue;
+      if (e.timestamp > atMs) break;
+      if (e.value !== prev) {
+        const reason: AdjustReason = e.type === 'value_change' ? e.valueChangeReason ?? 'other' : 'other';
+        reasonTotals[reason] += e.value - prev;
+        prev = e.value;
+      }
+    }
+  }
+
   let startValue = 0;
   let enteringValue = 0;
   let exitingValue = 0;
-  let adjustValue = 0;
 
   for (const t of tenders) {
     if (t.stage !== 'Won' || !t.contractStart) continue;
@@ -573,19 +615,20 @@ export function activeProjectValueBridge(
     // Shared by the start/entering branch below AND exitingValue so a renewal followed by a
     // same-period close-out (or a same-period enter-then-close) reconciles to exactly zero net
     // contribution — the value it's removed at via Closed Out is the SAME value it was just
-    // marked up to via Value Adjustments, never the stale pre-renewal figure it started at.
+    // marked up to via the reason bars above, never the stale pre-renewal figure it started at.
     const referenceMs = exitingThisPeriod ? closedMs! : periodEnd - 1;
     const atReference = valueAsOf(t.id, referenceMs, fallback);
+    const tenderEntries = entriesByTender.get(t.id);
 
     if (activeAtPeriodStart) {
       const atStart = valueAsOf(t.id, periodStart - 1, fallback);
       startValue += atStart;
-      if (atReference !== atStart) adjustValue += atReference - atStart;
+      accumulateReasonDeltas(tenderEntries, periodStart - 1, referenceMs, atStart);
     } else {
       // enteringThisPeriod
       const atEntry = valueAsOf(t.id, startMs, fallback);
       enteringValue += atEntry;
-      if (atReference !== atEntry) adjustValue += atReference - atEntry;
+      accumulateReasonDeltas(tenderEntries, startMs, referenceMs, atEntry);
     }
 
     if (exitingThisPeriod) {
@@ -593,13 +636,24 @@ export function activeProjectValueBridge(
     }
   }
 
+  const adjustValue = Object.values(reasonTotals).reduce((sum, v) => sum + v, 0);
   const endValue = startValue + enteringValue - exitingValue + adjustValue;
   const { start: startLabel, end: endLabel } = periodBoundaryLabels(view);
 
   const bars: WaterfallBar[] = [{ label: startLabel, amount: startValue, kind: 'total' }];
   if (enteringValue !== 0) bars.push({ label: 'New Contracts', amount: enteringValue, kind: 'delta' });
+  if (reasonTotals.renewal !== 0) bars.push({ label: 'Contract Renewed', amount: reasonTotals.renewal, kind: 'delta' });
+  if (reasonTotals.equipment_increase !== 0) {
+    bars.push({ label: 'Equipment Added', amount: reasonTotals.equipment_increase, kind: 'delta' });
+  }
+  if (reasonTotals.guard_rate !== 0) {
+    bars.push({ label: 'Guard Rate Change', amount: reasonTotals.guard_rate, kind: 'delta' });
+  }
+  if (reasonTotals.equipment_decrease !== 0) {
+    bars.push({ label: 'Equipment Stopped', amount: reasonTotals.equipment_decrease, kind: 'delta' });
+  }
+  if (reasonTotals.other !== 0) bars.push({ label: 'Value Adjustments', amount: reasonTotals.other, kind: 'delta' });
   if (exitingValue !== 0) bars.push({ label: 'Closed Out', amount: -exitingValue, kind: 'delta' });
-  if (adjustValue !== 0) bars.push({ label: 'Value Adjustments', amount: adjustValue, kind: 'delta' });
   bars.push({ label: endLabel, amount: endValue, kind: 'total' });
   return bars;
 }

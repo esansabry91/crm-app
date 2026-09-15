@@ -194,6 +194,20 @@ export interface TenderEquipmentItem {
   startDate: string;
   valueContribution: number;
   addedAt: number;
+  /**
+   * Set once this item stops being deployed mid-contract (see stopTenderEquipmentItem() in
+   * services/tenders.ts) — the item stays in `additionalEquipment` (unlike a full Remove, which
+   * deletes it outright) so its "Equipment Added" history remains visible; only its future
+   * value is reversed. Never earlier than `startDate`.
+   */
+  stoppedDate?: string;
+  /**
+   * How much of `valueContribution` was reversed when this item was stopped (the estimated
+   * value for the months after `stoppedDate` through contractEnd) — stored, not re-derived, so
+   * a later full Remove reverses exactly what's left (`valueContribution - stopValueReversal`)
+   * rather than double-reversing. Present only alongside `stoppedDate`.
+   */
+  stopValueReversal?: number;
 }
 
 export interface Tender {
@@ -472,6 +486,21 @@ export interface TenderHistoryEntry {
   changedByName: string;
   fromStage?: Stage;
   ownerUid: string;
+  /**
+   * Only meaningful when `type` is 'value_change' — what actually drove the change, so the
+   * Active Project Value Bridge (see activeProjectValueBridge() in utils/analytics.ts) can show
+   * each cause as its own waterfall bar instead of lumping every mid-contract value change into
+   * one generic "Value Adjustments" bar:
+   *  - 'renewal': renewContract() — a straight renewal whose rate changed.
+   *  - 'equipment_increase': addTenderEquipment() — a new Additional Equipment item declared.
+   *  - 'equipment_decrease': removeTenderEquipmentItem() or stopTenderEquipmentItem() — an
+   *    equipment item's value contribution reversed, in full (removed) or in part (stopped).
+   *  - 'guard_rate': applyGuardRateChange() — Guard Rate edited in Project Details.
+   * Undefined (including every entry logged before this field existed) falls back to the
+   * catch-all "Value Adjustments" bar — e.g. a plain updateTender() edit to tenderValue, or
+   * historical data that predates reason-tagging.
+   */
+  valueChangeReason?: 'renewal' | 'equipment_increase' | 'equipment_decrease' | 'guard_rate';
 }
 
 /**

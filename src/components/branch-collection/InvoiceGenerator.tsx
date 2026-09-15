@@ -226,10 +226,17 @@ export default function InvoiceGenerator() {
   // Re-derives equipmentRateDraft/equipmentFromTender whenever the linked project's declared
   // equipment, the billing month, or the site's own manual fallback catalog changes. An item only
   // counts once its startDate has actually arrived for the month on screen (see
-  // TenderEquipmentItem's doc comment) — so switching Billing Month can itself flip which source
-  // is in effect, unlike Guard Rate above which never depends on the month.
+  // TenderEquipmentItem's doc comment), AND only through the month it was stopped in, inclusive
+  // (see TenderEquipmentItem.stoppedDate's doc comment in types.ts — the stop month itself still
+  // counts as billed, same convention stopTenderEquipmentItem() uses for its own value reversal)
+  // — so switching Billing Month can itself flip which source is in effect, unlike Guard Rate
+  // above which never depends on the month.
   useEffect(() => {
-    const eligible = tenderEquipment.filter((eq) => eq.startDate.slice(0, 7) <= billingMonthValue);
+    const eligible = tenderEquipment.filter(
+      (eq) =>
+        eq.startDate.slice(0, 7) <= billingMonthValue &&
+        (!eq.stoppedDate || eq.stoppedDate.slice(0, 7) >= billingMonthValue)
+    );
     if (eligible.length > 0) {
       setEquipmentRateDraft(
         eligible.map((eq) => ({ item: eq.item, monthlyRate: eq.monthlyRate, quantity: eq.quantity }))

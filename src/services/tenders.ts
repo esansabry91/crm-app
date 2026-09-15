@@ -70,6 +70,8 @@ async function addHistoryEntry(
     changedByName: string;
     ownerUid: string;
     fromStage?: Stage;
+    /** See TenderHistoryEntry.valueChangeReason's doc comment in types.ts. */
+    valueChangeReason?: 'renewal' | 'equipment_increase' | 'equipment_decrease' | 'guard_rate';
   },
   timestamp: number = Date.now()
 ) {
@@ -312,6 +314,7 @@ export async function renewContract(
       changedByUid: actor.uid,
       changedByName: actor.name,
       ownerUid: tender.ownerUid,
+      valueChangeReason: 'renewal',
     });
   }
 }
@@ -383,6 +386,7 @@ export async function addTenderEquipment(
         changedByUid: actor.uid,
         changedByName: actor.name,
         ownerUid: tender.ownerUid,
+        valueChangeReason: 'equipment_increase',
       },
       closedDateToMillis(startDate)
     );
@@ -390,18 +394,20 @@ export async function addTenderEquipment(
 }
 
 /**
- * Removes one equipment item declared via addTenderEquipment() above, reversing EXACTLY the
- * `valueContribution` it added at the time (never a value re-derived from today's rate/quantity/
- * contractEnd, which may have since changed) — floored at 0 so a tenderValue manually lowered
- * since can't go negative. Unlike the item's own (possibly backdated) startDate, this history
- * entry is logged at the moment of removal itself: a past period's bridge, already generated
- * while the item was active, stays exactly as it was; only this period onward reflects the
- * decrease.
+ * Removes one equipment item declared via addTenderEquipment() above, reversing whatever is LEFT
+ * of its `valueContribution` — the full amount, unless it was already partially reversed by
+ * stopTenderEquipmentItem() below, in which case only `valueContribution - stopValueReversal`
+ * remains to reverse (never a value re-derived from today's rate/quantity/contractEnd, which may
+ * have since changed) — floored at 0 so a tenderValue manually lowered since can't go negative.
+ * This history entry is logged at the moment of removal itself: a past period's bridge, already
+ * generated while the item was active, stays exactly as it was; only this period onward reflects
+ * the decrease.
  */
 export async function removeTenderEquipmentItem(tender: Tender, itemId: string, actor: Actor): Promise<void> {
   const item = (tender.additionalEquipment || []).find((eq) => eq.id === itemId);
   if (!item) return;
-  const newTenderValue = Math.max(0, tender.tenderValue - item.valueContribution);
+  const remaining = item.valueContribution - (item.stopValueReversal || 0);
+  const newTenderValue = Math.max(0, tender.tenderValue - remaining);
 
   await updateDoc(doc(db, 'tenders', tender.id), {
     additionalEquipment: arrayRemove(item),
@@ -409,7 +415,7 @@ export async function removeTenderEquipmentItem(tender: Tender, itemId: string, 
     updatedAt: Date.now(),
   });
 
-  if (item.valueContribution !== 0) {
+  if (remaining !== 0) {
     await addHistoryEntry(tender.id, {
       type: 'value_change',
       stage: tender.stage,
@@ -417,6 +423,163 @@ export async function removeTenderEquipmentItem(tender: Tender, itemId: string, 
       changedByUid: actor.uid,
       changedByName: actor.name,
       ownerUid: tender.ownerUid,
+      valueChangeReason: 'equipment_decrease',
+    });
+  }
+}
+
+/** yyyy-mm-dd for the 1st of the calendar month AFTER the given date's own month — e.g.
+ *  2026-09-15 -> 2026-10-01. Used by stopTenderEquipmentItem() below to find how many WHOLE
+ *  months are left to reverse: the month an item stops in is treated as already billed (it was
+ *  deployed for at least part of it), so only months strictly after it count toward the
+ *  reversal. */
+function firstOfNextMonth(dateISO: string): string {
+  const [y, m] = dateISO.split('-').map(Number);
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  return `${ny}-${String(nm).padStart(2, '0')}-01`;
+}
+
+/**
+ * Stops one equipment item's deployment mid-contract WITHOUT deleting it — the item stays in
+ * `additionalEquipment`, marked with `stoppedDate`, so its original "Equipment Added" history
+ * remains visible instead of being erased the way a full Remove would. Reverses only the
+ * estimated value for the months after `stoppedDate` (`monthlyRate * quantity *
+ * wholeMonthsInclusive(firstOfNextMonth(stoppedDate), contractEnd)`, capped at what the item is
+ * still worth) — the month it stops in still counts as billed. Use this when equipment genuinely
+ * stops being deployed to the site; use removeTenderEquipmentItem() instead to correct a mistake
+ * (declared in error, wrong rate, etc.), which erases the item and its value contribution
+ * entirely.
+ *
+ * `stopDate` is clamped to never be earlier than the item's own `startDate`. No-op (throws
+ * instead) if the item is already stopped — stop it only once; a further correction goes through
+ * Remove.
+ */
+export async function stopTenderEquipmentItem(
+  tender: Tender,
+  itemId: string,
+  stopDate: string,
+  actor: Actor
+): Promise<void> {
+  const item = (tender.additionalEquipment || []).find((eq) => eq.id === itemId);
+  if (!item) return;
+  if (item.stoppedDate) throw new Error('This equipment item has already been stopped.');
+
+  const clampedStop = stopDate < item.startDate ? item.startDate : stopDate;
+  const monthsAfterStop = wholeMonthsInclusive(firstOfNextMonth(clampedStop), tender.contractEnd);
+  const reversal = Math.min(item.valueContribution, item.monthlyRate * item.quantity * monthsAfterStop);
+  const newTenderValue = Math.max(0, tender.tenderValue - reversal);
+  const updatedItem: TenderEquipmentItem = { ...item, stoppedDate: clampedStop, stopValueReversal: reversal };
+  const newEquipment = (tender.additionalEquipment || []).map((eq) => (eq.id === itemId ? updatedItem : eq));
+
+  await updateDoc(doc(db, 'tenders', tender.id), {
+    additionalEquipment: newEquipment,
+    tenderValue: newTenderValue,
+    updatedAt: Date.now(),
+  });
+
+  if (reversal !== 0) {
+    await addHistoryEntry(
+      tender.id,
+      {
+        type: 'value_change',
+        stage: tender.stage,
+        value: newTenderValue,
+        changedByUid: actor.uid,
+        changedByName: actor.name,
+        ownerUid: tender.ownerUid,
+        valueChangeReason: 'equipment_decrease',
+      },
+      closedDateToMillis(clampedStop)
+    );
+  }
+}
+
+/** Standard assumed monthly billable hours for one guard (26 working days x 8 hours) — used
+ *  ONLY to estimate a Guard Rate change's contribution to a project's tracked contract value
+ *  (see applyGuardRateChange() below). Guard Rate is billed per actual man-hour worked (from
+ *  Duty Roster), which varies month to month and isn't tracked as a fixed monthly figure the
+ *  way equipment's own `monthlyRate` is — this constant makes that estimate possible, at the
+ *  cost of being an approximation rather than an exact figure. */
+export const STANDARD_MONTHLY_HOURS_PER_GUARD = 208;
+
+/** The single "effective" RM/man-hour rate a Guard Rate configuration works out to — `guardRate`
+ *  itself in 'same' mode, or the plain average of `guardRatePositions`' rates in 'multiple' mode
+ *  (headcount isn't broken down per position, so a weighted average isn't available; this is
+ *  the same approximation applyGuardRateChange() already accepts elsewhere). 0 when unset. */
+export function effectiveGuardRate(
+  mode: 'same' | 'multiple' | undefined,
+  rate: number | undefined,
+  positions: { name: string; rate: number }[] | undefined
+): number {
+  if (mode === 'multiple') {
+    if (!positions || positions.length === 0) return 0;
+    return positions.reduce((sum, p) => sum + p.rate, 0) / positions.length;
+  }
+  return rate ?? 0;
+}
+
+/**
+ * Applies a Guard Rate change (Project Details > Guard Rate) to a Won project's tracked contract
+ * value — the same "increasing contract value" story as addTenderEquipment(), except Guard Rate
+ * is RM per man-hour rather than a fixed monthly fee, so there's no exact monthly total to
+ * multiply by remaining months the way equipment has. This ESTIMATES it instead:
+ * `(new effective rate - old effective rate) * STANDARD_MONTHLY_HOURS_PER_GUARD * guardsDeployed
+ * * wholeMonthsInclusive(today, contractEnd)` — see effectiveGuardRate() above for what
+ * "effective rate" means in 'multiple' mode.
+ *
+ * Deliberately a no-op (writes the new rate fields, but no tenderValue change and no history
+ * entry) the FIRST time a rate is ever set on a project (`tender.guardRateMode` was previously
+ * unset) — that's declaring a rate for invoicing, not a rate INCREASE, so it must never be
+ * compared against an implicit baseline of RM 0.
+ *
+ * Logs its own `value_change` history entry (`valueChangeReason: 'guard_rate'`) only when the
+ * estimate is non-zero, timestamped to "now" (a rate change takes effect going forward, never
+ * backdated, unlike equipment's own startDate) — so the Active Project Value Bridge shows it as
+ * its own "Guard Rate Change" bar. Same permission story as renewContract()/addTenderEquipment():
+ * firestore.rules already lets a branch-mate (or HQ) on this Won project write guardRateMode/
+ * guardRate/guardRatePositions/tenderValue together.
+ */
+export async function applyGuardRateChange(
+  tender: Tender,
+  input: {
+    guardRateMode: 'same' | 'multiple';
+    guardRate?: number;
+    guardRatePositions?: { name: string; rate: number }[];
+    guardsDeployed: number;
+  },
+  actor: Actor
+): Promise<void> {
+  const hadPriorRate = tender.guardRateMode != null;
+  const newEffective = effectiveGuardRate(input.guardRateMode, input.guardRate, input.guardRatePositions);
+  const oldEffective = hadPriorRate
+    ? effectiveGuardRate(tender.guardRateMode, tender.guardRate, tender.guardRatePositions)
+    : newEffective;
+
+  let valueDelta = 0;
+  if (hadPriorRate && newEffective !== oldEffective) {
+    const months = wholeMonthsInclusive(new Date().toISOString().slice(0, 10), tender.contractEnd);
+    valueDelta = (newEffective - oldEffective) * STANDARD_MONTHLY_HOURS_PER_GUARD * input.guardsDeployed * months;
+  }
+  const newTenderValue = Math.max(0, tender.tenderValue + valueDelta);
+
+  await updateDoc(doc(db, 'tenders', tender.id), {
+    guardRateMode: input.guardRateMode,
+    guardRate: input.guardRateMode === 'same' ? input.guardRate ?? 0 : 0,
+    guardRatePositions: input.guardRateMode === 'multiple' ? input.guardRatePositions ?? [] : [],
+    tenderValue: newTenderValue,
+    updatedAt: Date.now(),
+  });
+
+  if (valueDelta !== 0) {
+    await addHistoryEntry(tender.id, {
+      type: 'value_change',
+      stage: tender.stage,
+      value: newTenderValue,
+      changedByUid: actor.uid,
+      changedByName: actor.name,
+      ownerUid: tender.ownerUid,
+      valueChangeReason: 'guard_rate',
     });
   }
 }

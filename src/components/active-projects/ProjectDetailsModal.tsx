@@ -4,7 +4,11 @@ import { db } from '../../firebase';
 import type { Role, Tender } from '../../types';
 import {
   addTenderEquipment,
+  applyGuardRateChange,
+  effectiveGuardRate,
   removeTenderEquipmentItem,
+  STANDARD_MONTHLY_HOURS_PER_GUARD,
+  stopTenderEquipmentItem,
   updateActiveProjectDetails,
   wholeMonthsInclusive,
 } from '../../services/tenders';
@@ -28,9 +32,9 @@ interface Props {
    * instead, so nobody types a number here that the roster would just overwrite the meaning of.
    */
   liveGuardCount?: number;
-  /** Needed for the Additional Equipment section below — addTenderEquipment()/
-   *  removeTenderEquipmentItem() log a history entry attributed to whoever's making the change,
-   *  same as RenewContractModal's own actor prop. */
+  /** Needed for the Additional Equipment section below and Guard Rate changes — addTenderEquipment()/
+   *  removeTenderEquipmentItem()/stopTenderEquipmentItem()/applyGuardRateChange() log a history
+   *  entry attributed to whoever's making the change, same as RenewContractModal's own actor prop. */
   actor: { uid: string; name: string; role?: Role };
 }
 
@@ -90,8 +94,12 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   const [eqRate, setEqRate] = useState('');
   const [eqQty, setEqQty] = useState('');
   const [eqStartDate, setEqStartDate] = useState('');
-  const [eqBusy, setEqBusy] = useState<string | null>(null); // 'add', an item id being removed, or null
+  const [eqBusy, setEqBusy] = useState<string | null>(null); // 'add', 'stop-<id>', an item id being removed, or null
   const [eqError, setEqError] = useState<string | null>(null);
+  // Which equipment item currently has its "Stop" mini-form open (see stopTenderEquipmentItem()
+  // in services/tenders.ts) — at most one at a time — and the date drafted into it.
+  const [stoppingItemId, setStoppingItemId] = useState<string | null>(null);
+  const [stopDateDraft, setStopDateDraft] = useState('');
 
   useEffect(() => {
     if (!open || !tender) return;
@@ -122,6 +130,8 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     const todayStr = new Date().toISOString().slice(0, 10);
     setEqStartDate(tender.contractStart && tender.contractStart > todayStr ? tender.contractStart : todayStr);
     setEqError(null);
+    setStoppingItemId(null);
+    setStopDateDraft(todayStr);
     setRateMode(tender.guardRateMode === 'multiple' ? 'multiple' : 'same');
     setFlatRate(tender.guardRate != null ? String(tender.guardRate) : '');
     setPositions(
@@ -239,6 +249,36 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     }
   };
 
+  // Opens the inline "Stop" mini-form for one equipment item (see stopTenderEquipmentItem()'s
+  // doc comment in services/tenders.ts for Stop vs Remove) — defaults the date to today, clamped
+  // to the item's own startDate through the contract's end.
+  const handleOpenStop = (itemId: string, itemStartDate: string) => {
+    const activeTender = workingTender || tender;
+    if (!activeTender) return;
+    setEqError(null);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const floor = itemStartDate > todayStr ? itemStartDate : todayStr;
+    setStopDateDraft(activeTender.contractEnd && floor > activeTender.contractEnd ? activeTender.contractEnd : floor);
+    setStoppingItemId(itemId);
+  };
+
+  const handleConfirmStop = async (itemId: string) => {
+    const activeTender = workingTender || tender;
+    if (!activeTender) return;
+    if (!stopDateDraft) { setEqError('Pick a stop date.'); return; }
+    setEqError(null);
+    setEqBusy(`stop-${itemId}`);
+    try {
+      await stopTenderEquipmentItem(activeTender, itemId, stopDateDraft, actor);
+      await refreshWorkingTender();
+      setStoppingItemId(null);
+    } catch (err) {
+      setEqError(err instanceof Error ? err.message : 'Could not stop this equipment item.');
+    } finally {
+      setEqBusy(null);
+    }
+  };
+
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -301,6 +341,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
       }
     }
 
+    const baseTender = workingTender || tender;
     setSaving(true);
     try {
       await updateActiveProjectDetails(tender.id, {
@@ -314,8 +355,24 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
         clientAlias: clientAlias.trim(),
         clientAddress: clientAddress.trim(),
         ...(guards !== undefined ? { guardsDeployed: guards } : {}),
-        ...rateFields,
       });
+      // Guard Rate is written separately from the rest of this form (see applyGuardRateChange()
+      // in services/tenders.ts) because, unlike everything else above, a changed rate can also
+      // bump this project's tracked contract value — routed through `baseTender` rather than the
+      // (possibly stale) `tender` prop so it doesn't clobber a tenderValue an equipment add/stop/
+      // remove already wrote earlier in this same modal session.
+      if (Object.keys(rateFields).length > 0) {
+        await applyGuardRateChange(
+          baseTender,
+          {
+            guardRateMode: rateFields.guardRateMode!,
+            guardRate: rateFields.guardRate,
+            guardRatePositions: rateFields.guardRatePositions,
+            guardsDeployed: guards ?? liveGuardCount ?? baseTender.guardsDeployed ?? 0,
+          },
+          actor
+        );
+      }
       onClose();
     } catch (err) {
       console.error(err);
@@ -586,6 +643,38 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                 </button>
               </div>
             )}
+
+            {(() => {
+              // Live preview of applyGuardRateChange()'s estimate — only shown once this
+              // project already has a rate on file (a first-time rate isn't an "increase") and
+              // the form's current inputs actually work out to a different effective rate.
+              if (tender.guardRateMode == null) return null;
+              const oldEffective = effectiveGuardRate(tender.guardRateMode, tender.guardRate, tender.guardRatePositions);
+              let newEffective: number | null = null;
+              if (rateMode === 'same' && flatRate.trim() !== '') {
+                const n = Number(flatRate);
+                if (Number.isFinite(n)) newEffective = n;
+              } else if (rateMode === 'multiple') {
+                const filled = positions.filter((p) => p.name.trim() !== '' && p.rate.trim() !== '');
+                if (filled.length > 0) {
+                  const sum = filled.reduce((s, p) => s + Number(p.rate), 0);
+                  if (Number.isFinite(sum)) newEffective = sum / filled.length;
+                }
+              }
+              if (newEffective == null || newEffective === oldEffective) return null;
+              const guardsForPreview = liveGuardCount ?? (Number(guardsDeployed) || 0);
+              const monthsForPreview = wholeMonthsInclusive(new Date().toISOString().slice(0, 10), tender.contractEnd);
+              const delta = (newEffective - oldEffective) * STANDARD_MONTHLY_HOURS_PER_GUARD * guardsForPreview * monthsForPreview;
+              if (delta === 0) return null;
+              return (
+                <p className="text-[11px] text-slate-400 mt-2">
+                  {delta > 0 ? 'Adds an estimated' : 'Removes an estimated'} RM {Math.abs(delta).toFixed(2)} from
+                  this project's tracked contract value (assumes {STANDARD_MONTHLY_HOURS_PER_GUARD} hrs/guard/month
+                  × {guardsForPreview} guard{guardsForPreview === 1 ? '' : 's'} × {monthsForPreview} month
+                  {monthsForPreview === 1 ? '' : 's'} remaining).
+                </p>
+              );
+            })()}
           </div>
 
           <div className="pt-2 border-t border-slate-100">
@@ -618,24 +707,67 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                   {items.length > 0 && (
                     <div className="space-y-1.5 mb-3">
                       {items.map((eq) => (
-                        <div key={eq.id} className="flex items-center gap-2 text-sm bg-slate-50 rounded-lg px-3 py-2">
-                          <div className="flex-1 min-w-0">
-                            <span className="text-slate-700 font-medium">{eq.item}</span>{' '}
-                            <span className="text-slate-500">
-                              RM {eq.monthlyRate.toFixed(2)} × {eq.quantity} / month, from {formatDate(eq.startDate)}
+                        <div key={eq.id} className="text-sm bg-slate-50 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 min-w-0">
+                              <span className="text-slate-700 font-medium">{eq.item}</span>{' '}
+                              <span className="text-slate-500">
+                                RM {eq.monthlyRate.toFixed(2)} × {eq.quantity} / month, from {formatDate(eq.startDate)}
+                              </span>
+                              {eq.stoppedDate && (
+                                <span className="text-amber-600"> · stopped {formatDate(eq.stoppedDate)}</span>
+                              )}
+                            </div>
+                            <span className="text-xs text-slate-400 whitespace-nowrap">
+                              +RM {eq.valueContribution.toFixed(2)}
+                              {eq.stopValueReversal ? ` (−RM ${eq.stopValueReversal.toFixed(2)})` : ''}
                             </span>
+                            {!eq.stoppedDate && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenStop(eq.id, eq.startDate)}
+                                disabled={eqBusy !== null}
+                                className="text-xs font-medium text-amber-600 hover:text-amber-700 disabled:opacity-60 shrink-0"
+                              >
+                                Stop
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveEquipment(eq.id, eq.item)}
+                              disabled={eqBusy !== null}
+                              className="text-xs font-medium text-rose-500 hover:text-rose-600 disabled:opacity-60 shrink-0"
+                            >
+                              {eqBusy === eq.id ? 'Removing…' : 'Remove'}
+                            </button>
                           </div>
-                          <span className="text-xs text-slate-400 whitespace-nowrap">
-                            +RM {eq.valueContribution.toFixed(2)}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveEquipment(eq.id, eq.item)}
-                            disabled={eqBusy !== null}
-                            className="text-xs font-medium text-rose-500 hover:text-rose-600 disabled:opacity-60 shrink-0"
-                          >
-                            {eqBusy === eq.id ? 'Removing…' : 'Remove'}
-                          </button>
+                          {stoppingItemId === eq.id && (
+                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-200">
+                              <input
+                                type="date"
+                                value={stopDateDraft}
+                                min={eq.startDate}
+                                max={activeTender.contractEnd || undefined}
+                                onChange={(e) => setStopDateDraft(e.target.value)}
+                                className="input flex-1"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmStop(eq.id)}
+                                disabled={eqBusy !== null}
+                                className="px-2 py-1 text-xs font-medium rounded-lg border bg-white text-amber-700 border-amber-200 hover:bg-amber-50 disabled:opacity-60 whitespace-nowrap"
+                              >
+                                {eqBusy === `stop-${eq.id}` ? 'Stopping…' : 'Confirm stop'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setStoppingItemId(null)}
+                                className="text-xs text-slate-400 hover:text-slate-600"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
