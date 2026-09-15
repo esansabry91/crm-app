@@ -4,9 +4,12 @@ import { db } from '../../firebase';
 import type { Role, Tender } from '../../types';
 import {
   addTenderEquipment,
+  addTenderSiteEquipment,
   applyGuardRateChange,
+  applyTenderSiteGuardRateChange,
   createTenderSite,
   effectiveGuardRate,
+  getTenderSiteDetails,
   removeTenderEquipmentItem,
   saveTenderSiteLocationDetails,
   STANDARD_MONTHLY_HOURS_PER_GUARD,
@@ -122,6 +125,24 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   const [addSiteCity, setAddSiteCity] = useState('');
   const [addSitePostcode, setAddSitePostcode] = useState('');
   const [addSiteContact, setAddSiteContact] = useState('');
+  // Guard Rate and Additional Equipment, filled in as part of the SAME "+ Add Site" form rather
+  // than only afterwards from the site's own card — both stay optional (same as the project's
+  // first/original site's own form), but staff who already know a site's rate/equipment up
+  // front shouldn't have to save, find the new card, expand it, and re-enter them there.
+  const [addSiteRateMode, setAddSiteRateMode] = useState<'same' | 'multiple'>('same');
+  const [addSiteFlatRate, setAddSiteFlatRate] = useState('');
+  const [addSitePositions, setAddSitePositions] = useState<{ name: string; rate: string }[]>([]);
+  // Equipment items are queued locally (no siteId exists to save them against yet) and only
+  // actually written — one addTenderSiteEquipment() call per queued row — once "Add Site" below
+  // creates the real site.
+  const [addSiteEqDraftItem, setAddSiteEqDraftItem] = useState('');
+  const [addSiteEqDraftRate, setAddSiteEqDraftRate] = useState('');
+  const [addSiteEqDraftQty, setAddSiteEqDraftQty] = useState('');
+  const [addSiteEqDraftStart, setAddSiteEqDraftStart] = useState('');
+  const [addSiteEqDraftError, setAddSiteEqDraftError] = useState<string | null>(null);
+  const [addSiteEquipmentQueue, setAddSiteEquipmentQueue] = useState<
+    { queueId: string; item: string; monthlyRate: string; quantity: string; startDate: string }[]
+  >([]);
   const [addSiteBusy, setAddSiteBusy] = useState(false);
   const [addSiteError, setAddSiteError] = useState<string | null>(null);
 
@@ -133,7 +154,34 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     setAddSiteCity('');
     setAddSitePostcode('');
     setAddSiteContact('');
+    setAddSiteRateMode('same');
+    setAddSiteFlatRate('');
+    setAddSitePositions([]);
+    setAddSiteEqDraftItem('');
+    setAddSiteEqDraftRate('');
+    setAddSiteEqDraftQty('');
+    setAddSiteEqDraftStart('');
+    setAddSiteEqDraftError(null);
+    setAddSiteEquipmentQueue([]);
     setAddSiteError(null);
+  };
+
+  const queueAddSiteEquipment = () => {
+    setAddSiteEqDraftError(null);
+    const name = addSiteEqDraftItem.trim();
+    const rate = Number(addSiteEqDraftRate);
+    const qty = Number(addSiteEqDraftQty);
+    if (!name) { setAddSiteEqDraftError('Enter the equipment name.'); return; }
+    if (!Number.isFinite(rate) || rate < 0) { setAddSiteEqDraftError('Enter a valid monthly rate.'); return; }
+    if (!Number.isFinite(qty) || qty <= 0) { setAddSiteEqDraftError('Enter a valid quantity.'); return; }
+    if (!addSiteEqDraftStart) { setAddSiteEqDraftError('Pick a start date.'); return; }
+    setAddSiteEquipmentQueue((q) => [
+      ...q,
+      { queueId: crypto.randomUUID(), item: name, monthlyRate: addSiteEqDraftRate, quantity: addSiteEqDraftQty, startDate: addSiteEqDraftStart },
+    ]);
+    setAddSiteEqDraftItem('');
+    setAddSiteEqDraftRate('');
+    setAddSiteEqDraftQty('');
   };
 
   const addSiteReady =
@@ -960,10 +1008,174 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                     />
                   </Field>
                 </div>
+                <div className="pt-2 border-t border-slate-100">
+                  <p className="text-xs font-medium text-slate-500 mb-2">
+                    Guard Rate <span className="text-slate-400 font-normal">(optional)</span>
+                  </p>
+                  <div className="flex gap-2 mb-2">
+                    <button
+                      type="button"
+                      disabled={addSiteBusy}
+                      onClick={() => setAddSiteRateMode('same')}
+                      className={`px-2 py-1 text-xs rounded-lg border ${addSiteRateMode === 'same' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-500'}`}
+                    >
+                      Same rate for all
+                    </button>
+                    <button
+                      type="button"
+                      disabled={addSiteBusy}
+                      onClick={() => setAddSiteRateMode('multiple')}
+                      className={`px-2 py-1 text-xs rounded-lg border ${addSiteRateMode === 'multiple' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-500'}`}
+                    >
+                      By position
+                    </button>
+                  </div>
+                  {addSiteRateMode === 'same' ? (
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={addSiteFlatRate}
+                      onChange={(e) => setAddSiteFlatRate(e.target.value)}
+                      className="input"
+                      placeholder="RM per man-hour"
+                      disabled={addSiteBusy}
+                    />
+                  ) : (
+                    <div className="space-y-2">
+                      {addSitePositions.map((pos, idx) => (
+                        <div key={idx} className="flex gap-2 items-start">
+                          <input
+                            value={pos.name}
+                            onChange={(e) => {
+                              const next = [...addSitePositions];
+                              next[idx] = { ...next[idx], name: e.target.value };
+                              setAddSitePositions(next);
+                            }}
+                            className="input flex-1"
+                            placeholder="e.g. Leader"
+                            disabled={addSiteBusy}
+                          />
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={pos.rate}
+                            onChange={(e) => {
+                              const next = [...addSitePositions];
+                              next[idx] = { ...next[idx], rate: e.target.value };
+                              setAddSitePositions(next);
+                            }}
+                            className="input w-24"
+                            placeholder="RM/hr"
+                            disabled={addSiteBusy}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setAddSitePositions(addSitePositions.filter((_, i) => i !== idx))}
+                            disabled={addSiteBusy}
+                            className="text-slate-400 hover:text-rose-600 text-lg leading-none px-1 pt-1.5"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        disabled={addSiteBusy}
+                        onClick={() => setAddSitePositions([...addSitePositions, { name: '', rate: '' }])}
+                        className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                      >
+                        + Add position
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-slate-100">
+                  <p className="text-xs font-medium text-slate-500 mb-2">
+                    Additional Equipment <span className="text-slate-400 font-normal">(optional)</span>
+                  </p>
+                  {addSiteEquipmentQueue.length > 0 && (
+                    <div className="space-y-1.5 mb-2">
+                      {addSiteEquipmentQueue.map((eq) => (
+                        <div key={eq.queueId} className="flex items-center gap-2 text-sm bg-slate-50 rounded-lg px-3 py-2">
+                          <div className="flex-1 min-w-0">
+                            <span className="text-slate-700 font-medium">{eq.item}</span>{' '}
+                            <span className="text-slate-500">
+                              RM {eq.monthlyRate} × {eq.quantity} / month, from {eq.startDate}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={addSiteBusy}
+                            onClick={() => setAddSiteEquipmentQueue((q) => q.filter((x) => x.queueId !== eq.queueId))}
+                            className="text-xs font-medium text-rose-500 hover:text-rose-600 disabled:opacity-60 shrink-0"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        value={addSiteEqDraftItem}
+                        onChange={(e) => setAddSiteEqDraftItem(e.target.value)}
+                        placeholder="e.g. E-bike"
+                        className="input flex-1"
+                        disabled={addSiteBusy}
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={addSiteEqDraftRate}
+                        onChange={(e) => setAddSiteEqDraftRate(e.target.value)}
+                        placeholder="RM/month"
+                        className="input w-24"
+                        disabled={addSiteBusy}
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        step="1"
+                        value={addSiteEqDraftQty}
+                        onChange={(e) => setAddSiteEqDraftQty(e.target.value)}
+                        placeholder="Qty"
+                        className="input w-16"
+                        disabled={addSiteBusy}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        value={addSiteEqDraftStart}
+                        min={(workingTender || tender).contractStart || undefined}
+                        max={(workingTender || tender).contractEnd || undefined}
+                        onChange={(e) => setAddSiteEqDraftStart(e.target.value)}
+                        className="input"
+                        disabled={addSiteBusy}
+                      />
+                      <button
+                        type="button"
+                        onClick={queueAddSiteEquipment}
+                        disabled={addSiteBusy}
+                        className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 disabled:opacity-60 whitespace-nowrap"
+                      >
+                        + Add equipment
+                      </button>
+                    </div>
+                    {addSiteEqDraftError && <p className="text-[11px] text-rose-600">{addSiteEqDraftError}</p>}
+                  </div>
+                </div>
+
                 <p className="text-[11px] text-slate-400">
-                  All fields above are required to add the site. Its Guard Rate and Additional
-                  Equipment can be filled in afterwards, from the site's own card below — set up
-                  its guards and roster from the Duty Roster tab whenever you're ready.
+                  Site Name, Location, Contact Person, State, City and Postcode are required to
+                  add the site. Guard Rate and Additional Equipment are optional here and can
+                  also be changed later from the site's own card — set up its guards and roster
+                  from the Duty Roster tab whenever you're ready.
                 </p>
                 {addSiteError && <p className="text-xs text-rose-600">{addSiteError}</p>}
                 <div className="flex items-center gap-2">
@@ -971,24 +1183,73 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                     type="button"
                     disabled={!addSiteReady || addSiteBusy}
                     onClick={async () => {
-                      const activeTender = workingTender || tender;
+                      let activeTender = workingTender || tender;
+                      const branch = activeTender.activeBranch || activeTender.department || null;
+                      const siteName = addSiteName.trim();
                       setAddSiteBusy(true);
                       setAddSiteError(null);
                       try {
-                        const siteId = await createTenderSite(activeTender, addSiteName.trim());
-                        await saveTenderSiteLocationDetails(
-                          activeTender.id,
-                          siteId,
-                          addSiteName.trim(),
-                          activeTender.activeBranch || activeTender.department || null,
-                          {
-                            location: addSiteLocation.trim(),
-                            state: addSiteState.trim(),
-                            city: addSiteCity.trim(),
-                            postcode: addSitePostcode.trim(),
-                            contactPerson: addSiteContact.trim(),
-                          }
-                        );
+                        const siteId = await createTenderSite(activeTender, siteName);
+                        await saveTenderSiteLocationDetails(activeTender.id, siteId, siteName, branch, {
+                          location: addSiteLocation.trim(),
+                          state: addSiteState.trim(),
+                          city: addSiteCity.trim(),
+                          postcode: addSitePostcode.trim(),
+                          contactPerson: addSiteContact.trim(),
+                        });
+
+                        const wantsRate =
+                          addSiteRateMode === 'same'
+                            ? addSiteFlatRate.trim() !== ''
+                            : addSitePositions.some((p) => p.name.trim() !== '' && p.rate.trim() !== '');
+                        if (wantsRate) {
+                          await applyTenderSiteGuardRateChange(
+                            activeTender,
+                            siteId,
+                            siteName,
+                            branch,
+                            null,
+                            {
+                              guardRateMode: addSiteRateMode,
+                              guardRate: addSiteRateMode === 'same' ? Number(addSiteFlatRate) || 0 : undefined,
+                              guardRatePositions:
+                                addSiteRateMode === 'multiple'
+                                  ? addSitePositions
+                                      .filter((p) => p.name.trim() !== '' && p.rate.trim() !== '')
+                                      .map((p) => ({ name: p.name.trim(), rate: Number(p.rate) || 0 }))
+                                  : undefined,
+                              guardsDeployed: 0,
+                            },
+                            actor
+                          );
+                        }
+
+                        // Equipment items are queued locally, so apply them one at a time here,
+                        // re-reading the tender and this site's own siteDetails doc between each
+                        // — same reasoning as refreshWorkingTender() above: each item's value
+                        // bump has to compute against the total the PREVIOUS one just wrote, not
+                        // a stale snapshot from before this form was even opened.
+                        for (const eq of addSiteEquipmentQueue) {
+                          const tenderSnap = await getDoc(doc(db, 'tenders', activeTender.id));
+                          if (tenderSnap.exists()) activeTender = { id: tenderSnap.id, ...(tenderSnap.data() as Omit<Tender, 'id'>) };
+                          const currentSiteDetails = await getTenderSiteDetails(activeTender.id, siteId);
+                          await addTenderSiteEquipment(
+                            activeTender,
+                            siteId,
+                            siteName,
+                            branch,
+                            currentSiteDetails,
+                            {
+                              item: eq.item,
+                              monthlyRate: Number(eq.monthlyRate) || 0,
+                              quantity: Number(eq.quantity) || 0,
+                              startDate: eq.startDate,
+                            },
+                            actor
+                          );
+                        }
+
+                        await refreshWorkingTender();
                         resetAddSiteForm();
                       } catch (err) {
                         setAddSiteError(err instanceof Error ? err.message : 'Failed to add site.');
