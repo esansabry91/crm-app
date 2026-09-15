@@ -4,6 +4,7 @@ import {
   arrayUnion,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -999,6 +1000,14 @@ export async function setTenderSiteMode(tenderId: string, siteMode: 'single' | '
   await updateDoc(doc(db, 'tenders', tenderId), { siteMode, updatedAt: Date.now() });
 }
 
+/** Undoes setTenderSiteMode() above — clears the answer entirely (not to 'single' or
+ *  'multiple', but back to unset) so ProjectDetailsModal.tsx's chooser shows again next time
+ *  Project Details opens for this project. Reached via a "Change" link next to whichever answer
+ *  is currently on file. */
+export async function resetTenderSiteMode(tenderId: string) {
+  await updateDoc(doc(db, 'tenders', tenderId), { siteMode: deleteField(), updatedAt: Date.now() });
+}
+
 /**
  * Requests reassigning which branch is running an already-Won tender's active project —
  * admin-only, separate from the sales-attribution `department` field (see the doc comment on
@@ -1081,6 +1090,7 @@ export async function backfillActiveBranch(tender: Tender) {
 export async function updateActiveProjectDetails(
   tenderId: string,
   clientName: string,
+  siteName: string,
   patch: Partial<{
     location: string;
     state: string;
@@ -1104,22 +1114,21 @@ export async function updateActiveProjectDetails(
   await updateDoc(doc(db, 'tenders', tenderId), data);
 
   // Keep this project's FIRST/original Duty Roster site (see TenderSiteDetails' doc comment in
-  // types.ts for why it's the one without a siteDetails doc) named after whatever Location is
-  // currently on file, and carrying this tender's clientName — so Duty Roster's Client Site
-  // dropdown can filter/label by client and worksite (see renderSiteSelect() in
+  // types.ts for why it's the one without a siteDetails doc) named after Project Details' own
+  // required Site Name field, and carrying this tender's clientName — so Duty Roster's Client
+  // Site dropdown can filter/label by client and worksite (see renderSiteSelect() in
   // public/duty-roster/index.html) without a join back to /tenders, which it doesn't otherwise
-  // read at all. Runs on every save that touches Location (every save — see
-  // ProjectDetailsModal.tsx, where it's a required field), not just the first: a corrected
-  // Location keeps the site's dropdown label in sync rather than freezing it at whatever was
-  // typed the very first time.
-  if (patch.location !== undefined) {
-    await syncPrimarySiteLabel(tenderId, clientName, patch.location);
+  // read at all. Runs on every save (Site Name is required — see ProjectDetailsModal.tsx), not
+  // just the first: a corrected Site Name keeps the dropdown label in sync rather than freezing
+  // it at whatever was typed the very first time.
+  if (siteName.trim()) {
+    await syncPrimarySiteLabel(tenderId, clientName, siteName.trim());
   }
 }
 
 /** Best-effort — a project might not have a Duty Roster site yet (nobody's opened the Duty
  *  Roster tab for it), in which case there's nothing to sync onto and this quietly no-ops. */
-async function syncPrimarySiteLabel(tenderId: string, clientName: string, location: string): Promise<void> {
+async function syncPrimarySiteLabel(tenderId: string, clientName: string, siteName: string): Promise<void> {
   try {
     const snap = await getDocs(query(collection(db, 'sites'), where('tenderId', '==', tenderId)));
     if (snap.empty) return;
@@ -1129,7 +1138,7 @@ async function syncPrimarySiteLabel(tenderId: string, clientName: string, locati
     const primary = docs[0];
     if (!primary) return;
     await updateDoc(doc(db, 'sites', primary.id), {
-      name: location || 'New site',
+      name: siteName,
       clientName,
       updatedAt: new Date().toISOString(),
     });

@@ -413,7 +413,8 @@ export interface Tender {
    * will never apply; 'multiple' shows it from the start. Absent/undefined means not asked yet
    * — EXCEPT a project that already has more than one linked site (from before this field
    * existed) is treated as 'multiple' without ever asking, since the answer is already evident
-   * from its data. There's currently no UI to change the answer once given.
+   * from its data. A "Change" link in ProjectDetailsModal.tsx clears this field (see
+   * resetTenderSiteMode()) to revisit the choice.
    */
   siteMode?: 'single' | 'multiple';
   /**

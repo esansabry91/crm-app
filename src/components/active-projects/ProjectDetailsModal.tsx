@@ -11,6 +11,7 @@ import {
   effectiveGuardRate,
   getTenderSiteDetails,
   removeTenderEquipmentItem,
+  resetTenderSiteMode,
   saveTenderSiteLocationDetails,
   setTenderSiteMode,
   STANDARD_MONTHLY_HOURS_PER_GUARD,
@@ -64,6 +65,7 @@ interface Props {
  * finalized separately from the rest of a project's details.
  */
 export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCount, actor }: Props) {
+  const [siteName, setSiteName] = useState('');
   const [location, setLocation] = useState('');
   const [stateName, setStateName] = useState('');
   const [city, setCity] = useState('');
@@ -88,6 +90,10 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   const [docBusy, setDocBusy] = useState<'idle' | 'uploading' | 'opening' | 'deleting'>('idle');
   const [docError, setDocError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Guards the one-time site-name prefill below from re-firing on every live update from
+  // useTenderSites' onSnapshot subscription — reset to null whenever the modal (re)opens (see the
+  // [open, tender] effect below) so a genuine reopen still re-syncs from the current primary site.
+  const siteNameInitKeyRef = useRef<string | null>(null);
 
   // Additional Equipment (see TenderEquipmentItem's doc comment in types.ts) — saves immediately
   // per item, like the tender document upload/delete above, rather than being staged until this
@@ -223,6 +229,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     setClientAlias(tender.clientAlias || '');
     setClientAddress(tender.clientAddress || '');
     setWorkingTender(tender);
+    siteNameInitKeyRef.current = null;
     setEqItem('');
     setEqRate('');
     setEqQty('');
@@ -240,6 +247,20 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     );
     setError(null);
   }, [open, tender]);
+
+  // Prefills Site Name from the current primary Duty Roster site's own name (see
+  // useTenderSites' doc comment) — separate from the effect above because linkedSites loads
+  // asynchronously and may not be ready yet when this modal first opens. Runs once per modal
+  // open (guarded by siteNameInitKeyRef), so it doesn't clobber what the user is actively typing
+  // when useTenderSites' live subscription pushes a later update.
+  useEffect(() => {
+    if (!open || !tender) return;
+    if (linkedSitesLoading) return;
+    if (siteNameInitKeyRef.current === tender.id) return;
+    const primary = linkedSites.find((s) => s.isPrimary);
+    setSiteName(primary?.name || '');
+    siteNameInitKeyRef.current = tender.id;
+  }, [open, tender, linkedSites, linkedSitesLoading]);
 
   if (!open || !tender) return null;
 
@@ -384,6 +405,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
 
     // Every field on this form is required before it can be saved, except Tender Document No.
     // (often not issued yet) and the Guard Rate section below.
+    if (!siteName.trim()) { setError('Site Name is required.'); return; }
     if (!location.trim()) { setError('Location is required.'); return; }
     if (!stateName.trim()) { setError('State is required.'); return; }
     if (!city.trim()) { setError('City is required.'); return; }
@@ -443,7 +465,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     const baseTender = workingTender || tender;
     setSaving(true);
     try {
-      await updateActiveProjectDetails(tender.id, tender.clientName, {
+      await updateActiveProjectDetails(tender.id, tender.clientName, siteName.trim(), {
         location: location.trim(),
         state: stateName.trim(),
         city: city.trim(),
@@ -548,6 +570,38 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
           </div>
         ) : (
         <form onSubmit={handleSave} className="px-6 py-5 space-y-4">
+          {activeTenderNow.siteMode && (
+            <div className="flex items-center justify-between -mb-1">
+              <span className="text-[11px] text-slate-400">
+                {activeTenderNow.siteMode === 'single' ? 'Single Site' : 'Multiple Sites'}
+              </span>
+              <button
+                type="button"
+                onClick={async () => {
+                  setError(null);
+                  try {
+                    await resetTenderSiteMode(activeTenderNow.id);
+                    await refreshWorkingTender();
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Failed to reset this choice.');
+                  }
+                }}
+                className="text-[11px] font-medium text-blue-600 hover:text-blue-700"
+              >
+                Change
+              </button>
+            </div>
+          )}
+
+          <Field label="Site Name">
+            <input
+              value={siteName}
+              onChange={(e) => setSiteName(e.target.value)}
+              className="input"
+              placeholder="e.g. Menara ABC"
+            />
+          </Field>
+
           <Field label="Location">
             <input
               value={location}
