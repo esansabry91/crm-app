@@ -564,6 +564,66 @@
           <p class="empty" id="supportGuardEmpty" hidden>No support guards used this month yet.</p>
           <p class="sub" style="margin-top:8px;">Also mark him "Support (Other Site)" under "Mark a guard on leave" at his OWN site for this date, so his home roster doesn't also schedule him there.</p>
         </div>
+
+        <!-- "Additional Guard (Temporary)" — a client-requested extra guard post for a date
+             range, beyond this site's normally configured Client Site Requirement count (see
+             ADDITIONAL_GUARD_CATEGORY's doc comment in the CRM's services/invoices.ts). Sourced
+             the same 3 ways as covering a leave (temporary guard / a real guard on his rest day
+             / a support guard from another branch site) but ADDS a brand-new post instead of
+             filling an existing one — see generateMonth()'s own comment for how the two
+             combine, and extraGuardEntriesFor()'s doc comment for the data shape. One guard
+             identity for the whole date range (create a shorter range, or a second entry, for a
+             different guard on different days) — deliberately no live per-day availability
+             check across a whole range (unlike the single-date pickers above); a real conflict
+             still shows up afterward as a flag on the calendar, exactly like a manual override. -->
+        <div class="panel" id="additionalGuardPanel">
+          <h2>Assign an additional guard</h2>
+          <p class="sub">For an extra guard post the client asked for beyond this site's normal Client Site Requirement, for a date range &mdash; bills separately as "Additional Guard (Temporary)" in Branch Collection, and still counts toward payroll like any other shift.</p>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">Shift <span style="color:var(--critical);">*</span></label><select id="addlGuardShiftSelect"></select></div>
+            <div style="flex:1;"><label class="small">Start date <span style="color:var(--critical);">*</span></label><input type="date" id="addlGuardStartDate"></div>
+            <div style="flex:1;"><label class="small">End date <span style="color:var(--critical);">*</span></label><input type="date" id="addlGuardEndDate"></div>
+          </div>
+          <div class="fieldrow">
+            <div style="flex:1;">
+              <label class="small">Source</label>
+              <select id="addlGuardSourceMode">
+                <option value="">Choose source&hellip;</option>
+                <option value="temp">Temporary guard</option>
+                <option value="restday">Current guard on rest day</option>
+                <option value="support" id="addlGuardSupportOpt">Support guard (from another site)</option>
+              </select>
+            </div>
+            <div style="flex:1;" id="addlGuardRestdayWrap" hidden>
+              <label class="small">Guard (on rest day)</label>
+              <select id="addlGuardRestdaySelect"></select>
+            </div>
+          </div>
+          <div class="fieldrow" id="addlGuardTempWrap" hidden>
+            <div style="flex:1;"><label class="small">Temporary guard's name <span style="color:var(--critical);">*</span></label><input type="text" id="addlGuardTempName" placeholder="e.g. Zul (relief)"></div>
+            <div style="flex:1;"><label class="small">Rate per shift (RM) <span style="color:var(--critical);">*</span></label><input type="number" id="addlGuardTempRate" min="0" step="0.01" placeholder="0.00"></div>
+          </div>
+          <div class="fieldrow" id="addlGuardTempWrap2" hidden>
+            <div style="flex:1;"><label class="small">MyKad number <span style="color:var(--critical);">*</span></label><input type="text" id="addlGuardTempMykad" placeholder="901231-14-5678" maxlength="14"></div>
+            <div style="flex:1;"><label class="small">Age <span style="color:var(--critical);">*</span></label><input type="number" id="addlGuardTempAge" min="16" max="80" step="1"></div>
+            <div style="flex:1;"><label class="small">Phone number <span style="color:var(--critical);">*</span></label><input type="text" id="addlGuardTempPhone" placeholder="e.g. 012-3456789"></div>
+          </div>
+          <div class="fieldrow" id="addlGuardTempWrap3" hidden>
+            <div style="flex:1;"><label class="small">State <span style="color:var(--critical);">*</span></label><input type="text" id="addlGuardTempState" placeholder="e.g. Selangor"></div>
+            <div style="flex:1;"><label class="small">City <span style="color:var(--critical);">*</span></label><input type="text" id="addlGuardTempCity" placeholder="e.g. Petaling Jaya"></div>
+          </div>
+          <div class="fieldrow" id="addlGuardSupportWrap" hidden>
+            <div style="flex:1;"><label class="small">From site (same branch)</label><select id="addlGuardSupportOriginSite"></select></div>
+            <div style="flex:1;"><label class="small">Guard</label><select id="addlGuardSupportGuardSelect"></select></div>
+          </div>
+          <p class="empty" id="addlGuardSupportNoOtherSites" hidden>No other sites in this branch yet &mdash; nothing to borrow a guard from.</p>
+          <button class="btn primary sm" id="assignAdditionalGuardBtn">Assign additional guard</button>
+          <table class="simple" style="margin-top:12px;">
+            <thead><tr><th>Dates</th><th>Shift</th><th>Guard</th><th>Source</th><th></th></tr></thead>
+            <tbody id="additionalGuardTableBody"></tbody>
+          </table>
+          <p class="empty" id="additionalGuardEmpty" hidden>No additional guard posts added for this month yet.</p>
+        </div>
       </div>
 
       <div>
@@ -682,6 +742,7 @@
   function weekdayShort(y,m,d){ const names=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]; return names[new Date(Date.UTC(y,m-1,d)).getUTCDay()]; }
   function isWeekend(y,m,d){ const wd = new Date(Date.UTC(y,m-1,d)).getUTCDay(); return wd===0 || wd===6; }
   function prevDateStr(dateStr){ const [y,m,d] = dateStr.split("-").map(Number); const dt = new Date(Date.UTC(y,m-1,d-1)); return ymd(dt.getUTCFullYear(), dt.getUTCMonth()+1, dt.getUTCDate()); }
+  function nextDateStr(dateStr){ const [y,m,d] = dateStr.split("-").map(Number); const dt = new Date(Date.UTC(y,m-1,d+1)); return ymd(dt.getUTCFullYear(), dt.getUTCMonth()+1, dt.getUTCDate()); }
   function shiftStartEnd(dateStr, shiftType){
     const [y,m,d] = dateStr.split("-").map(Number);
     const start = new Date(Date.UTC(y, m-1, d, shiftType.startHour, 0, 0));
@@ -764,6 +825,20 @@
       defs.push({ id:"night"+i, idx:defs.length, label:"Night"+(nightList.length>1?" #"+(i+1):""), startHour: nightStart, hours: h, night:true });
     });
     return defs;
+  }
+  // Shift options for the Additional Guard panel's date-RANGE picker — a single shiftId has to
+  // mean the same thing on every day in the range, so under FULLH (whose day/night shift lists
+  // can differ in length between weekday and weekend — see computeShiftDefsForDay's own
+  // comment above) this shows the union of ids from both calendars, generically labeled (never
+  // a per-day hour count, since that itself can vary by weekday/weekend under FULLH). Every
+  // other pattern's shift ids never vary by date, so this is just computeShiftDefs() for them.
+  function additionalGuardShiftOptions(site){
+    if(site.pattern !== "FULLH") return computeShiftDefs(site).map(sd => ({ id: sd.id, label: sd.label }));
+    const seen = new Map();
+    [0, 5].forEach(dm => { // Monday (weekday calendar) and Saturday (weekend calendar)
+      computeShiftDefsForDay(site, dm).forEach(sd => { if(!seen.has(sd.id)) seen.set(sd.id, sd.label); });
+    });
+    return Array.from(seen, ([id, label]) => ({ id, label }));
   }
   function coverageDaysPerWeek(site){
     return Math.min(7, Math.max(0, Math.round(Number(site.daysWeek)||0)));
@@ -860,7 +935,16 @@
     // this back, live, to show his combined total (his support days always counted as rest-day
     // or holiday work, regardless of his home quota — see combinedGuardBreakdown()) without
     // touching its own official numbers.
-    return { month:key, overrides:{}, leaves:{}, log:[], tempGuards:{}, supportGuards:{}, confirmed:null, confirmedIncoming:null, updatedAt: nowIso() };
+    //
+    // extraGuards: id -> {shiftId, startDate, endDate, sourceMode, guardId, createdAt} for an
+    // "Additional Guard (Temporary)" post the client asked for beyond this site's normal
+    // Client Site Requirement, for a date range — see "Assign an additional guard" in
+    // Adjustments, extraGuardEntriesFor()'s doc comment for the shape, and generateMonth()'s
+    // own comment for how it folds into the roster as a brand-new slot rather than replacing
+    // an existing one. guardId points at a real config guard (sourceMode "restday"), or —
+    // exactly like tempGuards/supportGuards above — an id in one of those same two dicts
+    // (sourceMode "temp"/"support"), resolved everywhere the same way via guardById().
+    return { month:key, overrides:{}, leaves:{}, log:[], tempGuards:{}, supportGuards:{}, extraGuards:{}, confirmed:null, confirmedIncoming:null, updatedAt: nowIso() };
   }
   // Whether a Branch Manager (or Admin/HQ) has locked in this month's Combined Hours figures —
   // { byUid, byName, at } once confirmed, else null. Payroll can only ever see/export the frozen
@@ -911,6 +995,20 @@
   // Defensive accessors: months/configs saved before these fields existed won't have them.
   function monthTempGuards(ms){ if(!ms.tempGuards) ms.tempGuards = {}; return ms.tempGuards; }
   function monthSupportGuards(ms){ if(!ms.supportGuards) ms.supportGuards = {}; return ms.supportGuards; }
+  function monthExtraGuards(ms){ if(!ms.extraGuards) ms.extraGuards = {}; return ms.extraGuards; }
+  // Every Additional Guard (Temporary) entry whose date range covers dateStr and whose shift
+  // matches shiftId, in a stable order (plain object key insertion order) — generateMonth()
+  // derives each entry's slot index from this order every run (never persisted), so as long as
+  // entries aren't reordered, the same entry always lands at the same slot across renders.
+  function extraGuardEntriesFor(monthState, dateStr, shiftId){
+    const eg = monthExtraGuards(monthState);
+    return Object.keys(eg)
+      .filter(id => {
+        const e = eg[id];
+        return e && e.shiftId === shiftId && dateStr >= e.startDate && dateStr <= e.endDate;
+      })
+      .map(id => ({ id, guardId: eg[id].guardId }));
+  }
   // Support guard ids whose override slot still actually points at them this month — same
   // orphan check already used by renderSupportGuardPanel() and supportGuardExportRows(), pulled
   // out so the Summary Report (both the on-screen table and its export) can use it too instead
@@ -1309,6 +1407,7 @@
     const lastShiftEnd = {};  // guardId -> ms epoch
     const lastWorkDate = {};  // guardId -> "YYYY-MM-DD"
     const streak = {};        // guardId -> int
+    const extraGuardHours = {}; // guardId -> total hours from Additional Guard (Temporary) posts this month — see computeSummaryTotals()/renderSummaryReport(), which bill these separately instead of at this guard's own rate.
     config.guards.forEach(g => { totalShifts[g.id] = 0; });
 
     const days = [];          // per-day render info
@@ -1425,6 +1524,41 @@
           }
           slots.push(chosen);
         }
+
+        // Additional Guard (Temporary) posts — a client-requested extra guard post beyond this
+        // shift's normally configured count, for a specific date range (see "Assign an
+        // additional guard" in Adjustments). Appended AFTER every normally-configured slot so
+        // its slot index (posts, posts+1, ...) can never collide with a real post's index —
+        // renderRosterCalendar() relies on that to show these specific positions read-only
+        // instead of the normal per-slot picker. Only applies on a day this shift actually
+        // covers (same `covered` gate as the normal posts loop above) — an extra post can't run
+        // on a day the shift itself doesn't.
+        if(covered){
+          extraGuardEntriesFor(monthState, dateStr, st.id).forEach(entry => {
+            const guardId = entry.guardId;
+            if(!guardId) return;
+            const slot = slots.length;
+            const reasons = ["additional guard (temporary)"];
+            if(leaveList.includes(guardId)) reasons.push("on leave");
+            if(workedToday.has(guardId)) reasons.push("already on another shift today");
+            const g = guardById(guardId);
+            if(g && g.inactiveFrom && dateStr >= g.inactiveFrom) reasons.push("no longer active");
+            if(lastWorkDate[guardId] === prevDateStr(dateStr) && streak[guardId] >= maxConsecutiveDays) reasons.push("exceeds max consecutive days");
+            if(lastShiftEnd[guardId] != null){
+              const {start} = shiftStartEnd(dateStr, st);
+              const gapH = (start.getTime() - lastShiftEnd[guardId]) / 3600000;
+              if(gapH < minRestHours) reasons.push("less than "+minRestHours+"h rest");
+            }
+            flags.push({date:dateStr, shiftId:st.id, shiftLabel:st.label, slot, guardId, reason:reasons.join(", "), extraGuard:true});
+            workedToday.add(guardId);
+            totalShifts[guardId] = (totalShifts[guardId]||0) + 1;
+            extraGuardHours[guardId] = (extraGuardHours[guardId]||0) + st.hours;
+            const {end} = shiftStartEnd(dateStr, st);
+            lastShiftEnd[guardId] = end.getTime();
+            slots.push(guardId);
+          });
+        }
+
         dayAssignments.push(slots);
       });
 
@@ -1439,7 +1573,7 @@
       days.push({ dateStr, y, m, d, dm, covered, assignments: dayAssignments });
     }
 
-    return { days, totalShifts, conflicts, flags };
+    return { days, totalShifts, conflicts, flags, extraGuardHours };
   }
 
   /* ---------------- rendering ---------------- */
@@ -1849,6 +1983,7 @@
     renderLeaveGuardSelect();
     renderTempGuardPanel(lastResult);
     renderSupportGuardPanel(lastResult);
+    renderAdditionalGuardPanel(lastResult);
     renderLeaveTable();
     renderSwapControls();
     renderLog();
@@ -1972,6 +2107,11 @@
       shiftTypes.forEach((st, stIdx) => {
         const slots = day.assignments[stIdx];
         if(!slots) return;
+        // Normally-configured post count for this shift/day — any slot at or past this
+        // index is an Additional Guard (Temporary) post (see generateMonth()'s own comment),
+        // shown read-only below since it's managed exclusively from the "Assign an additional
+        // guard" panel in Adjustments, not this per-slot picker.
+        const posts = day.covered ? Math.max(0, Math.round(postsAt(currentConfig().site, day.dm, st.night))) : 0;
         slots.forEach((guardId, slotIdx) => {
           const row = document.createElement("div");
           row.className = "slotrow";
@@ -1980,6 +2120,17 @@
           lbl.className = "shiftlabel";
           lbl.textContent = st.label + (slots.length > 1 ? " #"+(slotIdx+1) : "");
           row.appendChild(lbl);
+
+          if(slotIdx >= posts){
+            const flag = result.flags.find(f => f.date===day.dateStr && f.shiftId===st.id && f.slot===slotIdx);
+            const info = document.createElement("div");
+            info.className = "slotselect extraguard" + (flag ? " flagged" : "");
+            info.textContent = guardId ? guardName(guardId) : "(unassigned)";
+            info.title = "Additional guard (temporary) — manage from the \"Assign an additional guard\" panel in Adjustments" + (flag ? ` — ${flag.reason}` : "");
+            row.appendChild(info);
+            cell.appendChild(row);
+            return;
+          }
 
           const sel = document.createElement("select");
           sel.className = "slotselect";
@@ -2839,29 +2990,43 @@
   // value out of a render function. Same tolerance for this duplication as already exists
   // between renderSummaryReport() and summaryReportExportRows() — see that function's own
   // comment. Keep the two in sync if the underlying per-guard rate/amount logic ever changes.
+  // Grand total of every Additional Guard (Temporary) post's hours this month, across
+  // however many guards (real/temp/support) covered one — see extraGuardEntriesFor()'s doc
+  // comment. Kept as one small helper since both computeSummaryTotals() below and the Summary
+  // Report's own render need the exact same figure.
+  function totalExtraGuardManHours(result){
+    const eh = result.extraGuardHours || {};
+    return Object.keys(eh).reduce((s, id) => s + (eh[id] || 0), 0);
+  }
   function computeSummaryTotals(y, m, config, monthState, result){
     const summary = computeGuardSummary(y, m, config, monthState, result);
     const guards = config.guards.filter(g => g.active !== false || (result.totalShifts[g.id]||0) > 0);
     const tempIds = Object.keys(monthTempGuards(monthState));
     const supportIds = activeSupportIds(monthState);
     const n = v => v || 0;
+    // Additional Guard (Temporary) posts bill separately in Branch Collection, at whatever
+    // rate that category's own line row uses — NOT this guard's own configured rate — so those
+    // hours are excluded here and surfaced instead as their own additionalManHours below.
+    const extraGuardHours = result.extraGuardHours || {};
+    const normalManHours = (id) => Math.max(0, n(summary[id] && summary[id].manHours) - n(extraGuardHours[id]));
     let manHours = 0, amount = 0, anyMissingRate = false;
     guards.forEach(g => {
-      const s = summary[g.id] || {};
-      manHours += n(s.manHours);
+      const hrs = normalManHours(g.id);
+      manHours += hrs;
       const rate = guardRate(g);
       if(rate == null) anyMissingRate = true;
-      amount += rate != null ? rate * n(s.manHours) : 0;
+      amount += rate != null ? rate * hrs : 0;
     });
     [...tempIds, ...supportIds].forEach(id => {
-      const s = summary[id] || {};
-      manHours += n(s.manHours);
+      const hrs = normalManHours(id);
+      manHours += hrs;
       const rate = supportGuardRate();
       if(rate == null) anyMissingRate = true;
-      amount += rate != null ? rate * n(s.manHours) : 0;
+      amount += rate != null ? rate * hrs : 0;
     });
     return {
       manHours, amount, anyMissingRate,
+      additionalManHours: totalExtraGuardManHours(result),
       hasAnyGuards: !!(guards.length || tempIds.length || supportIds.length)
     };
   }
@@ -2887,7 +3052,8 @@
       statusEl.hidden = false;
       statusEl.textContent = `Confirmed by ${confirmed.byName || "someone"} on ${formatConfirmedAt(confirmed.at)} — `
         + `RM${(confirmed.amount||0).toFixed(2)} / ${(confirmed.manHours||0).toFixed(1)} man-hours. `
-        + `This is what Branch Collection's invoice generator uses for this site and month.`;
+        + `This is what Branch Collection's invoice generator uses for this site and month.`
+        + (confirmed.additionalManHours ? ` Plus ${confirmed.additionalManHours.toFixed(1)} man-hours from Additional Guard (Temporary) posts, billed separately in Branch Collection.` : "");
     } else if(canConfirm && liveTotals.hasAnyGuards){
       statusEl.hidden = false;
       statusEl.textContent = `Not yet confirmed — click "Confirm for invoicing" once this month's figures are final so Branch Collection can use them.`;
@@ -2914,6 +3080,16 @@
     const h = v => n(v).toFixed(1);
     const rm = v => n(v).toFixed(2);
     const dash = `<td class="mono">—</td>`;
+
+    // Additional Guard (Temporary) posts (see "Assign an additional guard" in Adjustments) bill
+    // separately, at whatever rate Branch Collection's own "Additional Guard (Temporary)" line
+    // row uses — NOT this guard's own configured rate — so those hours are subtracted back out
+    // of his manHours below before the normal per-guard rate is applied, then shown in their
+    // own section further down with a plain man-hours subtotal and no rate/amount columns
+    // (this report has no visibility into Branch Collection's own separate rate).
+    const extraGuardHours = result.extraGuardHours || {};
+    const normalManHours = (id) => Math.max(0, n(summary[id] && summary[id].manHours) - n(extraGuardHours[id]));
+    const additionalGuardIds = Object.keys(extraGuardHours).filter(id => extraGuardHours[id] > 0);
 
     const totals = {
       manHours:0, normalDays:0, restDaysWorked:0, holidayDaysWorked:0,
@@ -2943,7 +3119,8 @@
 
     const permanentRows = guards.map(g => {
       const s = summary[g.id] || {};
-      totals.manHours += n(s.manHours);
+      const hrs = normalManHours(g.id);
+      totals.manHours += hrs;
       totals.normalDays += n(s.normalDays);
       totals.restDaysWorked += n(s.restDaysWorked);
       totals.holidayDaysWorked += n(s.holidayDaysWorked);
@@ -2955,14 +3132,14 @@
       totals.leave += n(s.leave);
       totals.unpaidLeave += n(s.unpaidLeave);
       const rate = guardRate(g);
-      const amount = rate != null ? rate * n(s.manHours) : null;
+      const amount = rate != null ? rate * hrs : null;
       if(rate == null) anyMissingRate = true;
-      addToRateGroup(rate, s.manHours);
+      addToRateGroup(rate, hrs);
       totals.amount += n(amount);
       return `<tr>
         <td class="mono">${escapeHtml(g.employeeId || "—")}</td>
         <td>${escapeHtml(g.name)}</td>
-        <td class="mono">${h(s.manHours)}</td>
+        <td class="mono">${h(hrs)}</td>
         <td class="mono">${n(s.normalDays)}</td>
         <td class="mono">${n(s.restDaysWorked)}</td>
         <td class="mono">${n(s.holidayDaysWorked)}</td>
@@ -2989,16 +3166,17 @@
       tempSection += tempIds.map(id => {
         const s = summary[id] || {};
         const name = (tempGuards[id] || {}).name || "(unknown)";
-        totals.manHours += n(s.manHours);
+        const hrs = normalManHours(id);
+        totals.manHours += hrs;
         const rate = supportGuardRate();
-        const amount = rate != null ? rate * n(s.manHours) : null;
+        const amount = rate != null ? rate * hrs : null;
         if(rate == null) anyMissingRate = true;
-        addToRateGroup(rate, s.manHours);
+        addToRateGroup(rate, hrs);
         totals.amount += n(amount);
         return `<tr>
           <td class="mono">—</td>
           <td>${escapeHtml(name)} <span style="color:var(--muted, #64748b);font-size:12px;">(Temp)</span></td>
-          <td class="mono">${h(s.manHours)}</td>
+          <td class="mono">${h(hrs)}</td>
           ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
           <td class="mono">${rate != null ? rm(rate) : "—"}</td>
           <td class="mono">${amount != null ? rm(amount) : "—"}</td>
@@ -3017,21 +3195,51 @@
         const s = summary[id] || {};
         const entry = supportGuards[id] || {};
         const name = entry.name || "(unknown)";
-        totals.manHours += n(s.manHours);
+        const hrs = normalManHours(id);
+        totals.manHours += hrs;
         const rate = supportGuardRate();
-        const amount = rate != null ? rate * n(s.manHours) : null;
+        const amount = rate != null ? rate * hrs : null;
         if(rate == null) anyMissingRate = true;
-        addToRateGroup(rate, s.manHours);
+        addToRateGroup(rate, hrs);
         totals.amount += n(amount);
         return `<tr>
           <td class="mono">${escapeHtml(entry.employeeId || "—")}</td>
           <td>${escapeHtml(name)} <span style="color:var(--muted, #64748b);font-size:12px;">(Support — ${escapeHtml(entry.homeSiteName || "?")})</span></td>
-          <td class="mono">${h(s.manHours)}</td>
+          <td class="mono">${h(hrs)}</td>
           ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
           <td class="mono">${rate != null ? rm(rate) : "—"}</td>
           <td class="mono">${amount != null ? rm(amount) : "—"}</td>
         </tr>`;
       }).join("");
+    }
+
+    // Additional Guard (Temporary) posts this month — every guard (real, temp, or support)
+    // who covered one, however he was sourced, resolved the same way guardName()/guardById()
+    // always do. Plain man-hours only, deliberately no rate/amount column — this report has no
+    // visibility into Branch Collection's own separate rate for that category (see this
+    // section's own subtotal, and totalExtraGuardManHours()). NOT folded into the grand total
+    // below — "Total — all guards" keeps meaning exactly what it always meant: the normal
+    // Client Site Requirement billing, excluding additional posts billed separately.
+    let additionalGuardSection = "";
+    if(additionalGuardIds.length){
+      additionalGuardSection += `<tr><td colspan="15" style="background:var(--panel-alt,#f1f5f9);font-weight:600;padding-top:12px;">Additional Guard (Temporary) posts this month</td></tr>`;
+      additionalGuardSection += additionalGuardIds.map(id => `<tr>
+          <td class="mono">—</td>
+          <td>${escapeHtml(guardName(id))}</td>
+          <td class="mono">${h(extraGuardHours[id])}</td>
+          ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
+          <td class="mono">—</td>
+          <td class="mono">—</td>
+        </tr>`).join("");
+      const additionalTotal = additionalGuardIds.reduce((s,id) => s + n(extraGuardHours[id]), 0);
+      additionalGuardSection += `<tr>
+        <td></td>
+        <td><strong>Subtotal — Additional Guard (Temporary)</strong></td>
+        <td class="mono"><strong>${h(additionalTotal)}</strong></td>
+        ${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}${dash}
+        <td></td>
+        <td class="mono" style="color:var(--muted,#64748b);">see Branch Collection</td>
+      </tr>`;
     }
 
     // Only a 'multiple'-mode project can have more than one rate in play; only show the
@@ -3055,7 +3263,7 @@
       }).join("");
     }
 
-    const totalsRow = (guards.length || tempIds.length || supportIds.length) ? `<tr style="border-top:2px solid var(--border-strong,#94a3b8);">
+    const totalsRow = (guards.length || tempIds.length || supportIds.length || additionalGuardIds.length) ? `<tr style="border-top:2px solid var(--border-strong,#94a3b8);">
       <td></td>
       <td><strong>Total — all guards</strong></td>
       <td class="mono"><strong>${h(totals.manHours)}</strong></td>
@@ -3073,8 +3281,8 @@
       <td class="mono"><strong>${rm(totals.amount)}</strong></td>
     </tr>` : "";
 
-    body.innerHTML = (guards.length || tempIds.length || supportIds.length)
-      ? permanentRows.join("") + tempSection + supportSection + rateGroupSection + totalsRow
+    body.innerHTML = (guards.length || tempIds.length || supportIds.length || additionalGuardIds.length)
+      ? permanentRows.join("") + tempSection + supportSection + additionalGuardSection + rateGroupSection + totalsRow
       : `<tr><td colspan="15" class="empty">Add guards to see the summary report.</td></tr>`;
 
     const holidayCount = configHolidays(config).filter(d => d.slice(0,7) === state.currentMonth).length;
@@ -3084,7 +3292,7 @@
         + (holidayCount
             ? `${holidayCount} public holiday${holidayCount===1?"":"s"} marked this month. `
             : `No public holidays marked this month — add them in Guards & Shifts if this month has any. `)
-        + ((guards.length || tempIds.length || supportIds.length) && anyMissingRate
+        + ((guards.length || tempIds.length || supportIds.length || additionalGuardIds.length) && anyMissingRate
             ? `Some guards have no billing rate resolved — set one up in this project's Project Details, and give each guard a matching Position if it bills by position; their Amount is excluded from the total until then.`
             : ``);
     }
@@ -3092,7 +3300,7 @@
     renderInvoiceSummaryConfirmControls(monthState, {
       manHours: totals.manHours,
       amount: totals.amount,
-      hasAnyGuards: !!(guards.length || tempIds.length || supportIds.length)
+      hasAnyGuards: !!(guards.length || tempIds.length || supportIds.length || additionalGuardIds.length)
     });
   }
 
@@ -4082,6 +4290,136 @@
     });
   }
 
+  // "Assign an additional guard" panel — populates the shift/guard pickers and the
+  // existing-entries table for ms.extraGuards this month. See extraGuardEntriesFor()'s doc
+  // comment for the data shape and generateMonth()'s own comment for how these posts fold into
+  // the roster.
+  function renderAdditionalGuardPanel(result){
+    const panel = $("#additionalGuardPanel");
+    if(!panel) return;
+    const site = currentConfig().site;
+    const ms = currentMonthState();
+    const eg = monthExtraGuards(ms);
+
+    const supportOpt = $("#addlGuardSupportOpt");
+    if(supportOpt){
+      const allowed = canAssignSupportGuard();
+      supportOpt.hidden = !allowed;
+      supportOpt.disabled = !allowed;
+      if(!allowed && $("#addlGuardSourceMode").value === "support") $("#addlGuardSourceMode").value = "";
+    }
+
+    const shiftSel = $("#addlGuardShiftSelect");
+    const prevShift = shiftSel.value;
+    const shiftOptions = additionalGuardShiftOptions(site);
+    shiftSel.innerHTML = shiftOptions.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.label)}</option>`).join("");
+    if(prevShift && shiftOptions.some(o => o.id === prevShift)) shiftSel.value = prevShift;
+
+    const {y, m} = parseYM(state.currentMonth);
+    const minDate = ymd(y, m, 1);
+    const maxDate = ymd(y, m, daysInMonth(y, m));
+    const startInput = $("#addlGuardStartDate");
+    const endInput = $("#addlGuardEndDate");
+    if(startInput && endInput){
+      startInput.min = minDate; startInput.max = maxDate;
+      endInput.min = minDate; endInput.max = maxDate;
+    }
+
+    fillGuardSelect($("#addlGuardRestdaySelect"));
+
+    const sites = otherBranchSites();
+    const originSel = $("#addlGuardSupportOriginSite");
+    const prevOrigin = originSel.value;
+    $("#addlGuardSupportNoOtherSites").hidden = sites.length > 0;
+    originSel.innerHTML = sites.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join("");
+    if(prevOrigin && sites.some(s => s.id === prevOrigin)) originSel.value = prevOrigin;
+    fillAdditionalGuardSupportSelect();
+
+    const rows = Object.keys(eg).map(id => {
+      const e = eg[id];
+      const dates = e.startDate === e.endDate ? e.startDate : `${e.startDate} to ${e.endDate}`;
+      const shiftLabel = (shiftOptions.find(o => o.id === e.shiftId) || {}).label || e.shiftId;
+      const sourceLabel = e.sourceMode === "temp" ? "Temporary" : e.sourceMode === "support" ? "Support" : "Rest day";
+      return { id, dates, shiftLabel, name: guardName(e.guardId), sourceLabel };
+    }).sort((a,b) => a.dates < b.dates ? -1 : a.dates > b.dates ? 1 : 0);
+
+    const body = $("#additionalGuardTableBody");
+    $("#additionalGuardEmpty").hidden = rows.length > 0;
+    body.innerHTML = rows.map(r => `
+      <tr>
+        <td class="mono">${escapeHtml(r.dates)}</td>
+        <td>${escapeHtml(r.shiftLabel)}</td>
+        <td>${escapeHtml(r.name)}</td>
+        <td>${escapeHtml(r.sourceLabel)}</td>
+        <td><button class="btn sm danger" data-remove-addlguard="${escapeHtml(r.id)}">Remove</button></td>
+      </tr>
+    `).join("");
+    $$("[data-remove-addlguard]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-remove-addlguard");
+        const entry = eg[id];
+        if(!entry) return;
+        const name = guardName(entry.guardId);
+        openConfirmModal({
+          title: "Remove additional guard",
+          message: `Remove this additional guard assignment (${name})? Its dates go back to this site's normal post count.`,
+          okLabel: "Remove",
+          danger: true,
+          onConfirm: () => removeAdditionalGuardEntry(id)
+        });
+      });
+    });
+  }
+
+  // Lists active guards at the currently-selected "From site" for the Additional Guard panel's
+  // support mode — deliberately no live per-day availability check (unlike the single-date
+  // "Assign a support guard" picker above): a whole date range can't be checked the same simple
+  // way, and any real conflict still surfaces afterward as a flag, same as a manual override.
+  function fillAdditionalGuardSupportSelect(){
+    const sel = $("#addlGuardSupportGuardSelect");
+    if(!sel) return;
+    const prev = sel.value;
+    const originSel = $("#addlGuardSupportOriginSite");
+    const originId = originSel ? originSel.value : "";
+    const cfg = originId && state.configsCache[originId];
+    const guards = cfg ? cfg.guards.filter(g => g.active !== false) : [];
+    sel.innerHTML = guards.map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`).join("");
+    if(prev && guards.some(g => g.id === prev)) sel.value = prev;
+  }
+
+  // Removes one Additional Guard (Temporary) entry — the underlying tempGuards/
+  // supportGuards record too, since (like "Assign a temporary/support guard" above) each is
+  // created fresh for this one assignment. For a support-mode entry, also undoes the safeguard
+  // "Support (Other Site)" leave entries synced to the guard's home site, one day at a time.
+  function removeAdditionalGuardEntry(id){
+    const ms = currentMonthState();
+    const eg = monthExtraGuards(ms);
+    const entry = eg[id];
+    if(!entry) return;
+    const name = guardName(entry.guardId);
+    delete eg[id];
+    let homeSiteId = null, homeGuardId = null;
+    if(entry.sourceMode === "temp"){
+      delete monthTempGuards(ms)[entry.guardId];
+    } else if(entry.sourceMode === "support"){
+      const sg = monthSupportGuards(ms)[entry.guardId];
+      homeSiteId = sg && sg.homeSiteId;
+      homeGuardId = sg && sg.homeGuardId;
+      delete monthSupportGuards(ms)[entry.guardId];
+    }
+    revokeConfirmationIfPresent(ms);
+    addLog(`Removed additional guard ${name} (${entry.startDate} to ${entry.endDate}).`);
+    persistMonth();
+    if(homeSiteId && homeGuardId){
+      // Best-effort, one day at a time — mirrors "Remove support guard" above.
+      for(let d = entry.startDate; d <= entry.endDate; d = nextDateStr(d)){
+        syncHomeSiteSupportLeave(homeSiteId, homeGuardId, d, false);
+      }
+    }
+    showToast(`Removed ${name}.`);
+    render();
+  }
+
   function combinedHoursCacheKey(siteId, monthKeyStr){ return siteId + "::" + monthKeyStr; }
   // Whatever was last loaded by "Refresh combined hours" for the site/month on screen right
   // now — null until that button's been clicked at least once this session (nothing is
@@ -4757,6 +5095,113 @@
     render();
   });
 
+  $("#addlGuardSourceMode").addEventListener("change", () => {
+    const mode = $("#addlGuardSourceMode").value;
+    $("#addlGuardRestdayWrap").hidden = mode !== "restday";
+    $("#addlGuardTempWrap").hidden = mode !== "temp";
+    $("#addlGuardTempWrap2").hidden = mode !== "temp";
+    $("#addlGuardTempWrap3").hidden = mode !== "temp";
+    $("#addlGuardSupportWrap").hidden = mode !== "support";
+  });
+  $("#addlGuardSupportOriginSite").addEventListener("change", fillAdditionalGuardSupportSelect);
+
+  $("#assignAdditionalGuardBtn").addEventListener("click", () => {
+    const shiftId = $("#addlGuardShiftSelect").value;
+    const startDate = $("#addlGuardStartDate").value;
+    const endDate = $("#addlGuardEndDate").value;
+    const mode = $("#addlGuardSourceMode").value;
+    if(!shiftId){ showToast("Pick a shift first.", true); return; }
+    if(!startDate || !endDate){ showToast("Pick a start and end date.", true); return; }
+    if(endDate < startDate){ showToast("End date can't be before the start date.", true); return; }
+    const {y, m} = parseYM(state.currentMonth);
+    const minDate = ymd(y, m, 1), maxDate = ymd(y, m, daysInMonth(y, m));
+    if(startDate < minDate || endDate > maxDate){ showToast("Dates must fall within the month currently open.", true); return; }
+    if(!mode){ showToast("Choose how this post is sourced.", true); return; }
+    if(mode === "support" && !canAssignSupportGuard()) return;
+
+    const ms = currentMonthState();
+    let guardId = null, name = null;
+
+    if(mode === "restday"){
+      guardId = $("#addlGuardRestdaySelect").value;
+      if(!guardId){ showToast("Pick a guard.", true); return; }
+      name = guardName(guardId);
+    } else if(mode === "temp"){
+      const tname = $("#addlGuardTempName").value.trim();
+      const rateRaw = $("#addlGuardTempRate").value;
+      const rate = Number(rateRaw);
+      const mykadNumber = $("#addlGuardTempMykad").value.trim();
+      const ageRaw = $("#addlGuardTempAge").value;
+      const age = Number(ageRaw);
+      const phoneNumber = $("#addlGuardTempPhone").value.trim();
+      const stateVal = $("#addlGuardTempState").value.trim();
+      const cityVal = $("#addlGuardTempCity").value.trim();
+      if(!tname){ showToast("Enter the temporary guard's name.", true); return; }
+      if(rateRaw.trim() === "" || !Number.isFinite(rate) || rate < 0){ showToast("Enter a valid rate.", true); return; }
+      if(!isValidMykad(mykadNumber)){ showToast("Enter a valid 12-digit MyKad number (e.g. 901231-14-5678).", true); return; }
+      if(ageRaw.trim() === "" || !Number.isFinite(age) || age <= 0){ showToast("Enter a valid age.", true); return; }
+      if(!isValidPhone(phoneNumber)){ showToast("Enter a valid phone number (e.g. 012-3456789).", true); return; }
+      if(!stateVal){ showToast("Enter the temporary guard's state.", true); return; }
+      if(!cityVal){ showToast("Enter the temporary guard's city.", true); return; }
+      const tg = monthTempGuards(ms);
+      const tempId = newId("temp");
+      tg[tempId] = { name: tname, rate, mykadNumber, age, phoneNumber, state: stateVal, city: cityVal, createdAt: nowIso() };
+      guardId = tempId;
+      name = tname;
+    } else if(mode === "support"){
+      const originId = $("#addlGuardSupportOriginSite").value;
+      const originGuardId = $("#addlGuardSupportGuardSelect").value;
+      if(!originId){ showToast("Pick which site he's coming from.", true); return; }
+      if(!originGuardId){ showToast("Pick which guard is covering this shift.", true); return; }
+      const originSite = state.sites.find(s => s.id === originId);
+      const originConfig = state.configsCache[originId];
+      const originGuard = originConfig && originConfig.guards.find(g => g.id === originGuardId);
+      if(!originSite || !originGuard){ showToast("Couldn't find that guard — try again.", true); return; }
+      const sg = monthSupportGuards(ms);
+      const supportId = newId("sup");
+      sg[supportId] = {
+        homeSiteId: originId, homeSiteName: originSite.name, homeGuardId: originGuard.id,
+        name: originGuard.name, employeeId: originGuard.employeeId || "", createdAt: nowIso()
+      };
+      guardId = supportId;
+      name = originGuard.name;
+    }
+
+    const id = newId("addlguard");
+    monthExtraGuards(ms)[id] = { shiftId, startDate, endDate, sourceMode: mode, guardId, createdAt: nowIso() };
+    revokeConfirmationIfPresent(ms);
+    addLog(`Assigned additional guard ${name} to ${shiftLabelForKey(startDate, shiftId)} from ${startDate} to ${endDate}.`);
+    persistMonth();
+
+    if(mode === "temp"){
+      syncBufferGuardOnAssign(monthTempGuards(ms)[guardId], state.currentSiteId);
+      $("#addlGuardTempName").value = "";
+      $("#addlGuardTempRate").value = "";
+      $("#addlGuardTempMykad").value = "";
+      $("#addlGuardTempAge").value = "";
+      $("#addlGuardTempPhone").value = "";
+      $("#addlGuardTempState").value = "";
+      $("#addlGuardTempCity").value = "";
+    }
+    if(mode === "support"){
+      const sg = monthSupportGuards(ms)[guardId];
+      // Best-effort, one day at a time — marks his home site's own roster so it doesn't
+      // also schedule him there, same safeguard "Assign a support guard" above writes for a
+      // single date. The destination shift's end time is recomputed per day (a FULLH site's
+      // shift hours can differ weekday vs weekend), and a day this shift doesn't actually run
+      // (e.g. a FULLH category with fewer posts on weekends) is simply skipped.
+      for(let d = startDate; d <= endDate; d = nextDateStr(d)){
+        const destShiftDefs = computeShiftDefsForDay(currentConfig().site, dowMon(d));
+        const destShift = destShiftDefs.find(sd => sd.id === shiftId);
+        if(!destShift) continue;
+        const supportShiftEndMs = shiftStartEnd(d, destShift).end.getTime();
+        syncHomeSiteSupportLeave(sg.homeSiteId, sg.homeGuardId, d, true, supportShiftEndMs, state.currentSiteId, currentConfig().name);
+      }
+    }
+    showToast(`Assigned ${name} as an additional guard from ${startDate} to ${endDate}.`);
+    render();
+  });
+
   // Cross-site read, so it's kept to an explicit click rather than firing on every render() —
   // see computeIncomingSupportDates()'s own comment for why.
   $("#refreshCombinedBtn").addEventListener("click", async () => {
@@ -4821,7 +5266,8 @@
       byName: state.myName || state.myDepartment || "Branch staff",
       at: nowIso(),
       manHours: totals.manHours,
-      amount: totals.amount
+      amount: totals.amount,
+      additionalManHours: totals.additionalManHours
     };
     state.suppressConfirmRevoke = true;
     persistMonth();

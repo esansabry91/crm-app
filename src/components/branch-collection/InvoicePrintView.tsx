@@ -1,5 +1,5 @@
 import { amountToRinggitWords, cardinalWordsLower } from '../../utils/numberToWords';
-import type { Brand, InvoiceLineGroup, InvoiceStatus } from '../../types';
+import type { Brand, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceStatus } from '../../types';
 
 export interface InvoicePrintData {
   brand: Brand;
@@ -13,6 +13,10 @@ export interface InvoicePrintData {
   paymentTermsDays: number;
   billingMonth: string;
   lineGroups: InvoiceLineGroup[];
+  /** Equipment/add-on rows (e-bikes, drones, etc.) — see InvoiceEquipmentRow's doc comment
+   *  in types.ts. Absent/empty for a guard-only invoice, or one saved before this feature
+   *  existed. */
+  equipmentRows?: InvoiceEquipmentRow[];
   subTotal: number;
   sstRate: number;
   sstAmount: number;
@@ -229,6 +233,15 @@ export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
                   </table>
                 </td>
               </tr>
+          ))}
+          {data.equipmentRows?.map((row, ei) => (
+            <tr key={`equipment-${ei}`}>
+              <td className="text-center align-top">{data.lineGroups.length + ei + 1}</td>
+              <td className="align-top uppercase">
+                {row.quantity} × {row.item}
+              </td>
+              <td className="text-right align-top">{formatMoney(row.amount)}</td>
+            </tr>
           ))}
         </tbody>
       </table>

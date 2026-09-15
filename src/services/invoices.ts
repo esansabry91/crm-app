@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { shouldStampTestData } from './settings';
-import type { Invoice, InvoiceLineGroup, InvoiceStatus, Role } from '../types';
+import type { Invoice, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceStatus, Role } from '../types';
 
 function invoicesCollection() {
   return collection(db, 'invoices');
@@ -24,6 +24,26 @@ function invoicesCollection() {
  *  types.ts. A 12-hour shift is what the sample invoices this feature was built from use; pulled
  *  out as a constant so it's the one place to change if a future contract uses a different one. */
 export const INVOICE_HOURS_PER_SHIFT = 12;
+
+/**
+ * Canonical category name for a temporary extra guard post the client asked for beyond a site's
+ * normally configured guard-post count (Duty Roster > Guards & Shifts' Client Site Requirement —
+ * see BillingSite.guardCount's doc comment in services/siteBilling.ts). Billed exactly like any
+ * other SiteBillingRate category — headcount/days/rate, added as a line row the same way — but
+ * see isAdditionalGuardCategory() below for the one thing that's different about it: it's
+ * deliberately exempt from InvoiceGenerator's headcountExceedsSite hard cap, since by definition
+ * it's ABOVE the site's contracted post count, not one of the normal posts that cap protects.
+ */
+export const ADDITIONAL_GUARD_CATEGORY = 'Additional Guard (Temporary)';
+
+/** Whether a line row's category is the special Additional Guard (Temporary) one above — matched
+ *  case-insensitively (and trimmed) so a category typed with different casing, e.g. because it
+ *  was saved on the site's billingRates before this constant's exact casing was settled on,
+ *  still gets recognized. Used to exclude that row's headcount from the site's normal guard-post
+ *  cap — see headcountExceedsSite/remainingHeadcountFor in InvoiceGenerator.tsx. */
+export function isAdditionalGuardCategory(category: string): boolean {
+  return category.trim().toLowerCase() === ADDITIONAL_GUARD_CATEGORY.toLowerCase();
+}
 
 /** Rounds to the nearest cent. Money math in floating point (subTotal * sstRate, in particular)
  *  routinely lands a fraction of a cent off a "clean" 2-decimal figure — e.g. 1656 * 0.08 can come
@@ -47,6 +67,13 @@ export function sumLineGroups(lineGroups: InvoiceLineGroup[]): number {
     (sum, group) => sum + group.rows.reduce((rowSum, row) => rowSum + row.amount, 0),
     0
   );
+}
+
+/** quantity * monthlyRate for every equipment/add-on row — see InvoiceEquipmentRow's doc
+ *  comment in types.ts. Kept as its own function (rather than folded into sumLineGroups) since
+ *  equipment rows are a separate flat list, not nested inside lineGroups' location grouping. */
+export function sumEquipmentRows(equipmentRows: InvoiceEquipmentRow[] | undefined): number {
+  return (equipmentRows || []).reduce((sum, row) => sum + row.amount, 0);
 }
 
 /**
@@ -123,6 +150,7 @@ export interface NewInvoiceInput {
   quotationNo?: string;
   paymentTermsDays: number;
   lineGroups: InvoiceLineGroup[];
+  equipmentRows?: InvoiceEquipmentRow[];
   sstRate: number;
   signatoryName?: string;
   signatoryTitle?: string;
@@ -146,7 +174,7 @@ type Actor = { uid: string; name: string; role?: Role };
  */
 export async function createInvoice(input: NewInvoiceInput, actor: Actor): Promise<{ id: string; invoiceNo: string }> {
   const now = Date.now();
-  const subTotal = sumLineGroups(input.lineGroups);
+  const subTotal = sumLineGroups(input.lineGroups) + sumEquipmentRows(input.equipmentRows);
   const sstAmount = roundMoney(subTotal * input.sstRate);
   const total = roundMoney(subTotal + sstAmount);
   const isTestData = await shouldStampTestData(actor.role);
@@ -193,6 +221,7 @@ export async function createInvoice(input: NewInvoiceInput, actor: Actor): Promi
       quotationNo: input.quotationNo || '',
       paymentTermsDays: input.paymentTermsDays,
       lineGroups: input.lineGroups,
+      equipmentRows: input.equipmentRows || [],
       signatoryName: input.signatoryName || '',
       signatoryTitle: input.signatoryTitle || '',
       subTotal,
@@ -481,6 +510,7 @@ export interface InvoiceEditInput {
   paymentTermsDays: number;
   sstRate: number;
   lineGroups: InvoiceLineGroup[];
+  equipmentRows?: InvoiceEquipmentRow[];
 }
 
 /**
@@ -493,7 +523,7 @@ export interface InvoiceEditInput {
  * the invoice's full content, same as at creation time.
  */
 export async function updateInvoiceContent(id: string, input: InvoiceEditInput): Promise<void> {
-  const subTotal = roundMoney(sumLineGroups(input.lineGroups));
+  const subTotal = roundMoney(sumLineGroups(input.lineGroups) + sumEquipmentRows(input.equipmentRows));
   const sstAmount = roundMoney(subTotal * input.sstRate);
   const total = roundMoney(subTotal + sstAmount);
   await updateDoc(doc(db, 'invoices', id), {
@@ -506,6 +536,7 @@ export async function updateInvoiceContent(id: string, input: InvoiceEditInput):
     paymentTermsDays: input.paymentTermsDays,
     sstRate: input.sstRate,
     lineGroups: input.lineGroups,
+    equipmentRows: input.equipmentRows || [],
     subTotal,
     sstAmount,
     total,

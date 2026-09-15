@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { collection, doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { SiteBillingRate } from '../types';
+import type { SiteBillingRate, SiteEquipmentRate } from '../types';
 
 /** Minimal shape of a Duty Roster `sites/{id}` doc this feature needs — mirrors the same local
  *  pattern TestingDataTool.tsx uses (there's no shared Site type in types.ts; that collection is
@@ -14,6 +14,10 @@ export interface BillingSite {
   archived: boolean;
   tenderId: string | null;
   billingRates: SiteBillingRate[];
+  /** Equipment/add-on rates (e-bikes, drones, etc.) saved for this site — see
+   *  SiteEquipmentRate's doc comment in types.ts. Same "set once, reused every invoice" pattern
+   *  as billingRates above, stored in the same `sites/{id}` doc as its own field. */
+  equipmentRates: SiteEquipmentRate[];
   /**
    * How many guard posts the site's Client Site Requirement (Duty Roster > Guards & Shifts tab)
    * calls for on its busiest single day — see requiredGuardPosts() below for the actual math,
@@ -165,6 +169,7 @@ export function useSitesForBilling() {
               archived: !!data.archived,
               tenderId: (data.tenderId as string) ?? null,
               billingRates: Array.isArray(data.billingRates) ? (data.billingRates as SiteBillingRate[]) : [],
+              equipmentRates: Array.isArray(data.equipmentRates) ? (data.equipmentRates as SiteEquipmentRate[]) : [],
               guardCount: requirement ? requiredGuardPosts(requirement) : null,
             };
           })
@@ -183,4 +188,9 @@ export function useSitesForBilling() {
  *  replace is simpler and safer here than trying to patch individual array entries. */
 export async function updateSiteBillingRates(siteId: string, rates: SiteBillingRate[]): Promise<void> {
   await updateDoc(doc(db, 'sites', siteId), { billingRates: rates, updatedAt: new Date().toISOString() });
+}
+
+/** Same as updateSiteBillingRates above, for the equipment/add-on rate list instead. */
+export async function updateSiteEquipmentRates(siteId: string, rates: SiteEquipmentRate[]): Promise<void> {
+  await updateDoc(doc(db, 'sites', siteId), { equipmentRates: rates, updatedAt: new Date().toISOString() });
 }

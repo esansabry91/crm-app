@@ -3,17 +3,20 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranches, useBrands } from '../../hooks/useBranches';
-import { useSitesForBilling, updateSiteBillingRates } from '../../services/siteBilling';
+import { useSitesForBilling, updateSiteBillingRates, updateSiteEquipmentRates } from '../../services/siteBilling';
 import { useConfirmedMonthSummary } from '../../services/dutyRosterSummary';
 import {
   createInvoice,
   computeLineAmount,
   sumLineGroups,
+  sumEquipmentRows,
   peekNextInvoiceNumber,
   INVOICE_HOURS_PER_SHIFT,
+  ADDITIONAL_GUARD_CATEGORY,
+  isAdditionalGuardCategory,
 } from '../../services/invoices';
 import InvoicePrintView from './InvoicePrintView';
-import type { InvoiceLineGroup, SiteBillingRate } from '../../types';
+import type { InvoiceEquipmentRow, InvoiceLineGroup, SiteBillingRate, SiteEquipmentRate } from '../../types';
 
 const MONTH_NAMES = [
   'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
@@ -104,12 +107,19 @@ export default function InvoiceGenerator() {
   const [paymentTermsDays, setPaymentTermsDays] = useState(30);
   const [sstRate, setSstRate] = useState(0.08);
   const [lineGroups, setLineGroups] = useState<InvoiceLineGroup[]>([]);
+  // Equipment/add-on rows (e-bikes, drones, etc.) — a separate flat list from lineGroups, see
+  // InvoiceEquipmentRow's doc comment in types.ts.
+  const [equipmentRows, setEquipmentRows] = useState<InvoiceEquipmentRow[]>([]);
   const [signatoryName, setSignatoryName] = useState('');
   const [signatoryTitle, setSignatoryTitle] = useState('');
 
   const [rateDraft, setRateDraft] = useState<SiteBillingRate[]>([]);
   const [ratesSaving, setRatesSaving] = useState(false);
   const [ratesSaved, setRatesSaved] = useState(false);
+  // Same pattern as rateDraft/ratesSaving/ratesSaved above, for the equipment/add-on rate list.
+  const [equipmentRateDraft, setEquipmentRateDraft] = useState<SiteEquipmentRate[]>([]);
+  const [equipmentRatesSaving, setEquipmentRatesSaving] = useState(false);
+  const [equipmentRatesSaved, setEquipmentRatesSaved] = useState(false);
   // Whether the categories currently shown came from the linked tender's Project Details > Guard
   // Rate (see deriveRateCategoriesFromGuardRate below) rather than this site's own manually-typed
   // billingRates — purely so the section below can tell the user where to actually go to change
@@ -152,6 +162,8 @@ export default function InvoiceGenerator() {
     setRateDraft(site?.billingRates || []);
     setRatesFromGuardRate(false);
     setRatesSaved(false);
+    setEquipmentRateDraft(site?.equipmentRates || []);
+    setEquipmentRatesSaved(false);
     if (site?.tenderId) {
       getDoc(doc(db, 'tenders', site.tenderId))
         .then((snap) => {
@@ -240,6 +252,23 @@ export default function InvoiceGenerator() {
     }
   }
 
+  /** Same as handleSaveRates above, for the equipment/add-on rate list instead. */
+  async function handleSaveEquipmentRates() {
+    if (!site) return;
+    setEquipmentRatesSaving(true);
+    setEquipmentRatesSaved(false);
+    try {
+      const cleaned = equipmentRateDraft
+        .map((r) => ({ item: r.item.trim(), monthlyRate: Number(r.monthlyRate) || 0 }))
+        .filter((r) => r.item);
+      await updateSiteEquipmentRates(site.id, cleaned);
+      setEquipmentRateDraft(cleaned);
+      setEquipmentRatesSaved(true);
+    } finally {
+      setEquipmentRatesSaving(false);
+    }
+  }
+
   function addLineGroup() {
     setLineGroups((prev) => [...prev, { location: '', rows: [] }]);
   }
@@ -295,24 +324,56 @@ export default function InvoiceGenerator() {
     updateRow(gi, ri, { category, rate: match ? match.hourlyRate : 0 });
   }
 
+  function addEquipmentRow() {
+    const first = equipmentRateDraft[0];
+    setEquipmentRows((prev) => [
+      ...prev,
+      { item: first?.item || '', quantity: 0, monthlyRate: first?.monthlyRate || 0, amount: 0 },
+    ]);
+  }
+  function removeEquipmentRow(i: number) {
+    setEquipmentRows((prev) => prev.filter((_, j) => j !== i));
+  }
+  function updateEquipmentRow(i: number, patch: Partial<{ item: string; quantity: number; monthlyRate: number }>) {
+    setEquipmentRows((prev) =>
+      prev.map((row, j) => {
+        if (j !== i) return row;
+        const next = { ...row, ...patch };
+        next.amount = (next.quantity || 0) * (next.monthlyRate || 0);
+        return next;
+      })
+    );
+  }
+  function handleEquipmentItemChange(i: number, item: string) {
+    const match = equipmentRateDraft.find((r) => r.item === item);
+    updateEquipmentRow(i, { item, monthlyRate: match ? match.monthlyRate : 0 });
+  }
+
   /** How much headcount is left to give this one row without pushing the invoice's total past
    *  this site's Client Site Requirement guard-post count (site.guardCount — see BillingSite's
    *  doc comment) — the site's capacity minus every OTHER row's headcount, never below 0. Returns
-   *  null when the site has no known requirement (guardCount is null — see its doc comment) or
-   *  there's no site at all, meaning there's nothing to cap against yet, same as before this
-   *  feature existed. */
+   *  null when the site has no known requirement (guardCount is null — see its doc comment), when
+   *  there's no site at all (nothing to cap against yet, same as before this feature existed), or
+   *  when this row is itself the Additional Guard (Temporary) category — that category is always
+   *  exempt from this cap (see ADDITIONAL_GUARD_CATEGORY's doc comment), so it's never clamped. */
   function remainingHeadcountFor(gi: number, ri: number): number | null {
     if (!site || site.guardCount == null) return null;
+    const row = lineGroups[gi]?.rows[ri];
+    if (row && isAdditionalGuardCategory(row.category)) return null;
     const usedByOthers = lineGroups.reduce(
       (sum, g, i) =>
         sum +
-        g.rows.reduce((s, r, j) => s + (i === gi && j === ri ? 0 : r.headcount || 0), 0),
+        g.rows.reduce(
+          (s, r, j) =>
+            s + (i === gi && j === ri ? 0 : isAdditionalGuardCategory(r.category) ? 0 : r.headcount || 0),
+          0
+        ),
       0
     );
     return Math.max(0, site.guardCount - usedByOthers);
   }
 
-  const subTotal = sumLineGroups(lineGroups);
+  const subTotal = sumLineGroups(lineGroups) + sumEquipmentRows(equipmentRows);
   const sstAmount = subTotal * sstRate;
   const total = subTotal + sstAmount;
 
@@ -340,15 +401,19 @@ export default function InvoiceGenerator() {
   // updateRow's headcount clamp (below) stops it from ever being typed in the first place; this
   // is a second guard rail on top of that, in case the requirement changes (Guards & Shifts gets
   // edited) after the line items were already entered.
+  // Additional Guard (Temporary) rows are deliberately excluded from this sum — see
+  // ADDITIONAL_GUARD_CATEGORY's doc comment: that category is for a post ABOVE the site's
+  // contracted count, so it must never trip this cap.
   const totalHeadcount = lineGroups.reduce(
-    (sum, g) => sum + g.rows.reduce((s, r) => s + (r.headcount || 0), 0),
+    (sum, g) =>
+      sum + g.rows.reduce((s, r) => s + (isAdditionalGuardCategory(r.category) ? 0 : r.headcount || 0), 0),
     0
   );
   const siteGuardCount = site?.guardCount ?? null;
   const headcountExceedsSite = siteGuardCount != null && totalHeadcount > siteGuardCount;
 
   const canSave = !!(
-    profile && brand && site && clientName.trim() && lineGroups.length > 0
+    profile && brand && site && clientName.trim() && (lineGroups.length > 0 || equipmentRows.length > 0)
     && (!hasDiscrepancy || discrepancyAcknowledged)
     && !headcountExceedsSite
   );
@@ -380,6 +445,7 @@ export default function InvoiceGenerator() {
           quotationNo: quotationNo.trim(),
           paymentTermsDays,
           lineGroups,
+          equipmentRows,
           sstRate,
           signatoryName: signatoryName.trim(),
           signatoryTitle: signatoryTitle.trim(),
@@ -390,6 +456,7 @@ export default function InvoiceGenerator() {
       );
       setSaveMessage({ text: `Invoice ${result.invoiceNo} saved — find it in the Invoices tab.`, isError: false });
       setLineGroups([]);
+      setEquipmentRows([]);
       setPreviewNonce((n) => n + 1);
     } catch (err) {
       setSaveMessage({ text: err instanceof Error ? err.message : 'Could not save invoice.', isError: true });
@@ -439,6 +506,7 @@ export default function InvoiceGenerator() {
               paymentTermsDays,
               billingMonth,
               lineGroups,
+              equipmentRows,
               subTotal,
               sstRate,
               sstAmount,
@@ -556,18 +624,39 @@ export default function InvoiceGenerator() {
                 {ratesFromGuardRate
                   ? "Pulled from this project's Guard Rate (Active Projects > Project Details) — edit it there to change these."
                   : 'Set once, reused every month — each line row below picks from this list.'}
+                {' '}The "Additional Guard (Temporary)" category is exempt from the guard-post
+                cap below — use it for an extra post the client asked for beyond this site's
+                normal Client Site Requirement, sourced via Duty Roster the same way a
+                replacement is (rest-day guard, support guard, or a fresh temporary guard).
               </p>
             </div>
             {/* Guard Rate is the source of truth once it's configured (see
                 deriveRateCategoriesFromGuardRate) — no manual add/remove/edit here in that case,
                 so nothing typed here can silently drift from it. */}
             {!ratesFromGuardRate && (
-              <button
-                onClick={() => setRateDraft((prev) => [...prev, { category: '', hourlyRate: 0 }])}
-                className="shrink-0 text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
-              >
-                + Add category
-              </button>
+              <div className="shrink-0 flex items-center gap-1.5">
+                <button
+                  onClick={() => setRateDraft((prev) => [...prev, { category: '', hourlyRate: 0 }])}
+                  className="text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
+                >
+                  + Add category
+                </button>
+                {/* A client sometimes needs an extra guard post beyond this site's contracted
+                    Client Site Requirement count for a period — see ADDITIONAL_GUARD_CATEGORY's
+                    doc comment in services/invoices.ts. This button adds that EXACT category name
+                    (rather than the branch typing it by hand and risking a typo that would keep
+                    it from being recognized as exempt below) — a no-op if it's already there. */}
+                {!rateDraft.some((r) => isAdditionalGuardCategory(r.category)) && (
+                  <button
+                    onClick={() =>
+                      setRateDraft((prev) => [...prev, { category: ADDITIONAL_GUARD_CATEGORY, hourlyRate: 0 }])
+                    }
+                    className="text-xs font-medium text-violet-700 hover:bg-violet-50 rounded px-2.5 py-1 border border-violet-200"
+                  >
+                    + Additional Guard (Temporary)
+                  </button>
+                )}
+              </div>
             )}
           </div>
           <div className="space-y-2">
@@ -631,6 +720,75 @@ export default function InvoiceGenerator() {
 
       {site && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">Equipment / add-on rates for {site.name}</h3>
+              <p className="text-xs text-slate-400 mt-0.5 mb-3">
+                Recurring monthly items — e-bikes, drones, patrol vehicles and similar — billed alongside
+                guard headcount. Set once, reused every month, same as the guard rate categories above.
+              </p>
+            </div>
+            <button
+              onClick={() => setEquipmentRateDraft((prev) => [...prev, { item: '', monthlyRate: 0 }])}
+              className="shrink-0 text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
+            >
+              + Add item
+            </button>
+          </div>
+          <div className="space-y-2">
+            {equipmentRateDraft.map((r, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  value={r.item}
+                  onChange={(e) =>
+                    setEquipmentRateDraft((prev) => prev.map((row, j) => (j === i ? { ...row, item: e.target.value } : row)))
+                  }
+                  placeholder="e.g. E-bike"
+                  className="input flex-1"
+                />
+                <span className="text-xs text-slate-400">RM</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={r.monthlyRate === 0 ? '' : r.monthlyRate}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                    setEquipmentRateDraft((prev) =>
+                      prev.map((row, j) => (j === i ? { ...row, monthlyRate: raw === '' ? 0 : Number(raw) || 0 } : row))
+                    );
+                  }}
+                  placeholder="0.00"
+                  className="input w-28"
+                />
+                <span className="text-xs text-slate-400">/ month</span>
+                <button
+                  onClick={() => setEquipmentRateDraft((prev) => prev.filter((_, j) => j !== i))}
+                  className="text-xs text-rose-500 hover:text-rose-700 shrink-0"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            {equipmentRateDraft.length === 0 && (
+              <p className="text-xs text-slate-400">No equipment items yet — add one above.</p>
+            )}
+          </div>
+          <div className="flex items-center gap-3 mt-3">
+            <button
+              onClick={handleSaveEquipmentRates}
+              disabled={equipmentRatesSaving}
+              className="px-3 py-2 text-sm font-medium text-white bg-slate-700 hover:bg-slate-800 disabled:opacity-60 rounded-lg"
+            >
+              {equipmentRatesSaving ? 'Saving…' : 'Save equipment rates'}
+            </button>
+            {equipmentRatesSaved && <span className="text-xs text-emerald-600">Saved.</span>}
+          </div>
+        </div>
+      )}
+
+      {site && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
           <h3 className="text-sm font-semibold text-slate-800">Duty Roster reconciliation</h3>
           {confirmedSummary ? (
             <>
@@ -640,6 +798,11 @@ export default function InvoiceGenerator() {
                   {confirmedSummary.manHours.toFixed(1)} man-hours · RM {confirmedSummary.amount.toFixed(2)}
                 </span>
               </p>
+              {!!confirmedSummary.additionalManHours && (
+                <p className="text-xs text-slate-500 -mt-2 mb-3">
+                  Plus {confirmedSummary.additionalManHours.toFixed(1)} man-hours from Duty Roster's "Additional Guard (Temporary)" posts this month — not included above; bill it separately.
+                </p>
+              )}
               <div className={`rounded-lg px-3 py-2 text-sm ${hasDiscrepancy ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>
                 <p className="font-medium">
                   Remaining after line items: {remainingManHours!.toFixed(1)} man-hours · RM {remainingAmount!.toFixed(2)}
@@ -816,6 +979,89 @@ export default function InvoiceGenerator() {
           </div>
         ))}
         {lineGroups.length === 0 && <p className="text-xs text-slate-400">No locations added yet.</p>}
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="flex items-start justify-between gap-4 mb-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800">Equipment / add-ons</h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Optional — e-bikes, drones and similar items billed this month, on their own or alongside
+              the guard line items above. Leave empty for a guard-only invoice.
+            </p>
+          </div>
+          <button
+            onClick={addEquipmentRow}
+            className="shrink-0 text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
+          >
+            + Add equipment
+          </button>
+        </div>
+        {equipmentRows.length > 0 && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-slate-400">
+                <th className="font-medium pb-1">Item</th>
+                <th className="font-medium pb-1 w-24">Quantity</th>
+                <th className="font-medium pb-1 w-28">Rate / month</th>
+                <th className="font-medium pb-1 w-28 text-right">Amount</th>
+                <th className="w-16" />
+              </tr>
+            </thead>
+            <tbody>
+              {equipmentRows.map((row, i) => (
+                <tr key={i}>
+                  <td className="pr-2 py-1">
+                    <select
+                      value={row.item}
+                      onChange={(e) => handleEquipmentItemChange(i, e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="">Select…</option>
+                      {equipmentRateDraft.map((r) => (
+                        <option key={r.item} value={r.item}>
+                          {r.item}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="pr-2 py-1">
+                    <input
+                      type="number"
+                      value={row.quantity === 0 ? '' : row.quantity}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                        updateEquipmentRow(i, { quantity: raw === '' ? 0 : Number(raw) || 0 });
+                      }}
+                      className="input w-full"
+                    />
+                  </td>
+                  <td className="pr-2 py-1">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={row.monthlyRate === 0 ? '' : row.monthlyRate}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                        updateEquipmentRow(i, { monthlyRate: raw === '' ? 0 : Number(raw) || 0 });
+                      }}
+                      className="input w-full"
+                    />
+                  </td>
+                  <td className="text-right py-1 pr-2">{row.amount.toFixed(2)}</td>
+                  <td className="py-1">
+                    <button onClick={() => removeEquipmentRow(i)} className="text-xs text-rose-500 hover:text-rose-700">
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {equipmentRows.length === 0 && <p className="text-xs text-slate-400">No equipment added yet.</p>}
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">

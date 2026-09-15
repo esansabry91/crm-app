@@ -7,6 +7,10 @@ export interface ConfirmedMonthSummary {
   amount: number;
   byName?: string;
   at?: string;
+  /** Man-hours from Duty Roster's "Additional Guard (Temporary)" posts this month — billed
+   *  separately in Branch Collection, not included in manHours/amount above. See
+   *  public/duty-roster/index.html's computeSummaryTotals()/totalExtraGuardManHours(). */
+  additionalManHours?: number;
 }
 
 /**

@@ -467,6 +467,20 @@ export interface SiteBillingRate {
   hourlyRate: number;
 }
 
+/**
+ * A recurring monthly add-on item billed alongside guard headcount — e-bikes, drones, patrol
+ * vehicles, and similar equipment a client needs at a site, in addition to guard posts. Stored as
+ * `sites/{id}.equipmentRates` (mirrors SiteBillingRate/`billingRates`'s own pattern exactly: set
+ * once per site in the invoice generator, then reused every month so only quantity needs to be
+ * typed per invoice). Deliberately a flat monthly rate, not an hourly one like guard categories —
+ * equipment isn't billed per shift, so InvoiceEquipmentRow below has no headcount/days/hours
+ * multiplication, just quantity * monthlyRate.
+ */
+export interface SiteEquipmentRate {
+  item: string;
+  monthlyRate: number;
+}
+
 /** One row within an invoice line group — one guard category's headcount/days/rate for one
  *  location. `amount` is computed as headcount * days * 12 (a 12-hour shift) * rate and stored
  *  alongside the inputs so a saved invoice's total never silently drifts if the formula changes
@@ -485,6 +499,23 @@ export interface InvoiceLineRow {
 export interface InvoiceLineGroup {
   location: string;
   rows: InvoiceLineRow[];
+}
+
+/**
+ * One equipment/add-on row on an invoice — e.g. 2 e-bikes at RM800/month each. `amount` is
+ * quantity * monthlyRate, stored alongside the inputs like InvoiceLineRow's amount, for the same
+ * "never silently drifts" reason. Deliberately NOT grouped by location the way guard rows are
+ * (InvoiceLineGroup) — equipment isn't tied to a post, so an invoice's equipment rows sit in one
+ * flat list (Invoice.equipmentRows) alongside, not inside, its lineGroups. An invoice can carry
+ * equipment rows alone (a standalone equipment invoice), lineGroups alone (guard-only, the
+ * original shape), or both together in the same invoice — whichever the branch wants for that
+ * billing month.
+ */
+export interface InvoiceEquipmentRow {
+  item: string;
+  quantity: number;
+  monthlyRate: number;
+  amount: number;
 }
 
 /** 'void' marks an invoice that was wrongly generated and cancelled — see voidInvoice() in
@@ -544,6 +575,10 @@ export interface Invoice {
   quotationNo?: string;
   paymentTermsDays: number;
   lineGroups: InvoiceLineGroup[];
+  /** Equipment/add-on rows (e-bikes, drones, etc.) billed on this invoice — see
+   *  InvoiceEquipmentRow's doc comment. Absent/empty on invoices saved before this feature
+   *  existed, and on any invoice that never had equipment added to it. */
+  equipmentRows?: InvoiceEquipmentRow[];
   subTotal: number;
   sstRate: number;
   sstAmount: number;

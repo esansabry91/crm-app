@@ -8,6 +8,7 @@ import {
   updateInvoiceContent,
   computeLineAmount,
   sumLineGroups,
+  sumEquipmentRows,
   roundMoney,
   type InvoiceEditInput,
 } from '../../services/invoices';
@@ -16,7 +17,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import InvoicePrintView from './InvoicePrintView';
 import StatCard from '../analytics/StatCard';
 import { isAdminRole } from '../../types';
-import type { Invoice, InvoiceLineGroup, InvoiceStatus } from '../../types';
+import type { Invoice, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceStatus } from '../../types';
 
 const STATUS_LABEL: Record<InvoiceStatus, string> = {
   unpaid: 'Unpaid',
@@ -258,6 +259,11 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
   const [lineGroups, setLineGroups] = useState<InvoiceLineGroup[]>(() =>
     invoice.lineGroups.map((g) => ({ location: g.location, rows: g.rows.map((r) => ({ ...r })) }))
   );
+  // Equipment/add-on rows (e-bikes, drones, etc.) — see InvoiceEquipmentRow's doc comment in
+  // types.ts. Absent on an invoice saved before this feature existed.
+  const [equipmentRows, setEquipmentRows] = useState<InvoiceEquipmentRow[]>(() =>
+    (invoice.equipmentRows || []).map((r) => ({ ...r }))
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -297,10 +303,30 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
     );
   }
 
-  const subTotal = roundMoney(sumLineGroups(lineGroups));
+  function addEquipmentRow() {
+    setEquipmentRows((prev) => [...prev, { item: '', quantity: 0, monthlyRate: 0, amount: 0 }]);
+  }
+  function removeEquipmentRow(i: number) {
+    setEquipmentRows((prev) => prev.filter((_, j) => j !== i));
+  }
+  function updateEquipmentRow(i: number, patch: Partial<{ item: string; quantity: number; monthlyRate: number }>) {
+    setEquipmentRows((prev) =>
+      prev.map((row, j) => {
+        if (j !== i) return row;
+        const next = { ...row, ...patch };
+        next.amount = (next.quantity || 0) * (next.monthlyRate || 0);
+        return next;
+      })
+    );
+  }
+
+  const subTotal = roundMoney(sumLineGroups(lineGroups) + sumEquipmentRows(equipmentRows));
   const sstAmount = roundMoney(subTotal * sstRate);
   const total = roundMoney(subTotal + sstAmount);
-  const canSave = !!clientName.trim() && !!invoiceDate && lineGroups.length > 0 && lineGroups.every((g) => g.location.trim());
+  const canSave =
+    !!clientName.trim() && !!invoiceDate
+    && (lineGroups.length > 0 || equipmentRows.length > 0)
+    && lineGroups.every((g) => g.location.trim());
 
   async function save() {
     if (!canSave) return;
@@ -317,6 +343,7 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
         paymentTermsDays,
         sstRate,
         lineGroups,
+        equipmentRows,
       };
       await updateInvoiceContent(invoice.id, input);
       onClose();
@@ -461,6 +488,67 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
           </div>
         ))}
         {lineGroups.length === 0 && <p className="text-xs text-slate-400">No locations — add at least one.</p>}
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-xs font-medium text-slate-600">Equipment / add-ons</p>
+          <button onClick={addEquipmentRow} className="text-xs font-medium text-blue-700 hover:underline">
+            + Add equipment
+          </button>
+        </div>
+        {equipmentRows.length > 0 && (
+          <table className="w-full text-sm mb-1.5">
+            <thead>
+              <tr className="text-left text-xs text-slate-400">
+                <th className="font-medium pb-1">Item</th>
+                <th className="font-medium pb-1 w-20">Quantity</th>
+                <th className="font-medium pb-1 w-24">Rate / month</th>
+                <th className="font-medium pb-1 w-24 text-right">Amount</th>
+                <th className="w-14" />
+              </tr>
+            </thead>
+            <tbody>
+              {equipmentRows.map((row, i) => (
+                <tr key={i}>
+                  <td className="pr-2 py-1">
+                    <input
+                      value={row.item}
+                      onChange={(e) => updateEquipmentRow(i, { item: e.target.value })}
+                      className="input w-full"
+                    />
+                  </td>
+                  <td className="pr-2 py-1">
+                    <input
+                      type="number"
+                      value={row.quantity === 0 ? '' : row.quantity}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => updateEquipmentRow(i, { quantity: Number(e.target.value) || 0 })}
+                      className="input w-full"
+                    />
+                  </td>
+                  <td className="pr-2 py-1">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={row.monthlyRate === 0 ? '' : row.monthlyRate}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => updateEquipmentRow(i, { monthlyRate: Number(e.target.value) || 0 })}
+                      className="input w-full"
+                    />
+                  </td>
+                  <td className="text-right py-1 pr-2">{row.amount.toFixed(2)}</td>
+                  <td className="py-1">
+                    <button onClick={() => removeEquipmentRow(i)} className="text-xs text-rose-500 hover:text-rose-700">
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {equipmentRows.length === 0 && <p className="text-xs text-slate-400">No equipment added.</p>}
       </div>
 
       <div className="flex justify-end text-sm">
