@@ -697,6 +697,57 @@ export async function createTenderSite(tender: Tender, siteName: string, actor: 
   return ref.id;
 }
 
+/**
+ * Archives (or un-archives) one specific ADDITIONAL linked site — the per-site counterpart of
+ * setLinkedSitesArchived() above, which only ever does every linked site on a tender at once (on
+ * a whole project's close-out/reopen). Lets staff pull one site out of active use — say, a
+ * worksite the client has temporarily suspended — without touching the rest of a multi-site
+ * contract or closing out the whole project. Same effect on Duty Roster's own picker as the
+ * project-level version: an archived site drops out of the branch's active site picker there but
+ * keeps every bit of its data (schedule, leave records, guard history) intact, and stays visible
+ * either way in this project's own "Linked Sites" list (see LinkedSiteDetailsCard.tsx). Reached
+ * via an "Archive site"/"Unarchive site" button there — deliberately never offered for the
+ * PRIMARY site (see TenderLinkedSite.isPrimary in useTenderSites.ts), since archiving the one
+ * site a project's own top-level fields (Location, Guard Rate, etc.) describe doesn't make sense
+ * while the project itself is still active; closeOutProject() is the equivalent for that case.
+ */
+export async function archiveTenderSite(siteId: string, archived: boolean): Promise<void> {
+  await updateDoc(
+    doc(db, 'sites', siteId),
+    archived
+      ? { archived: true, archivedAt: Date.now(), updatedAt: Date.now() }
+      : { archived: false, archivedAt: null, updatedAt: Date.now() }
+  );
+  // Mirrors setLinkedSitesArchived()'s own asymmetry: archiving releases any guard still
+  // deployed here back to the Guard Pool (a site no longer in active use shouldn't keep them
+  // stuck "deployed" against it); un-archiving does NOT auto-redeploy anyone, since a released
+  // guard may already have been reassigned elsewhere in the meantime.
+  if (archived) {
+    await releaseGuardsFromSite(siteId);
+  }
+}
+
+/**
+ * Permanently unlinks one ADDITIONAL site from this tender (tenderId cleared) and archives it —
+ * the per-site counterpart of acceptReassignment()'s 'new' choice above, which does the exact
+ * same thing to a site as a side effect of a branch reassignment. The site document itself is
+ * never deleted (see firestore.rules' /sites delete rule — deletion is developer-only, reserved
+ * for test-data cleanup): its schedule history, leave records, and past guard assignments are
+ * kept forever for Admin/HQ/Payroll, same as a closed-out project's site. There is currently no
+ * UI to re-link a removed site back to a project. Reached via a "Remove from project" button in
+ * LinkedSiteDetailsCard.tsx — deliberately never offered for the PRIMARY site, same reasoning as
+ * archiveTenderSite() above.
+ */
+export async function removeTenderSite(siteId: string): Promise<void> {
+  await updateDoc(doc(db, 'sites', siteId), {
+    tenderId: null,
+    archived: true,
+    archivedAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+  await releaseGuardsFromSite(siteId);
+}
+
 function tenderSiteDetailsRef(tenderId: string, siteId: string) {
   return doc(db, 'tenders', tenderId, 'siteDetails', siteId);
 }

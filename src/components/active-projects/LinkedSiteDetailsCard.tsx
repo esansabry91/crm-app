@@ -4,7 +4,9 @@ import type { Role, Tender } from '../../types';
 import {
   addTenderSiteEquipment,
   applyTenderSiteGuardRateChange,
+  archiveTenderSite,
   effectiveGuardRate,
+  removeTenderSite,
   removeTenderSiteEquipmentItem,
   saveTenderSiteLocationDetails,
   STANDARD_MONTHLY_HOURS_PER_GUARD,
@@ -56,6 +58,13 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
   const [stoppingItemId, setStoppingItemId] = useState<string | null>(null);
   const [stopDateDraft, setStopDateDraft] = useState('');
 
+  // Archive/Remove (see archiveTenderSite()/removeTenderSite()'s own doc comments in
+  // services/tenders.ts) — kept as their own busy/error state, separate from the main form's
+  // `saving`/`error` above, so a lifecycle action never gets stuck showing "Saving..." on the
+  // main Save button or vice versa.
+  const [lifecycleBusy, setLifecycleBusy] = useState<'archive' | 'remove' | null>(null);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+
   useEffect(() => {
     setLocation(details?.location || '');
     setStateName(details?.state || '');
@@ -70,6 +79,40 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
     setStoppingItemId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [site.id, details === null]);
+
+  const handleToggleArchive = async () => {
+    setLifecycleBusy('archive');
+    setLifecycleError(null);
+    try {
+      await archiveTenderSite(site.id, !site.archived);
+    } catch (err) {
+      setLifecycleError(err instanceof Error ? err.message : 'Failed to update this site.');
+    } finally {
+      setLifecycleBusy(null);
+    }
+  };
+
+  const handleRemove = async () => {
+    if (
+      !window.confirm(
+        `Remove "${site.name}" from this project? Its Duty Roster schedule and history stay intact for records, any guard still deployed there is released back to the Guard Pool, and there's currently no way to re-link it from here.`
+      )
+    ) {
+      return;
+    }
+    setLifecycleBusy('remove');
+    setLifecycleError(null);
+    try {
+      await removeTenderSite(site.id);
+      // No busy-state reset on success: this site drops out of useTenderSites()'s live query
+      // (it no longer matches tenderId) the instant the write lands, so this card unmounts
+      // before it would ever re-render with lifecycleBusy still set — resetting it here would
+      // just be a setState-after-unmount warning waiting to happen.
+    } catch (err) {
+      setLifecycleError(err instanceof Error ? err.message : 'Failed to remove this site.');
+      setLifecycleBusy(null);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -183,6 +226,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
           <span className="text-sm font-medium text-slate-700">
             {site.name}
             {site.branch && <span className="text-slate-400 font-normal"> · {site.branch}</span>}
+            {site.archived && <span className="text-amber-600 font-normal text-xs ml-1.5">(Archived)</span>}
           </span>
         </button>
         <div className="flex items-center gap-3">
@@ -459,6 +503,33 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
               {saving ? 'Saving…' : 'Save site details'}
             </button>
           </div>
+
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-xs text-slate-400 max-w-[60%]">
+              {site.archived
+                ? "Archived — hidden from Duty Roster's active site picker, but its data stays intact."
+                : "Archiving hides this site from Duty Roster's active site picker without losing its data."}
+            </p>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={lifecycleBusy !== null}
+                onClick={handleToggleArchive}
+                className="text-xs font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-60 rounded px-2.5 py-1 border border-slate-200"
+              >
+                {lifecycleBusy === 'archive' ? 'Saving…' : site.archived ? 'Unarchive site' : 'Archive site'}
+              </button>
+              <button
+                type="button"
+                disabled={lifecycleBusy !== null}
+                onClick={handleRemove}
+                className="text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-60 rounded px-2.5 py-1 border border-rose-200"
+              >
+                {lifecycleBusy === 'remove' ? 'Removing…' : 'Remove from project'}
+              </button>
+            </div>
+          </div>
+          {lifecycleError && <p className="text-xs text-rose-600">{lifecycleError}</p>}
         </div>
       )}
     </div>
