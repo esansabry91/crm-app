@@ -705,6 +705,7 @@ export async function saveTenderSiteLocationDetails(
   siteId: string,
   siteName: string,
   branch: string | null,
+  clientName: string,
   input: { location?: string; state?: string; city?: string; postcode?: string; contactPerson?: string }
 ): Promise<void> {
   await setDoc(
@@ -719,6 +720,19 @@ export async function saveTenderSiteLocationDetails(
     },
     { merge: true }
   );
+
+  // Keep the underlying Duty Roster `sites/{siteId}` doc's own name/clientName/branch in sync
+  // too (see syncPrimarySiteLabel()'s own doc comment for why Duty Roster's Client Site
+  // dropdown needs these denormalized onto that doc rather than joined from here) — every save
+  // re-writes them, so a site whose clientName was never set (e.g. one created before this
+  // denormalization existed) self-heals the next time anyone saves its details, rather than
+  // staying permanently unfilterable by client name.
+  await updateDoc(doc(db, 'sites', siteId), {
+    name: siteName,
+    clientName,
+    branch: branch || null,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 /** Per-site equivalent of addTenderEquipment() — see that function's doc comment for the value
@@ -976,6 +990,13 @@ export async function setSubmissionExpiryDate(tenderId: string, submissionExpiry
  */
 export async function setActiveBranch(tenderId: string, activeBranch: string) {
   await updateDoc(doc(db, 'tenders', tenderId), { activeBranch, updatedAt: Date.now() });
+}
+
+/** Answers the one-time "single site or multiple sites" question (see Tender.siteMode's doc
+ *  comment in types.ts) — written once, from ProjectDetailsModal.tsx's own chooser, the first
+ *  time Project Details is opened for a project that hasn't answered yet. */
+export async function setTenderSiteMode(tenderId: string, siteMode: 'single' | 'multiple') {
+  await updateDoc(doc(db, 'tenders', tenderId), { siteMode, updatedAt: Date.now() });
 }
 
 /**

@@ -74,7 +74,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
     setSaving(true);
     setError(null);
     try {
-      await saveTenderSiteLocationDetails(tender.id, site.id, site.name, site.branch, {
+      await saveTenderSiteLocationDetails(tender.id, site.id, site.name, site.branch, tender.clientName, {
         location: location.trim(),
         state: stateName.trim(),
         city: city.trim(),

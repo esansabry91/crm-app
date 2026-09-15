@@ -406,6 +406,17 @@ export interface Tender {
    */
   lastGuardRateChange?: { fromRate: number; toRate: number; changedAt: number; changedByName: string };
   /**
+   * Whether this Won project has a single Duty Roster site or several under the same contract
+   * (see TenderSiteDetails above) — asked once, up front, the first time anyone opens Project
+   * Details for a project that hasn't answered yet (see ProjectDetailsModal.tsx's own site-mode
+   * chooser). 'single' hides the "Linked Sites" section/"+ Add Site" button entirely, since it
+   * will never apply; 'multiple' shows it from the start. Absent/undefined means not asked yet
+   * — EXCEPT a project that already has more than one linked site (from before this field
+   * existed) is treated as 'multiple' without ever asking, since the answer is already evident
+   * from its data. There's currently no UI to change the answer once given.
+   */
+  siteMode?: 'single' | 'multiple';
+  /**
    * Marks a Won tender's project as finished/closed out — it stops appearing in Active Projects
    * (the list, its value totals, and the By Brand / By Branch breakdowns) and shows up in Past
    * Projects instead. Deliberately does NOT touch `stage` or `tenderValue`, and closing out never

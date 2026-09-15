@@ -12,6 +12,7 @@ import {
   getTenderSiteDetails,
   removeTenderEquipmentItem,
   saveTenderSiteLocationDetails,
+  setTenderSiteMode,
   STANDARD_MONTHLY_HOURS_PER_GUARD,
   stopTenderEquipmentItem,
   updateActiveProjectDetails,
@@ -111,7 +112,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   // Linked Sites (see useTenderSites' own doc comment) — a project with more than one worksite
   // under the same contract. Kept last since it's purely additive UI; every field above this
   // still refers only to the project's first/original site.
-  const { sites: linkedSites } = useTenderSites(tender?.id ?? null);
+  const { sites: linkedSites, loading: linkedSitesLoading } = useTenderSites(tender?.id ?? null);
   const [addSiteOpen, setAddSiteOpen] = useState(false);
   const [addSiteName, setAddSiteName] = useState('');
   // Same required fields as the project's first/original site's own Location/Contact section
@@ -145,6 +146,13 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   >([]);
   const [addSiteBusy, setAddSiteBusy] = useState(false);
   const [addSiteError, setAddSiteError] = useState<string | null>(null);
+
+  // "Does this project have a single site or multiple sites?" — asked once, up front, before
+  // the rest of Project Details is even shown (see the chooser rendered in place of the form
+  // below). See Tender.siteMode's doc comment in types.ts for why a project with more than one
+  // linked site already (from before this field existed) skips the question entirely.
+  const [siteModeBusy, setSiteModeBusy] = useState<'single' | 'multiple' | null>(null);
+  const [siteModeError, setSiteModeError] = useState<string | null>(null);
 
   const resetAddSiteForm = () => {
     setAddSiteOpen(false);
@@ -473,6 +481,25 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     }
   };
 
+  const activeTenderNow = workingTender || tender;
+  // See Tender.siteMode's doc comment in types.ts — a project that already has more than one
+  // linked site (from before this field existed) is treated as 'multiple' without ever asking.
+  const needsSiteModeChoice = !linkedSitesLoading && !activeTenderNow.siteMode && linkedSites.length <= 1;
+  const effectiveSiteMode = activeTenderNow.siteMode || 'multiple';
+
+  const handleChooseSiteMode = async (mode: 'single' | 'multiple') => {
+    setSiteModeBusy(mode);
+    setSiteModeError(null);
+    try {
+      await setTenderSiteMode(activeTenderNow.id, mode);
+      await refreshWorkingTender();
+    } catch (err) {
+      setSiteModeError(err instanceof Error ? err.message : 'Failed to save this choice.');
+    } finally {
+      setSiteModeBusy(null);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -486,6 +513,40 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
           </button>
         </div>
 
+        {linkedSitesLoading ? (
+          <div className="px-6 py-10 text-center text-sm text-slate-400">Loading…</div>
+        ) : needsSiteModeChoice ? (
+          <div className="px-6 py-5 space-y-4">
+            <p className="text-sm text-slate-600">
+              Does this project run out of a single worksite, or does it have more than one
+              site/roster under this same contract?
+            </p>
+            {siteModeError && <p className="text-xs text-rose-600">{siteModeError}</p>}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                disabled={siteModeBusy !== null}
+                onClick={() => handleChooseSiteMode('single')}
+                className="px-3 py-3 text-sm font-medium rounded-lg border bg-white text-slate-700 border-slate-200 hover:bg-slate-50 disabled:opacity-60"
+              >
+                {siteModeBusy === 'single' ? 'Saving…' : 'Single Site'}
+              </button>
+              <button
+                type="button"
+                disabled={siteModeBusy !== null}
+                onClick={() => handleChooseSiteMode('multiple')}
+                className="px-3 py-3 text-sm font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 disabled:opacity-60"
+              >
+                {siteModeBusy === 'multiple' ? 'Saving…' : 'Multiple Sites'}
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              This is asked once — Multiple Sites adds a "+ Add Site" option below for linking
+              more than one Duty Roster site to this same contract; Single Site keeps this form
+              to just the one site's details.
+            </p>
+          </div>
+        ) : (
         <form onSubmit={handleSave} className="px-6 py-5 space-y-4">
           <Field label="Location">
             <input
@@ -931,13 +992,14 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
             })()}
           </div>
 
+          {effectiveSiteMode === 'multiple' && (
           <div className="pt-2 border-t border-slate-100">
             <p className="block text-xs font-medium text-slate-500 mb-2">
               Linked Sites{' '}
               <span className="text-slate-400 font-normal">
-                (optional — for a client with more than one worksite/roster under this same
-                contract; each linked site gets its own Location, Guard Rate and Additional
-                Equipment below, while the contract value above stays combined)
+                (for a client with more than one worksite/roster under this same contract; each
+                linked site gets its own Location, Guard Rate and Additional Equipment below,
+                while the contract value above stays combined)
               </span>
             </p>
 
@@ -1190,7 +1252,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                       setAddSiteError(null);
                       try {
                         const siteId = await createTenderSite(activeTender, siteName);
-                        await saveTenderSiteLocationDetails(activeTender.id, siteId, siteName, branch, {
+                        await saveTenderSiteLocationDetails(activeTender.id, siteId, siteName, branch, activeTender.clientName, {
                           location: addSiteLocation.trim(),
                           state: addSiteState.trim(),
                           city: addSiteCity.trim(),
@@ -1281,6 +1343,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
               </button>
             )}
           </div>
+          )}
 
           {error && <p className="text-sm text-rose-600">{error}</p>}
 
@@ -1301,6 +1364,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );
