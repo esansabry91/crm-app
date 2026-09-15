@@ -649,6 +649,7 @@ export async function createTenderSite(tender: Tender, siteName: string): Promis
     name: siteName,
     branch,
     tenderId: tender.id,
+    clientName: tender.clientName,
     archived: false,
     archivedAt: null,
     guards: [],
@@ -1058,6 +1059,7 @@ export async function backfillActiveBranch(tender: Tender) {
  */
 export async function updateActiveProjectDetails(
   tenderId: string,
+  clientName: string,
   patch: Partial<{
     location: string;
     state: string;
@@ -1079,6 +1081,40 @@ export async function updateActiveProjectDetails(
     if (value !== undefined) data[key] = value;
   }
   await updateDoc(doc(db, 'tenders', tenderId), data);
+
+  // Keep this project's FIRST/original Duty Roster site (see TenderSiteDetails' doc comment in
+  // types.ts for why it's the one without a siteDetails doc) named after whatever Location is
+  // currently on file, and carrying this tender's clientName — so Duty Roster's Client Site
+  // dropdown can filter/label by client and worksite (see renderSiteSelect() in
+  // public/duty-roster/index.html) without a join back to /tenders, which it doesn't otherwise
+  // read at all. Runs on every save that touches Location (every save — see
+  // ProjectDetailsModal.tsx, where it's a required field), not just the first: a corrected
+  // Location keeps the site's dropdown label in sync rather than freezing it at whatever was
+  // typed the very first time.
+  if (patch.location !== undefined) {
+    await syncPrimarySiteLabel(tenderId, clientName, patch.location);
+  }
+}
+
+/** Best-effort — a project might not have a Duty Roster site yet (nobody's opened the Duty
+ *  Roster tab for it), in which case there's nothing to sync onto and this quietly no-ops. */
+async function syncPrimarySiteLabel(tenderId: string, clientName: string, location: string): Promise<void> {
+  try {
+    const snap = await getDocs(query(collection(db, 'sites'), where('tenderId', '==', tenderId)));
+    if (snap.empty) return;
+    const docs = snap.docs
+      .map((d) => ({ id: d.id, createdAt: (d.data().createdAt as string) || '' }))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const primary = docs[0];
+    if (!primary) return;
+    await updateDoc(doc(db, 'sites', primary.id), {
+      name: location || 'New site',
+      clientName,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('syncPrimarySiteLabel failed', err);
+  }
 }
 
 /**

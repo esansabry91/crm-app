@@ -286,6 +286,8 @@
   <div class="sitebar">
     <label class="small" style="margin:0;" id="branchFilterLabel" hidden>Branch</label>
     <select id="branchFilter" hidden></select>
+    <label class="small" style="margin:0;">Filter</label>
+    <input type="text" id="clientFilter" placeholder="Client or site name" style="min-width:180px;" />
     <label class="small" style="margin:0;">Client site</label>
     <select id="siteSelect"></select>
     <label class="small" id="showArchivedLabel" style="margin:0;display:flex;align-items:center;gap:4px;" hidden>
@@ -1247,6 +1249,12 @@
     isDeveloper: false,     // "developer" role — full access like isPrivileged, but forces isTestData:true on everything it creates (see initDb())
     canEdit: true,          // false for payroll/HR — drives the read-only lockdown
     branchFilterValue: "", // currently selected branch in the sitebar's branch filter dropdown (Admin/HQ/Payroll only — "" = all)
+    // Free-text filter typed into the sitebar's "Filter" box — narrows the Client Site dropdown
+    // to sites whose clientName OR site name contains this (case-insensitive), so a client with
+    // several linked sites (see TenderSiteDetails in the CRM's types.ts) can be found by
+    // company name even though the dropdown itself lists individual site names. Available to
+    // everyone (unlike branchFilterValue above), since even one branch can have many clients.
+    clientFilterValue: "",
     showArchivedSites: false, // "Show archived" checkbox in the sitebar (Admin/HQ/Payroll only) — a closed-out project's site is hidden from the Client Site dropdown by default, this brings it back on demand for historical records/payroll export
     // Mirrors the CRM's settings/app.testingModeEnabled doc (see src/services/settings.ts and
     // src/components/admin/TestingDataTool.tsx) -- while true, every new site/guard/buffer guard
@@ -1309,8 +1317,9 @@
         cfg.name = deepLinkParams.get("clientName") || "New site";
         cfg.branch = deepLinkParams.get("branch") || null;
         cfg.tenderId = deepLinkTenderId;
+        cfg.clientName = deepLinkParams.get("clientName") || null;
         cfg.archived = false;
-        state.sites = [{ id, name:cfg.name, branch:cfg.branch, tenderId:deepLinkTenderId, archived:false }];
+        state.sites = [{ id, name:cfg.name, branch:cfg.branch, tenderId:deepLinkTenderId, clientName:cfg.clientName, archived:false }];
         state.configsCache[id] = cfg;
         state.currentSiteId = id;
         return cfg;
@@ -1685,7 +1694,7 @@
       const branch = showBranchPicker ? ($("#modalBranchSelect").value || null) : null;
       closeModal();
       if(val){
-        createSite(val, branch);
+        createSite(val, branch, null, null);
         showToast(`Created site "${val}".`);
       }
     };
@@ -4656,6 +4665,12 @@
     // renderSiteSelect() lands on for the newly-selected branch, not just the dropdown itself.
     render();
   });
+  $("#clientFilter").addEventListener("input", () => {
+    state.clientFilterValue = $("#clientFilter").value;
+    // Same reasoning as branchFilter's own listener above — a full render() so the rest of the
+    // page follows wherever renderSiteSelect() lands the current site once the list narrows.
+    render();
+  });
   $("#showArchivedToggle").addEventListener("change", () => {
     state.showArchivedSites = $("#showArchivedToggle").checked;
     // Same reasoning as #branchFilter's handler above — toggling this can add or drop the
@@ -5361,14 +5376,14 @@
   // the normal pipeline. archived/archivedAt start unset here and are only ever set by
   // setLinkedSitesArchived() over in the CRM's tenders.ts, when that tender is closed out or
   // reopened.
-  function createSite(name, branch, tenderId){
+  function createSite(name, branch, tenderId, clientName){
     const id = newId("site");
     // A privileged user (admin, or HQ department) can pick any branch, or leave it
     // unassigned; anyone else can only ever create a site for their own branch — mirrored
     // and enforced server-side in firestore.rules' canReachSite().
     const assignedBranch = (state.isPrivileged && !state.isPayrollLike) ? (branch || null) : (state.myDepartment || null);
-    const cfg = { id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false, archivedAt: null, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, isTestData: !!state.isDeveloper, createdAt: nowIso(), updatedAt: nowIso() };
-    state.sites.push({id, name, branch: assignedBranch, tenderId: tenderId || null, archived: false});
+    const cfg = { id, name, branch: assignedBranch, tenderId: tenderId || null, clientName: clientName || null, archived: false, archivedAt: null, guards:[], site: defaultSite(), restRule:{restDaysPerWeek:1, minRestHours:12}, isSample:false, isTestData: !!state.isDeveloper, createdAt: nowIso(), updatedAt: nowIso() };
+    state.sites.push({id, name, branch: assignedBranch, tenderId: tenderId || null, clientName: clientName || null, archived: false});
     state.configsCache[id] = cfg;
     if(dbHandle) dbHandle.doc("sites/"+id).set(cfg).catch(()=>{});
     switchSite(id);
@@ -5392,7 +5407,8 @@
     createSite(
       deepLinkParams.get("clientName") || "New site",
       deepLinkParams.get("branch") || null,
-      deepLinkTenderId
+      deepLinkTenderId,
+      deepLinkParams.get("clientName") || null
     );
   }
 
@@ -5416,6 +5432,13 @@
         ? state.sites.filter(s => !s.branch)
         : state.sites.filter(s => s.branch === state.branchFilterValue);
     }
+    const clientFilterNeedle = (state.clientFilterValue || "").trim().toLowerCase();
+    if(clientFilterNeedle){
+      visibleSites = visibleSites.filter(s =>
+        (s.name || "").toLowerCase().includes(clientFilterNeedle) ||
+        (s.clientName || "").toLowerCase().includes(clientFilterNeedle)
+      );
+    }
     // A closed-out project's site archives itself (see setLinkedSitesArchived() in the CRM's
     // tenders.ts) — hidden from the Client Site dropdown by default for everyone, the same as
     // it always has been for non-privileged roles. Admin/HQ/Payroll can still reach it for
@@ -5431,9 +5454,14 @@
       // dropdown show a site from a DIFFERENT branch than the one just picked in the Branch
       // filter, with the read-only branch badge then correctly-but-confusingly disagreeing
       // with it).
-      sel.innerHTML = `<option value="">No client sites in this branch</option>`;
+      sel.innerHTML = clientFilterNeedle
+        ? `<option value="">No client sites match "${escapeHtml(state.clientFilterValue)}"</option>`
+        : `<option value="">No client sites in this branch</option>`;
     } else {
-      sel.innerHTML = visibleSites.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.archived ? " (Archived)" : ""}</option>`).join("");
+      sel.innerHTML = visibleSites.map(s => {
+        const label = s.clientName && s.clientName !== s.name ? `${s.clientName} — ${s.name}` : s.name;
+        return `<option value="${s.id}">${escapeHtml(label)}${s.archived ? " (Archived)" : ""}</option>`;
+      }).join("");
       const currentStillVisible = state.currentSiteId && visibleSites.some(s => s.id === state.currentSiteId);
       if(currentStillVisible){
         sel.value = state.currentSiteId;
@@ -5876,8 +5904,9 @@
       cfg.name = deepLinkParams.get("clientName") || "New site";
       cfg.branch = deepLinkParams.get("branch") || null;
       cfg.tenderId = deepLinkTenderId;
+      cfg.clientName = deepLinkParams.get("clientName") || null;
       cfg.archived = false;
-      state.sites = [{id, name:cfg.name, branch:cfg.branch, tenderId:deepLinkTenderId, archived:false}];
+      state.sites = [{id, name:cfg.name, branch:cfg.branch, tenderId:deepLinkTenderId, clientName:cfg.clientName, archived:false}];
       deepLinkHandled = true;
       state.configsCache[id] = cfg;
       state.currentSiteId = id;
@@ -6017,7 +6046,8 @@
             createSite(
               deepLinkParams.get("clientName") || "New site",
               deepLinkParams.get("branch") || null,
-              deepLinkTenderId
+              deepLinkTenderId,
+              deepLinkParams.get("clientName") || null
             );
             setSyncUi("on");
             return;
@@ -6029,7 +6059,7 @@
           render();
           return;
         }
-        state.sites = merged.map(({id, name, branch, tenderId, archived}) => ({id, name, branch, tenderId: tenderId||null, archived: !!archived}));
+        state.sites = merged.map(({id, name, branch, tenderId, clientName, archived}) => ({id, name, branch, tenderId: tenderId||null, clientName: clientName||null, archived: !!archived}));
         setSyncUi("on");
 
         // Same deep link, for the case where this branch already has sites and one of them is
@@ -6052,7 +6082,7 @@
         buckets[i] = snap.docs.map(d => {
           const data = d.data() || {};
           state.configsCache[d.id] = deepClone(data);
-          return { id:d.id, name: data.name || "Untitled site", branch: data.branch || null, createdAt: data.createdAt || "", tenderId: data.tenderId || null, archived: !!data.archived };
+          return { id:d.id, name: data.name || "Untitled site", branch: data.branch || null, clientName: data.clientName || null, createdAt: data.createdAt || "", tenderId: data.tenderId || null, archived: !!data.archived };
         });
         suppressPersist = false;
         recombineSitesAndRender();

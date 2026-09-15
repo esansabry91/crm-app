@@ -356,7 +356,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     const baseTender = workingTender || tender;
     setSaving(true);
     try {
-      await updateActiveProjectDetails(tender.id, {
+      await updateActiveProjectDetails(tender.id, tender.clientName, {
         location: location.trim(),
         state: stateName.trim(),
         city: city.trim(),
