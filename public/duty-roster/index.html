@@ -5632,6 +5632,9 @@
   let sitesUnsubs = [];
   const monthUnsubs = {};
   let tenderRateUnsub = null;
+  // Companion listener for this site's OWN tenders/{tenderId}/siteDetails/{siteId} doc — see
+  // subscribeTenderRate()'s own doc comment for why a second listener is needed here.
+  let tenderRateDetailsUnsub = null;
   let suppressPersist = false;
 
   function setSyncUi(mode){
@@ -5935,14 +5938,39 @@
   // currentTenderRate null.
   function subscribeTenderRate(siteId){
     if(tenderRateUnsub){ tenderRateUnsub(); tenderRateUnsub = null; }
+    if(tenderRateDetailsUnsub){ tenderRateDetailsUnsub(); tenderRateDetailsUnsub = null; }
     state.currentTenderRate = null;
+    let latestTenderDocRate = null;
+    let latestSiteDetailsRate = null;
     const siteMeta = state.sites.find(s => s.id === siteId);
     const tenderId = siteMeta && siteMeta.tenderId;
     if(!tenderId || !dbHandle) return;
-    tenderRateUnsub = dbHandle.doc("tenders/"+tenderId).onSnapshot(snap => {
-      state.currentTenderRate = snap.exists ? (snap.data() || null) : null;
+    // Recomputes state.currentTenderRate from whichever of the two listeners below has actually
+    // reported in — this site's own siteDetails guardRateMode/guardRate/guardRatePositions when
+    // it has one (an ADDITIONAL site that's had its own Guard Rate saved — see
+    // TenderSiteDetails' doc comment in the CRM's types.ts), else the parent tender doc's
+    // top-level fields (the primary site's rate, or an additional site's rate before its own has
+    // ever been saved) — same precedence InvoiceGenerator.tsx/InvoiceSiteSection.tsx use on the
+    // CRM side. Needed as two SEPARATE listeners (not one, reading siteDetails only after the
+    // tender doc resolves) because a site delegated to a branch other than the tender's own
+    // owning branch (see firestore.rules' canAssignSiteBranchViaTender()) can read its own
+    // siteDetails doc fine but NOT the parent tender doc at all — without this, that branch's
+    // Summary Report Rate/Amount columns and per-guard billing rate would silently show blank
+    // for every guard on their own site.
+    function recomputeTenderRate(){
+      state.currentTenderRate = (latestSiteDetailsRate && latestSiteDetailsRate.guardRateMode)
+        ? latestSiteDetailsRate
+        : latestTenderDocRate;
       if(siteId === state.currentSiteId) render();
-    }, () => { state.currentTenderRate = null; });
+    }
+    tenderRateUnsub = dbHandle.doc("tenders/"+tenderId).onSnapshot(snap => {
+      latestTenderDocRate = snap.exists ? (snap.data() || null) : null;
+      recomputeTenderRate();
+    }, () => { latestTenderDocRate = null; recomputeTenderRate(); });
+    tenderRateDetailsUnsub = dbHandle.doc("tenders/"+tenderId).collection("siteDetails").doc(siteId).onSnapshot(snap => {
+      latestSiteDetailsRate = snap.exists ? (snap.data() || null) : null;
+      recomputeTenderRate();
+    }, () => { latestSiteDetailsRate = null; recomputeTenderRate(); });
   }
 
   function bootLocalFallback(){

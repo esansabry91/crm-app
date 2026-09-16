@@ -387,9 +387,17 @@ service cloud.firestore {
       }
       // Payroll reads every site regardless of branch (same reach as admin/HQ) but must never
       // write — kept as a separate function from canReachSite so it's easy to see that the
-      // create/update/delete rules below deliberately do NOT call this one.
+      // create/update/delete rules below deliberately do NOT call this one. Also — separately —
+      // lets a tender's owner/owning branch keep reading every one of ITS OWN linked sites, even
+      // ones it has delegated to a different branch (see canAssignSiteBranchViaTender() below):
+      // without this, useTenderSites.ts's `where('tenderId','==',...)` query in Project
+      // Details' "Linked Sites" list would silently drop a delegated site from a non-HQ/admin
+      // owner's own results the moment it stopped matching their own department — read-only,
+      // deliberately not folded into canReachSite() itself, which still gates every WRITE to a
+      // site's own operational fields (guards, roster config) to whichever branch actually runs
+      // it day to day.
       function canReadSite(data) {
-        return canReachSite(data) || isPayrollLike();
+        return canReachSite(data) || isPayrollLike() || canAssignSiteBranchViaTender(data);
       }
       // True only for a Branch Manager accepting a reassignment actually pending to their own
       // branch (see Tender.pendingReassignment / acceptReassignment()) for THIS site's tender —
@@ -460,6 +468,20 @@ service cloud.firestore {
           && request.resource.data.tenderId == resource.data.tenderId
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['name', 'clientName', 'branch', 'updatedAt'])
+        )
+        // A third narrow exception, same canAssignSiteBranchViaTender() ownership check as the
+        // one just above but a DIFFERENT field list: archiveTenderSite()/removeTenderSite() in
+        // services/tenders.ts (the "Archive site"/"Remove from project" buttons in
+        // LinkedSiteDetailsCard.tsx) — a project's owner/owning branch pulling one of its OWN
+        // linked sites out of active use, or unlinking it entirely, regardless of which branch
+        // that site has been delegated to run day to day. Deliberately its own clause rather
+        // than folded into the resync one above: removeTenderSite() clears tenderId to null,
+        // which the resync clause's own tenderId-pin exists specifically to forbid, and neither
+        // function ever touches name/clientName/branch.
+        || (
+          canAssignSiteBranchViaTender(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['tenderId', 'archived', 'archivedAt', 'updatedAt'])
         )
       );
       // Manual deletion through the console UI has been removed entirely — for every role,

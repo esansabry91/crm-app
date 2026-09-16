@@ -1143,25 +1143,40 @@ export async function cancelReassignment(tenderId: string) {
 
 /**
  * Called by the RECEIVING branch's Branch Manager to resolve a pending reassignment (see
- * requestReassignBranch()). `choice` decides what happens to the Duty Roster site already tied
- * to this tender via its `tenderId`:
- *  - 'bring-over': the existing site just moves to the new branch (its `branch` field changes) —
- *    same guards, schedule and history, nothing lost or recreated.
- *  - 'new': the existing site is archived and unlinked from this tender (`tenderId` cleared,
- *    `archived` set) — kept forever for Admin/HQ/Payroll history/audit, exactly like a
- *    closed-out project's site (see setLinkedSitesArchived() below), but no longer "the" site
- *    for this tender. The very next Duty Roster visit for this tender then creates a brand-new,
- *    empty site under the new branch on its own, via the existing ?tenderId= deep-link bootstrap
- *    (see handleTenderDeepLinkIfNeeded() in public/duty-roster/index.html) — no separate
+ * requestReassignBranch()). `choice` decides what happens to EVERY linked Duty Roster site that
+ * was actually following this project's own branch (see `fromBranch` below):
+ *  - 'bring-over': the site just moves to the new branch (its `branch` field changes) — same
+ *    guards, schedule and history, nothing lost or recreated.
+ *  - 'new': the site is archived and unlinked from this tender (`tenderId` cleared, `archived`
+ *    set) — kept forever for Admin/HQ/Payroll history/audit, exactly like a closed-out project's
+ *    site (see setLinkedSitesArchived() below), but no longer "the" site for this tender. The
+ *    very next Duty Roster visit for this tender then creates a brand-new, empty site under the
+ *    new branch on its own, via the existing ?tenderId= deep-link bootstrap (see
+ *    handleTenderDeepLinkIfNeeded() in public/duty-roster/index.html) — no separate
  *    site-creation logic needed here.
- * The site write happens BEFORE the tender write on purpose: firestore.rules lets the receiving
- * Branch Manager touch this site only while the tender's pendingReassignment still names them as
- * the target, so clearing pendingReassignment first would lock them out mid-operation.
+ *
+ * `fromBranch` — the tender's own activeBranch/department BEFORE this reassignment (pass
+ * `tender.activeBranch || tender.department`) — is what keeps this from sweeping up a site that
+ * was deliberately delegated to a THIRD branch (see createTenderSite()'s branchOverride param /
+ * ProjectDetailsModal.tsx's "Managing Branch" picker): only a site whose CURRENT `branch` still
+ * matches the project's own outgoing branch (or has none set) is touched here. A project
+ * changing which branch owns its paperwork is a different decision from who runs any one of its
+ * delegated sites day to day, and shouldn't silently undo the latter.
+ *
+ * The site writes happen BEFORE the tender write on purpose: firestore.rules lets the receiving
+ * Branch Manager touch these sites only while the tender's pendingReassignment still names them
+ * as the target, so clearing pendingReassignment first would lock them out mid-operation.
  */
-export async function acceptReassignment(tenderId: string, toBranch: string, choice: 'bring-over' | 'new') {
+export async function acceptReassignment(
+  tenderId: string,
+  fromBranch: string | null,
+  toBranch: string,
+  choice: 'bring-over' | 'new'
+) {
   const snap = await getDocs(query(collection(db, 'sites'), where('tenderId', '==', tenderId)));
+  const sitesFollowingProject = snap.docs.filter((d) => (d.data().branch ?? null) === (fromBranch ?? null));
   await Promise.all(
-    snap.docs.map((d) =>
+    sitesFollowingProject.map((d) =>
       updateDoc(
         d.ref,
         choice === 'bring-over'

@@ -1152,6 +1152,11 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                     className="input"
                     disabled={addSiteBusy}
                   >
+                    {/* Only rendered when addSiteBranch is genuinely unset (the project's own
+                        branch isn't a real pickable one — see the "+ Add Site" button's own
+                        default-selection guard above) — an explicit, visible prompt instead of
+                        silently landing on whichever branch happens to be listed first. */}
+                    {addSiteBranch === '' && <option value="">Select a branch…</option>}
                     {branches.map((b) => (
                       <option key={b.id} value={b.name}>
                         {b.name}
@@ -1484,7 +1489,20 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                 type="button"
                 onClick={() => {
                   const activeTender = workingTender || tender;
-                  setAddSiteBranch((activeTender && (activeTender.activeBranch || activeTender.department)) || '');
+                  const defaultBranch = (activeTender && (activeTender.activeBranch || activeTender.department)) || '';
+                  // Only pre-select it if it's actually one of the real, pickable branches in
+                  // the dropdown below (branches.map(...), which — like UserManager.tsx and
+                  // Duty Roster's own "assign to branch" picker — never lists "HQ" as one, since
+                  // HQ oversees every branch's sites rather than running one itself). A tender
+                  // still on activeBranch "HQ" (centrally owned/never assigned to a real branch
+                  // — see backfillActiveBranch()'s own doc comment) or with no activeBranch/
+                  // department at all would otherwise silently preselect a value with no
+                  // matching <option>, which some browsers render as if the FIRST real branch
+                  // were chosen — someone who doesn't notice and clicks straight through would
+                  // create a site delegated to whatever branch happens to be first, not "HQ" as
+                  // the UI implied. Leaving it blank instead forces an explicit, visible pick
+                  // (addSiteReady already requires a non-empty branch).
+                  setAddSiteBranch(branches.some((b) => b.name === defaultBranch) ? defaultBranch : '');
                   setAddSiteOpen(true);
                 }}
                 className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 whitespace-nowrap"

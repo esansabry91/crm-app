@@ -15,6 +15,7 @@ import {
 } from '../../services/tenders';
 import { formatDate, formatDateTime } from '../../utils/format';
 import type { TenderLinkedSite } from '../../hooks/useTenderSites';
+import { useBranches } from '../../hooks/useBranches';
 
 interface Props {
   tender: Tender;
@@ -37,6 +38,14 @@ interface Props {
 export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
   const [expanded, setExpanded] = useState(false);
   const details = site.details;
+  const { branches } = useBranches();
+
+  // Which branch actually runs this site day to day — editable here (unlike at creation time,
+  // there's no separate "+ Add Site" form to change it in) so a project owner can re-delegate an
+  // already-linked site to a different branch, or reclaim it, later on. '' means Unassigned
+  // (visible to every branch — see firestore.rules' canReachSite()), matching Duty Roster's own
+  // "assign to branch" picker convention.
+  const [branch, setBranch] = useState('');
 
   const [location, setLocation] = useState('');
   const [stateName, setStateName] = useState('');
@@ -66,6 +75,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
 
   useEffect(() => {
+    setBranch(site.branch || '');
     setLocation(details?.location || '');
     setStateName(details?.state || '');
     setCity(details?.city || '');
@@ -118,7 +128,8 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
     setSaving(true);
     setError(null);
     try {
-      await saveTenderSiteLocationDetails(tender.id, site.id, site.name, site.branch, tender.clientName, {
+      const branchValue = branch.trim() || null;
+      await saveTenderSiteLocationDetails(tender.id, site.id, site.name, branchValue, tender.clientName, {
         location: location.trim(),
         state: stateName.trim(),
         city: city.trim(),
@@ -140,7 +151,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
           tender,
           site.id,
           site.name,
-          site.branch,
+          branchValue,
           details,
           {
             guardRateMode: rateMode,
@@ -260,6 +271,28 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
 
       {expanded && (
         <div className="p-3 space-y-4">
+          <Field label="Managing Branch">
+            <select value={branch} onChange={(e) => setBranch(e.target.value)} className="input">
+              <option value="">Unassigned (visible to every branch)</option>
+              {/* Shows the site's actual current value even if it's since been renamed/removed
+                  from the branches list — so it displays accurately (rather than silently
+                  falling back to "Unassigned" in the dropdown) and isn't accidentally cleared
+                  the next time someone saves this form without touching this field. */}
+              {branch && !branches.some((b) => b.name === branch) && (
+                <option value={branch}>{branch} (not in current branch list)</option>
+              )}
+              {branches.map((b) => (
+                <option key={b.id} value={b.name}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Which branch runs this site's own Duty Roster, Guard Rate, and invoicing — change
+              it to re-delegate this site to a different branch, or reclaim it, without needing
+              to remove and re-add it.
+            </p>
+          </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Location">
               <input value={location} onChange={(e) => setLocation(e.target.value)} className="input" placeholder="Worksite address" />
