@@ -1,7 +1,9 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { isAdminRole } from '../../types';
+import { useDutyRosterPending } from '../../hooks/useDutyRosterPending';
+import { resolveDutyRosterPending } from '../../services/dutyRosterBridge';
 import clsx from 'clsx';
 
 const SIDEBAR_COLLAPSED_KEY = 'ipsb-desktop-sidebar-collapsed';
@@ -94,8 +96,23 @@ function NavSection({ title, children }: { title: string; children: ReactNode })
  * `onNavigate` fires after a link is clicked, so the mobile drawer can close itself; the
  * desktop sidebar passes a no-op since it has nothing to close.
  */
-function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onCollapse?: () => void }) {
+function NavContent({
+  onNavigate,
+  onCollapse,
+  pending,
+  guardAction,
+}: {
+  onNavigate: () => void;
+  onCollapse?: () => void;
+  /** Whether the embedded Duty Roster console currently has an unlocked roster with pending
+   *  drag changes — see useDutyRosterPending()/dutyRosterBridge.ts. */
+  pending: boolean;
+  /** Runs `action` immediately when nothing's pending; otherwise opens AppLayout's own warning
+   *  modal (Stay here / Discard changes / Lock roster) and defers `action` until it resolves. */
+  guardAction: (action: () => void) => void;
+}) {
   const { profile, logout } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <>
@@ -126,7 +143,30 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-4 overflow-y-auto">
+      {/* onClickCapture (not onClick) so this runs BEFORE each NavLink's own onClick
+          (onNavigate below, which closes the mobile drawer) — when there's something pending,
+          e.stopPropagation() stops that onClick from ever firing too, so the drawer stays open
+          behind the warning modal instead of closing out from under it. Delegated once here
+          rather than wrapping every individual NavLink (including the differently-gated
+          Admin Settings link below, and each role's own subset of links above) with the same
+          guard — every <a> in this <nav>, across every role block, goes through this one
+          handler. */}
+      <nav
+        className="flex-1 px-3 py-4 overflow-y-auto"
+        onClickCapture={(e) => {
+          if (!pending) return;
+          const anchor = (e.target as HTMLElement).closest('a[href]') as HTMLAnchorElement | null;
+          if (!anchor) return;
+          const href = anchor.getAttribute('href');
+          if (!href) return;
+          e.preventDefault();
+          e.stopPropagation();
+          guardAction(() => {
+            navigate(href);
+            onNavigate();
+          });
+        }}
+      >
         {profile?.role !== 'dutyStaff' &&
           profile?.role !== 'payroll' &&
           profile?.role !== 'finance' &&
@@ -270,7 +310,7 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
           {profile?.department}
         </p>
         <button
-          onClick={() => logout()}
+          onClick={() => guardAction(() => logout())}
           className="mt-3 w-full text-xs font-medium text-slate-500 hover:text-rose-600 border border-slate-200 rounded-lg py-1.5 transition"
         >
           Sign out
@@ -280,9 +320,70 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
   );
 }
 
+/**
+ * Mirrors the Duty Roster console's own in-page warning (see index.html's
+ * openRosterUnlockedWarningModal()) for the CRM shell's own navigation — sidebar links and Sign
+ * out — that live outside the iframe and can't be reached by that page's own modal. Same three
+ * choices, same outcome either way (re-locked), just triggered from here instead.
+ */
+function DutyRosterLeaveWarningModal({
+  resolving,
+  onStay,
+  onDiscard,
+  onLock,
+}: {
+  resolving: 'lock' | 'discard' | null;
+  onStay: () => void;
+  onDiscard: () => void;
+  onLock: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5">
+        <h2 className="text-base font-semibold text-slate-900">Roster sheet is unlocked</h2>
+        <p className="text-sm text-slate-500 mt-1.5">
+          The Duty Roster has drag rearrangements that aren't locked in yet. Lock the roster or
+          discard these changes before leaving.
+        </p>
+        <div className="flex flex-wrap justify-end gap-2 mt-5">
+          <button
+            type="button"
+            onClick={onStay}
+            disabled={!!resolving}
+            className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800 disabled:opacity-60"
+          >
+            Stay here
+          </button>
+          <button
+            type="button"
+            onClick={onDiscard}
+            disabled={!!resolving}
+            className="px-4 py-1.5 text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-60 rounded-lg"
+          >
+            {resolving === 'discard' ? 'Discarding\u2026' : 'Discard changes'}
+          </button>
+          <button
+            type="button"
+            onClick={onLock}
+            disabled={!!resolving}
+            className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg"
+          >
+            {resolving === 'lock' ? 'Locking\u2026' : 'Lock roster'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AppLayout({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(getStoredSidebarCollapsed);
+  const pending = useDutyRosterPending();
+  // The nav/logout action waiting on the warning modal below, and which of its two resolving
+  // actions (if any) is currently in flight. Both null = no modal showing.
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+  const [resolving, setResolving] = useState<'lock' | 'discard' | null>(null);
 
   useEffect(() => {
     try {
@@ -291,6 +392,42 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       // Best-effort only — the collapsed state still works for this session either way.
     }
   }, [desktopCollapsed]);
+
+  // Runs `action` immediately when the Duty Roster console has nothing pending; otherwise
+  // parks it and opens the warning modal (see DutyRosterLeaveWarningModal below) — passed down
+  // to NavContent as guardAction, and used directly by the Sign out button.
+  function guardAction(action: () => void) {
+    if (!pending) {
+      action();
+      return;
+    }
+    setPendingAction(() => action);
+  }
+
+  // Once "Discard changes"/"Lock roster" is clicked, resolveDutyRosterPending() (below) tells
+  // the iframe to act; this waits for its next lock-status message to confirm `pending` actually
+  // dropped back to false before running the parked action, so a nav/logout never races ahead of
+  // the iframe's own Firestore write. A 5s timeout is a last resort in case that message never
+  // arrives (e.g. the iframe somehow went away mid-resolve) — the underlying change is already
+  // safely persisted server-side either way (see discardDraftChanges()/lockRoster() in
+  // index.html), so proceeding anyway beats leaving the performer stuck behind the modal.
+  useEffect(() => {
+    if (!resolving) return undefined;
+    if (!pending) {
+      const action = pendingAction;
+      setResolving(null);
+      setPendingAction(null);
+      action?.();
+      return undefined;
+    }
+    const timeout = setTimeout(() => {
+      const action = pendingAction;
+      setResolving(null);
+      setPendingAction(null);
+      action?.();
+    }, 5000);
+    return () => clearTimeout(timeout);
+  }, [pending, resolving, pendingAction]);
 
   return (
     <div className="h-screen flex flex-col lg:flex-row bg-slate-50">
@@ -336,7 +473,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <line x1="20" y1="4" x2="4" y2="20" />
               </svg>
             </button>
-            <NavContent onNavigate={() => setDrawerOpen(false)} />
+            <NavContent onNavigate={() => setDrawerOpen(false)} pending={pending} guardAction={guardAction} />
           </aside>
         </div>
       )}
@@ -347,7 +484,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           open/closed choice is remembered per-browser via localStorage. */}
       {!desktopCollapsed && (
         <aside className="hidden lg:flex w-60 shrink-0 border-r border-slate-200 bg-white flex-col no-print">
-          <NavContent onNavigate={() => {}} onCollapse={() => setDesktopCollapsed(true)} />
+          <NavContent
+            onNavigate={() => {}}
+            onCollapse={() => setDesktopCollapsed(true)}
+            pending={pending}
+            guardAction={guardAction}
+          />
         </aside>
       )}
       {desktopCollapsed && (
@@ -365,6 +507,21 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       )}
 
       <main className="flex-1 min-w-0 min-h-0 overflow-x-hidden">{children}</main>
+
+      {pendingAction && (
+        <DutyRosterLeaveWarningModal
+          resolving={resolving}
+          onStay={() => setPendingAction(null)}
+          onDiscard={() => {
+            setResolving('discard');
+            resolveDutyRosterPending('discard');
+          }}
+          onLock={() => {
+            setResolving('lock');
+            resolveDutyRosterPending('lock');
+          }}
+        />
+      )}
     </div>
   );
 }

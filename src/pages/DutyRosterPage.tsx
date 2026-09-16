@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { resetDutyRosterPending } from '../services/dutyRosterBridge';
 
 // Injected by vite.config.ts's `define` block at build time — a fresh string every
 // build/deploy, used below to cache-bust the duty-roster iframe's src.
@@ -23,6 +25,16 @@ declare const __APP_BUILD_ID__: string;
  */
 export default function DutyRosterPage() {
   const [searchParams] = useSearchParams();
+  // Safety net for leaving /duty-roster any way other than AppLayout's own gated sidebar
+  // links/Sign out button (typing a new URL, browser back/forward, closing the tab) — those
+  // bypass that guard entirely, so this clears a stale "pending" the moment this iframe goes
+  // away, rather than leaving some later, unrelated page wrongly warning about it. See
+  // dutyRosterBridge.ts's own doc comment.
+  useEffect(() => {
+    return () => {
+      resetDutyRosterPending();
+    };
+  }, []);
   const forwarded = searchParams.toString();
   // Always append a build-tied version param (in addition to any forwarded tenderId/
   // clientName/branch params) so the iframe's src changes on every new deploy, forcing it to

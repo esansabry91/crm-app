@@ -2045,7 +2045,7 @@
     renderSiteSelect();
     renderTabsVisibility();
     renderMonthNav();
-    if(renderEmptySitesState()) { enforceReadonlyLockdown(); return; }
+    if(renderEmptySitesState()) { enforceReadonlyLockdown(); postLockStatusToParent(); return; }
     const {y,m} = parseYM(state.currentMonth);
     lastResult = generateMonth(y, m, currentConfig(), currentMonthState());
     renderRosterStats(lastResult);
@@ -2076,6 +2076,7 @@
     renderSwapControls();
     renderLog();
     enforceReadonlyLockdown();
+    postLockStatusToParent();
   }
 
   // Belt-and-braces for the Payroll role, on top of the CSS in the <style> block above (which
@@ -4765,28 +4766,70 @@
   }
 
   /* ---------------- event wiring ---------------- */
+  // CLIENT SITE / CLIENT / BRANCH / Show archived all go through warnIfRosterUnlockedThenRun()
+  // (see its own doc comment above) because every one of them can move the page away from the
+  // site+month you were just rearranging — CLIENT SITE directly (switchSite()), and the other
+  // three indirectly, since renderSiteSelect() jumps to a different site the moment the
+  // currently-selected one drops out of the newly-filtered list (see its own "currentStillVisible"
+  // branch). A native <select>/checkbox has already visually changed by the time "change" fires,
+  // so `revert` puts it back to what it was showing if the performer picks "Stay here".
   $("#siteSelect").addEventListener("change", () => {
-    switchSite($("#siteSelect").value);
+    const sel = $("#siteSelect");
+    const newValue = sel.value;
+    const previousValue = state.currentSiteId;
+    if(newValue === previousValue) return;
+    warnIfRosterUnlockedThenRun(
+      () => switchSite(newValue),
+      () => { sel.value = previousValue; }
+    );
   });
   $("#branchFilter").addEventListener("change", () => {
-    state.branchFilterValue = $("#branchFilter").value;
-    // A full render() (rather than just renderSiteSelect()) so everything on the page —
-    // stats, calendar, the read-only branch badge, etc. — reflects whichever site
-    // renderSiteSelect() lands on for the newly-selected branch, not just the dropdown itself.
-    render();
+    const sel = $("#branchFilter");
+    const newValue = sel.value;
+    const previousValue = state.branchFilterValue;
+    if(newValue === previousValue) return;
+    warnIfRosterUnlockedThenRun(
+      () => {
+        state.branchFilterValue = newValue;
+        // A full render() (rather than just renderSiteSelect()) so everything on the page —
+        // stats, calendar, the read-only branch badge, etc. — reflects whichever site
+        // renderSiteSelect() lands on for the newly-selected branch, not just the dropdown itself.
+        render();
+      },
+      () => { sel.value = previousValue; }
+    );
   });
   $("#clientFilter").addEventListener("change", () => {
-    state.clientFilterValue = $("#clientFilter").value;
-    // Same reasoning as branchFilter's own listener above — a full render() so the rest of the
-    // page follows wherever renderSiteSelect() lands the current site once the list narrows.
-    render();
+    const sel = $("#clientFilter");
+    const newValue = sel.value;
+    const previousValue = state.clientFilterValue;
+    if(newValue === previousValue) return;
+    warnIfRosterUnlockedThenRun(
+      () => {
+        state.clientFilterValue = newValue;
+        // Same reasoning as branchFilter's own listener above — a full render() so the rest of
+        // the page follows wherever renderSiteSelect() lands the current site once the list
+        // narrows.
+        render();
+      },
+      () => { sel.value = previousValue; }
+    );
   });
   $("#showArchivedToggle").addEventListener("change", () => {
-    state.showArchivedSites = $("#showArchivedToggle").checked;
-    // Same reasoning as #branchFilter's handler above — toggling this can add or drop the
-    // currently-selected site from the list, so the rest of the page needs to follow wherever
-    // renderSiteSelect() lands.
-    render();
+    const cb = $("#showArchivedToggle");
+    const newValue = cb.checked;
+    const previousValue = state.showArchivedSites;
+    if(newValue === previousValue) return;
+    warnIfRosterUnlockedThenRun(
+      () => {
+        state.showArchivedSites = newValue;
+        // Same reasoning as #branchFilter's handler above — toggling this can add or drop the
+        // currently-selected site from the list, so the rest of the page needs to follow
+        // wherever renderSiteSelect() lands.
+        render();
+      },
+      () => { cb.checked = previousValue; }
+    );
   });
   $("#newSiteBtn").addEventListener("click", () => {
     openNewSiteModal();
@@ -4813,9 +4856,9 @@
   });
 
   // Switches the active top-level tab (Roster / Guards & Shifts / Adjustments / Summary
-  // Report) — extracted out of the click handler below so warnIfRosterUnlockedThenSwitchTab()
-  // can call it directly once a pending-changes warning has been resolved (or found not to
-  // apply), without duplicating this DOM bookkeeping.
+  // Report) — extracted out of the click handler below so warnIfRosterUnlockedThenRun()'s
+  // `proceed` callback can call it directly once a pending-changes warning has been resolved
+  // (or found not to apply), without duplicating this DOM bookkeeping.
   function activateTab(tab){
     $$(".tab").forEach(t => t.classList.remove("active"));
     $$(".view").forEach(v => v.classList.remove("active"));
@@ -4823,33 +4866,70 @@
     $("#view-"+tab.getAttribute("data-tab")).classList.add("active");
   }
 
-  // Guards every top-level tab click while the Roster sheet is unlocked with unresolved drag
-  // rearrangements: Branch Manager/Admin/HQ (canManageRosterLock()) are the only roles who can
-  // ever unlock the roster sheet in the first place, so they're the only ones this warns —
-  // anyone else just switches tabs as before. Switching TO Roster itself is never intercepted
-  // (that's exactly where the pending changes already live), and a locked month, or an
-  // unlocked month with nothing dragged yet, switches tabs immediately too.
-  function warnIfRosterUnlockedThenSwitchTab(tab){
-    if(tab.getAttribute("data-tab") === "roster"){ activateTab(tab); return; }
-    if(!canManageRosterLock()){ activateTab(tab); return; }
+  // Tells the CRM shell embedding this page (see DutyRosterPage.tsx, which wraps this file in
+  // an <iframe>) whether there's an unlocked roster with pending drag changes right now, so its
+  // own sidebar nav links and Sign out button can show the same warning this page shows
+  // in-page (see warnIfRosterUnlockedThenRun() below) instead of silently navigating away from
+  // something a Branch Manager hasn't locked in yet. A no-op when this file isn't actually
+  // embedded (opened directly in its own tab/window during local testing, say) since there's no
+  // parent frame to tell. Called at the end of every render() (both exit paths — see render()
+  // itself) so it's always current, not just right after a drag/lock/discard.
+  function postLockStatusToParent(){
+    if(window.parent === window) return;
+    let pending = false;
+    if(canManageRosterLock()){
+      const ms = currentMonthState();
+      if(!isRosterLocked(ms) && Object.keys(monthDraftOverrides(ms)).length > 0) pending = true;
+    }
+    window.parent.postMessage({ source: "inter-prominent-duty-roster", type: "lock-status", pending: pending }, window.location.origin);
+  }
+
+  // The other half of the bridge above: the CRM shell posts this once the performer has picked
+  // "Discard changes" or "Lock roster" from ITS OWN warning modal (see
+  // src/services/dutyRosterBridge.ts / AppLayout.tsx), so this page actually applies that choice
+  // to whatever site+month it currently has open before the shell finishes navigating away —
+  // reuses the exact same discardDraftChanges()/lockRoster() this page's own modal calls, so
+  // behavior (re-locking on discard, the Combined Hours confirm-revoke on lock, etc.) is
+  // identical either way. Origin-checked, and only acts on messages actually tagged as coming
+  // from this specific CRM shell, never anything else that might postMessage into this frame.
+  window.addEventListener("message", e => {
+    if(e.origin !== window.location.origin) return;
+    if(!e.data || e.data.source !== "inter-prominent-crm" || e.data.type !== "resolve-pending") return;
+    if(e.data.action === "lock") lockRoster();
+    else if(e.data.action === "discard") discardDraftChanges();
+  });
+
+  // Guards any action that would move away from the Roster sheet while it's unlocked with
+  // unresolved drag rearrangements: Branch Manager/Admin/HQ (canManageRosterLock()) are the
+  // only roles who can ever unlock it in the first place, so they're the only ones this warns
+  // — anyone else just proceeds as before. A locked month, or an unlocked month with nothing
+  // dragged yet, proceeds immediately too. `proceed` runs once there's nothing left to warn
+  // about (immediately, or after Discard/Lock resolves it); `revert` (optional) runs only when
+  // the performer picks "Stay here" or dismisses the modal — for a <select>/checkbox whose
+  // value already changed by the time its "change" event fires, so it can be set back to what
+  // it was. Reused by the top-level tab-click handler below and the CLIENT SITE/CLIENT/BRANCH/
+  // Show archived filter handlers further down — every in-page way of moving away from the
+  // roster you were just rearranging.
+  function warnIfRosterUnlockedThenRun(proceed, revert){
+    if(!canManageRosterLock()){ proceed(); return; }
     const ms = currentMonthState();
-    if(isRosterLocked(ms)){ activateTab(tab); return; }
+    if(isRosterLocked(ms)){ proceed(); return; }
     const pendingCount = Object.keys(monthDraftOverrides(ms)).length;
-    if(pendingCount === 0){ activateTab(tab); return; }
-    openRosterUnlockedWarningModal(tab, pendingCount);
+    if(pendingCount === 0){ proceed(); return; }
+    openRosterUnlockedWarningModal(proceed, revert, pendingCount);
   }
 
   // Purpose-built 3-button modal (Stay / Discard / Lock) for the warning above —
   // openConfirmModal() only supports a Cancel + one action pair, not enough here. Uses its own
   // element ids throughout so it never collides with openConfirmModal()/openAlertModal()'s
   // shared #modalOk/#modalCancel.
-  function openRosterUnlockedWarningModal(tab, pendingCount){
+  function openRosterUnlockedWarningModal(proceed, revert, pendingCount){
     const root = $("#modalRoot");
     root.innerHTML = `
       <div class="modalveil" id="modalVeil">
         <div class="modalcard wide">
           <h3>Roster sheet is unlocked</h3>
-          <p class="msg">You have ${pendingCount} pending drag rearrangement${pendingCount===1?"":"s"} that ${pendingCount===1?"isn't":"aren't"} locked in yet. Lock the roster or discard these changes before leaving this tab.</p>
+          <p class="msg">You have ${pendingCount} pending drag rearrangement${pendingCount===1?"":"s"} that ${pendingCount===1?"isn't":"aren't"} locked in yet. Lock the roster or discard these changes before leaving.</p>
           <div class="modalbtns">
             <button class="btn sm" id="rosterWarnStay" type="button">Stay here</button>
             <button class="btn sm danger" id="rosterWarnDiscard" type="button">Discard changes</button>
@@ -4857,15 +4937,18 @@
           </div>
         </div>
       </div>`;
-    $("#rosterWarnStay").addEventListener("click", closeModal);
-    $("#rosterWarnDiscard").addEventListener("click", () => { closeModal(); discardDraftChanges(); activateTab(tab); });
-    $("#rosterWarnLock").addEventListener("click", () => { closeModal(); lockRoster(); activateTab(tab); });
-    $("#modalVeil").addEventListener("click", e => { if(e.target.id === "modalVeil") closeModal(); });
+    $("#rosterWarnStay").addEventListener("click", () => { closeModal(); if(revert) revert(); });
+    $("#rosterWarnDiscard").addEventListener("click", () => { closeModal(); discardDraftChanges(); proceed(); });
+    $("#rosterWarnLock").addEventListener("click", () => { closeModal(); lockRoster(); proceed(); });
+    $("#modalVeil").addEventListener("click", e => { if(e.target.id === "modalVeil"){ closeModal(); if(revert) revert(); } });
   }
 
+  // Switching TO Roster itself is never intercepted (that's exactly where the pending changes
+  // already live) — every other tab goes through the generic guard above.
   $$(".tab").forEach(tab => {
     tab.addEventListener("click", () => {
-      warnIfRosterUnlockedThenSwitchTab(tab);
+      if(tab.getAttribute("data-tab") === "roster"){ activateTab(tab); return; }
+      warnIfRosterUnlockedThenRun(() => activateTab(tab));
     });
   });
 
