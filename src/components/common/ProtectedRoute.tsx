@@ -6,12 +6,21 @@ import { isAdminRole } from '../../types';
 export default function ProtectedRoute({
   children,
   adminOnly = false,
+  allowBranchManager = false,
   hideFromStaff = false,
   hidePayrollOnly = false,
   hideFromFinance = false,
 }: {
   children: ReactNode;
   adminOnly?: boolean;
+  /**
+   * Only meaningful alongside adminOnly — additionally lets a 'branchManager' account through an
+   * adminOnly route, for Admin Settings' scoped-to-Team-tab reach (see AdminPage.tsx, which
+   * itself further narrows a Branch Manager to just the Team tab, and firestore.rules' /users
+   * rules for the matching server-side scoping). Every other adminOnly route deliberately leaves
+   * this false — Branch Manager gets Admin Settings and nothing else new.
+   */
+  allowBranchManager?: boolean;
   /**
    * The "Operation Staff" role can only ever reach Duty Roster — every other route passes this
    * so an Operation Staff account bounces straight there instead of landing wherever this route
@@ -80,7 +89,7 @@ export default function ProtectedRoute({
     return <Navigate to="/branch-collection" replace />;
   }
 
-  if (adminOnly && !isAdminRole(profile?.role)) {
+  if (adminOnly && !isAdminRole(profile?.role) && !(allowBranchManager && profile?.role === 'branchManager')) {
     return <Navigate to="/pipeline" replace />;
   }
 

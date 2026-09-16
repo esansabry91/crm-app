@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useUsers } from '../../hooks/useUsers';
 import { useBranches } from '../../hooks/useBranches';
+import { useAuth } from '../../contexts/AuthContext';
 import { createStaffAccount, updateUserProfile, deactivateUser, deleteUserProfile } from '../../services/users';
 import type { Role } from '../../types';
 
@@ -25,12 +26,20 @@ function roleLabel(role: string): string {
 export default function UserManager() {
   const { users } = useUsers();
   const { branches } = useBranches();
+  const { profile } = useAuth();
+  // A Branch Manager reaches this component too (see the /admin route's allowBranchManager prop
+  // in App.tsx and AdminPage.tsx's Team-only tab restriction) — but only ever to manage their own
+  // branch's Operation Staff accounts. firestore.rules' /users rules enforce the same scoping
+  // server-side (isOwnBranchOperationStaff()), so this UI restriction is a convenience, not the
+  // actual security boundary.
+  const isBranchManagerRole = profile?.role === 'branchManager';
+  const myDepartment = profile?.department || '';
   const departmentOptions = ['HQ', ...branches.map((b) => b.name)];
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<Role>('branchManager');
-  const [department, setDepartment] = useState('HQ');
+  const [role, setRole] = useState<Role>(isBranchManagerRole ? 'dutyStaff' : 'branchManager');
+  const [department, setDepartment] = useState(isBranchManagerRole ? myDepartment : 'HQ');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -46,6 +55,14 @@ export default function UserManager() {
   // `string` because the `Role` type no longer includes "staff" — the check is only for
   // whatever's actually still sitting in old documents.
   const legacyStaffUsers = users.filter((u) => (u.role as string) === 'staff');
+
+  // A Branch Manager's own /users read rule only ever returns their own profile plus their
+  // branch's dutyStaff accounts (Firestore silently drops docs a query's reader can't read), so
+  // this filter is mostly a defensive/explicit narrowing — it also drops the branch manager's own
+  // profile row from the table, since they're not one of the Operation Staff they're managing.
+  const visibleUsers = isBranchManagerRole
+    ? users.filter((u) => u.role === 'dutyStaff' && u.department === myDepartment)
+    : users;
 
   const handleMigrateLegacyRoles = async () => {
     setMigrating(true);
@@ -75,14 +92,28 @@ export default function UserManager() {
       setError('Fill in a name and email.');
       return;
     }
+    // Branch managers can only ever create Operation Staff in their own branch — force these
+    // regardless of component state, as a belt-and-suspenders match to the server-side
+    // isOwnBranchOperationStaff() check in firestore.rules (which would reject anything else).
+    const effectiveRole: Role = isBranchManagerRole ? 'dutyStaff' : role;
+    const effectiveDepartment = isBranchManagerRole ? myDepartment : department;
+    if (isBranchManagerRole && !effectiveDepartment) {
+      setError('Your account has no branch assigned — contact an HQ Admin.');
+      return;
+    }
     setBusy(true);
     try {
-      await createStaffAccount({ name: name.trim(), email: email.trim(), role, department });
+      await createStaffAccount({
+        name: name.trim(),
+        email: email.trim(),
+        role: effectiveRole,
+        department: effectiveDepartment,
+      });
       setSuccess(`Account created — an email has been sent to ${email.trim()} with a link to set their password.`);
       setName('');
       setEmail('');
-      setRole('branchManager');
-      setDepartment('HQ');
+      setRole(isBranchManagerRole ? 'dutyStaff' : 'branchManager');
+      setDepartment(isBranchManagerRole ? myDepartment : 'HQ');
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code;
       setError(
@@ -134,7 +165,7 @@ export default function UserManager() {
 
   return (
     <div className="space-y-6">
-      {legacyStaffUsers.length > 0 && (
+      {!isBranchManagerRole && legacyStaffUsers.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
           <div>
             <p className="text-sm font-medium text-amber-800">
@@ -172,25 +203,38 @@ export default function UserManager() {
             type="email"
             className="input"
           />
-          <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="input">
-            <option value="branchManager">Branch Manager — sees only their own tenders</option>
-            <option value="admin">HQ Admin — sees everything</option>
-            <option value="ceo">CEO — full access, same as HQ Admin</option>
-            <option value="director">Director — full access, same as HQ Admin</option>
-            <option value="tenderController">Tender Controller — full access, same as HQ Admin</option>
-            <option value="dutyStaff">Operation Staff — Duty Roster only, nothing else</option>
-            <option value="payroll">Payroll — Duty Roster only, view &amp; export only, all branches</option>
-            <option value="hr">HR — same as Payroll, plus full access to Guard Bank</option>
-            <option value="developer">Developer — full access like HQ Admin, but every record it creates is auto-tagged as test data</option>
-            <option value="finance">Finance — Branch Collection only (Invoices, Debtor List, Revenue)</option>
-          </select>
-          <select value={department} onChange={(e) => setDepartment(e.target.value)} className="input">
-            {departmentOptions.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
+          {isBranchManagerRole ? (
+            <>
+              <div className="input flex items-center bg-slate-50 text-slate-500">
+                Operation Staff (fixed)
+              </div>
+              <div className="input flex items-center bg-slate-50 text-slate-500">
+                {myDepartment || '—'} (your branch)
+              </div>
+            </>
+          ) : (
+            <>
+              <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="input">
+                <option value="branchManager">Branch Manager — sees only their own tenders</option>
+                <option value="admin">HQ Admin — sees everything</option>
+                <option value="ceo">CEO — full access, same as HQ Admin</option>
+                <option value="director">Director — full access, same as HQ Admin</option>
+                <option value="tenderController">Tender Controller — full access, same as HQ Admin</option>
+                <option value="dutyStaff">Operation Staff — Duty Roster only, nothing else</option>
+                <option value="payroll">Payroll — Duty Roster only, view &amp; export only, all branches</option>
+                <option value="hr">HR — same as Payroll, plus full access to Guard Bank</option>
+                <option value="developer">Developer — full access like HQ Admin, but every record it creates is auto-tagged as test data</option>
+                <option value="finance">Finance — Branch Collection only (Invoices, Debtor List, Revenue)</option>
+              </select>
+              <select value={department} onChange={(e) => setDepartment(e.target.value)} className="input">
+                {departmentOptions.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
           {error && <p className="sm:col-span-2 text-sm text-rose-600">{error}</p>}
           {success && <p className="sm:col-span-2 text-sm text-emerald-600">{success}</p>}
           <button
@@ -204,7 +248,9 @@ export default function UserManager() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 className="text-sm font-semibold text-slate-800 mb-3">Team Members ({users.length})</h3>
+        <h3 className="text-sm font-semibold text-slate-800 mb-3">
+          {isBranchManagerRole ? 'Your Branch — Operation Staff' : 'Team Members'} ({visibleUsers.length})
+        </h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -218,40 +264,48 @@ export default function UserManager() {
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
+              {visibleUsers.map((u) => (
                 <tr key={u.uid} className="border-b border-slate-50 last:border-0">
                   <td className="py-2 pr-4 font-medium text-slate-800">{u.name}</td>
                   <td className="py-2 pr-4 text-slate-500">{u.email}</td>
                   <td className="py-2 pr-4">
-                    <select
-                      value={u.role}
-                      onChange={(e) => handleRoleChange(u.uid, u.name, u.role, e.target.value as Role)}
-                      className="text-xs rounded border border-slate-200 px-1.5 py-1"
-                    >
-                      <option value="branchManager">Branch Manager</option>
-                      <option value="admin">HQ Admin</option>
-                      <option value="ceo">CEO</option>
-                      <option value="director">Director</option>
-                      <option value="tenderController">Tender Controller</option>
-                      <option value="dutyStaff">Operation Staff</option>
-                      <option value="payroll">Payroll</option>
-                      <option value="hr">HR</option>
-                      <option value="developer">Developer</option>
-                      <option value="finance">Finance</option>
-                    </select>
+                    {isBranchManagerRole ? (
+                      <span className="text-xs text-slate-600">{roleLabel(u.role)}</span>
+                    ) : (
+                      <select
+                        value={u.role}
+                        onChange={(e) => handleRoleChange(u.uid, u.name, u.role, e.target.value as Role)}
+                        className="text-xs rounded border border-slate-200 px-1.5 py-1"
+                      >
+                        <option value="branchManager">Branch Manager</option>
+                        <option value="admin">HQ Admin</option>
+                        <option value="ceo">CEO</option>
+                        <option value="director">Director</option>
+                        <option value="tenderController">Tender Controller</option>
+                        <option value="dutyStaff">Operation Staff</option>
+                        <option value="payroll">Payroll</option>
+                        <option value="hr">HR</option>
+                        <option value="developer">Developer</option>
+                        <option value="finance">Finance</option>
+                      </select>
+                    )}
                   </td>
                   <td className="py-2 pr-4">
-                    <select
-                      value={u.department}
-                      onChange={(e) => handleDepartmentChange(u.uid, u.name, u.department, e.target.value)}
-                      className="text-xs rounded border border-slate-200 px-1.5 py-1"
-                    >
-                      {departmentOptions.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
-                        </option>
-                      ))}
-                    </select>
+                    {isBranchManagerRole ? (
+                      <span className="text-xs text-slate-600">{u.department}</span>
+                    ) : (
+                      <select
+                        value={u.department}
+                        onChange={(e) => handleDepartmentChange(u.uid, u.name, u.department, e.target.value)}
+                        className="text-xs rounded border border-slate-200 px-1.5 py-1"
+                      >
+                        {departmentOptions.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </td>
                   <td className="py-2 pr-4">
                     {u.active === false ? (

@@ -24,7 +24,7 @@ export default function BranchCollectionPage() {
   return (
     <div className="h-full overflow-y-auto">
       <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10 no-print">
-        <h1 className="text-lg font-semibold text-slate-900">Branch Collection</h1>
+        <h1 className="text-lg font-semibold text-slate-900">Invoices &amp; Revenue</h1>
         <p className="text-sm text-slate-500 mb-4">
           Generate client invoices from Duty Roster data and track what's outstanding.
         </p>

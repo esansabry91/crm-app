@@ -17,7 +17,16 @@ export default function AdminPage() {
   // out of reach for every other role is what stops production data from ever being touched by
   // it, deliberately or by accident.
   const isDeveloper = profile?.role === 'developer';
-  const TABS = isDeveloper ? ALL_TABS : ALL_TABS.filter((t) => t !== 'Testing Data');
+  // A Branch Manager reaches Admin Settings now too (see the /admin route's allowBranchManager
+  // prop in App.tsx), but only ever for the Team tab — adding/managing their own branch's
+  // Operation Staff (see UserManager.tsx and firestore.rules' /users rules for the matching
+  // server-side scoping). Branches & Brands, Data Repair, and Testing Data stay admin-only.
+  const isBranchManagerRole = profile?.role === 'branchManager';
+  const TABS: Tab[] = isBranchManagerRole
+    ? ['Team']
+    : isDeveloper
+      ? [...ALL_TABS]
+      : ALL_TABS.filter((t) => t !== 'Testing Data');
 
   const [tab, setTab] = useState<Tab>('Team');
 
@@ -25,7 +34,9 @@ export default function AdminPage() {
     <div className="h-full overflow-y-auto">
       <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
         <h1 className="text-lg font-semibold text-slate-900">Admin Settings</h1>
-        <p className="text-sm text-slate-500 mb-4">Manage your team, branches and brands.</p>
+        <p className="text-sm text-slate-500 mb-4">
+          {isBranchManagerRole ? 'Manage your branch\'s Operation Staff.' : 'Manage your team, branches and brands.'}
+        </p>
         <div className="flex gap-1">
           {TABS.map((t) => (
             <button

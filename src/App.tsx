@@ -140,7 +140,11 @@ export default function App() {
           <Route
             path="/admin"
             element={
-              <ProtectedRoute adminOnly hideFromStaff hideFromFinance>
+              // allowBranchManager: a Branch Manager reaches Admin Settings too now, scoped by
+              // AdminPage.tsx itself to just the Team tab (add/manage their own branch's
+              // Operation Staff — see firestore.rules' /users rules for the matching
+              // server-side scoping).
+              <ProtectedRoute adminOnly allowBranchManager hideFromStaff hideFromFinance>
                 <AppLayout>
                   <AdminPage />
                 </AppLayout>

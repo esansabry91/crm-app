@@ -120,8 +120,36 @@ service cloud.firestore {
     // Nobody but an admin can create or change a profile — this is what stops a staff
     // account from promoting itself to admin or reassigning its own department.
     match /users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow create, update, delete: if isAdmin();
+      // A Branch Manager can additionally reach the Operation Staff accounts in their OWN
+      // department — never anyone else's account, never a different role, never a different
+      // branch — see UserManager.tsx's scoped "Team" tab for a Branch Manager (Admin Settings >
+      // Team). This mirrors the same "narrow, scoped delegation" shape as
+      // canAssignSiteBranchViaTender() above: broad admin reach stays admin-only, but a Branch
+      // Manager gets just enough rope to run their own branch's Operation Staff roster.
+      function isOwnBranchOperationStaff(data) {
+        return data.role == 'dutyStaff' && data.department == myDepartment();
+      }
+      allow read: if isSignedIn()
+        && (request.auth.uid == uid || isAdmin() || (isBranchManager() && isOwnBranchOperationStaff(resource.data)));
+      allow create: if isAdmin()
+        || (isBranchManager() && isOwnBranchOperationStaff(request.resource.data));
+      // Narrower than create: a Branch Manager can only flip `active` (Deactivate in
+      // UserManager.tsx — see deactivateUser() in services/users.ts) on an Operation Staff
+      // account already in their own department, and can never use this to move it to a
+      // different role/department/branch (both old AND new data must still satisfy
+      // isOwnBranchOperationStaff, and hasOnly pins the write to that one field) — reassigning
+      // someone's role or branch stays admin-only, same as every other role in this app.
+      allow update: if isAdmin()
+        || (
+          isBranchManager()
+          && isOwnBranchOperationStaff(resource.data)
+          && isOwnBranchOperationStaff(request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active'])
+        );
+      // Mirrors update: a Branch Manager can Remove (deleteUserProfile()) only an Operation
+      // Staff account already in their own department.
+      allow delete: if isAdmin()
+        || (isBranchManager() && isOwnBranchOperationStaff(resource.data));
     }
 
     // ---- Branches & brands (admin-editable lookup lists) ----
