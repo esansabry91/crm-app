@@ -1,16 +1,17 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { Fragment, useMemo, useState, type FormEvent } from 'react';
 import clsx from 'clsx';
 import { useAuth } from '../contexts/AuthContext';
 import { useTasks } from '../hooks/useTasks';
 import { useUsers } from '../hooks/useUsers';
 import { useBranches } from '../hooks/useBranches';
 import StatCard from '../components/analytics/StatCard';
-import { assignTask, closeTask, deleteTask, markTaskDone, reopenTask, updateTaskPriority } from '../services/tasks';
+import { addProgressUpdate, assignTask, closeTask, deleteTask, markTaskDone, reopenTask, updateTaskPriority } from '../services/tasks';
 import type { StaffTask, TaskPriority } from '../types';
 import { isAdminRole } from '../types';
 import { formatDateTime } from '../utils/format';
 
 const ALL_BRANCHES = '__all__';
+const ALL_ASSIGNEES = '__all__';
 
 /** True if a timestamp falls in the current calendar month — drives the Completed stat
  *  tile/list's "resets every 1st" behavior (see closedAt's doc comment on StaffTask in
@@ -61,6 +62,15 @@ export default function TaskBoardPage() {
   // Admin-only branch filter for the list — a Branch Manager never needs one, since
   // firestore.rules already only ever hands them their own department's tasks.
   const [branchFilter, setBranchFilter] = useState<string>(ALL_BRANCHES);
+  // Assignee/priority filters narrow what's shown in the table only — the stat tiles above
+  // always reflect the true Open/Completed/Productivity totals, independent of these.
+  const [assigneeFilter, setAssigneeFilter] = useState<string>(ALL_ASSIGNEES);
+  const [priorityFilter, setPriorityFilter] = useState<'all' | TaskPriority>('all');
+  // Which row's progress log is currently expanded (one at a time) — and the draft text for
+  // the new-entry textarea inside it.
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [progressDraft, setProgressDraft] = useState('');
+  const [progressBusy, setProgressBusy] = useState(false);
 
   function flash(message: string) {
     setToast(message);
@@ -106,6 +116,41 @@ export default function TaskBoardPage() {
         .filter((t) => t.status === 'closed' && t.closedAt != null && isThisMonth(t.closedAt))
         .sort((a, b) => (b.closedAt || 0) - (a.closedAt || 0)),
     [visibleTasks]
+  );
+
+  // Everyone who currently has at least one task in scope — built from the (unfiltered)
+  // open+completed sets, not the full staff roster, so the dropdown never lists someone with
+  // nothing assigned right now.
+  const assigneeFilterOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of [...openTasks, ...completedThisMonth]) {
+      map.set(t.assigneeUid, t.assigneeName);
+    }
+    return Array.from(map.entries())
+      .map(([uid, name]) => ({ uid, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [openTasks, completedThisMonth]);
+
+  // Narrow what's actually rendered in the table — the Open/Completed COUNTS on the stat tiles
+  // above stay unfiltered (true totals); only the list itself, and the tab labels beside it,
+  // reflect these two filters.
+  const filteredOpenTasks = useMemo(
+    () =>
+      openTasks.filter(
+        (t) =>
+          (assigneeFilter === ALL_ASSIGNEES || t.assigneeUid === assigneeFilter) &&
+          (priorityFilter === 'all' || t.priority === priorityFilter)
+      ),
+    [openTasks, assigneeFilter, priorityFilter]
+  );
+  const filteredCompletedTasks = useMemo(
+    () =>
+      completedThisMonth.filter(
+        (t) =>
+          (assigneeFilter === ALL_ASSIGNEES || t.assigneeUid === assigneeFilter) &&
+          (priorityFilter === 'all' || t.priority === priorityFilter)
+      ),
+    [completedThisMonth, assigneeFilter, priorityFilter]
   );
 
   // Of everything currently relevant (this month's closures + the standing open backlog), what
@@ -214,8 +259,25 @@ export default function TaskBoardPage() {
     }
   }
 
-  const rows = view === 'open' ? openTasks : completedThisMonth;
-  const colCount = 5 + (!isStaff ? 1 : 0) + (view === 'completed' ? 1 : 0);
+  async function handleAddProgressUpdate(task: StaffTask) {
+    if (!profile || !progressDraft.trim()) return;
+    setProgressBusy(true);
+    try {
+      await addProgressUpdate(task.id, { text: progressDraft.trim(), byUid: profile.uid, byName: profile.name });
+      setProgressDraft('');
+      flash('Progress update added.');
+    } catch {
+      flash('Could not add that update.');
+    } finally {
+      setProgressBusy(false);
+    }
+  }
+
+  const rows = view === 'open' ? filteredOpenTasks : filteredCompletedTasks;
+  // Task, Priority, Assigned Date, Close Date, Progress Update, Actions = 6 base columns,
+  // plus Assignee (hidden for a staff account viewing only their own tasks) and Confirmed
+  // (Completed view only).
+  const colCount = 6 + (!isStaff ? 1 : 0) + (view === 'completed' ? 1 : 0);
 
   if (loading) {
     return <div className="p-6 text-sm text-slate-400">Loading…</div>;
@@ -244,7 +306,7 @@ export default function TaskBoardPage() {
           )}
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4 max-w-3xl">
+        <div className={clsx('grid gap-3 mt-4 max-w-3xl', isStaff ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3')}>
           <StatCard
             label="Open Tasks"
             value={String(openTasks.length)}
@@ -259,12 +321,16 @@ export default function TaskBoardPage() {
             accent="#0f766e"
             action={{ label: 'Go to list', onClick: () => setView('completed'), disabled: completedThisMonth.length === 0 }}
           />
-          <StatCard
-            label="Productivity"
-            value={productivity === null ? '—' : `${productivity}%`}
-            sub="Completed this month ÷ (completed + open)"
-            accent="#00a3da"
-          />
+          {/* Operation Staff don't get a productivity readout on their own tasks — this is a
+              management metric for whoever's assigning the work, not the person doing it. */}
+          {!isStaff && (
+            <StatCard
+              label="Productivity"
+              value={productivity === null ? '—' : `${productivity}%`}
+              sub="Completed this month ÷ (completed + open)"
+              accent="#00a3da"
+            />
+          )}
         </div>
       </header>
 
@@ -351,7 +417,7 @@ export default function TaskBoardPage() {
                 view === 'open' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               )}
             >
-              Open ({openTasks.length})
+              Open ({filteredOpenTasks.length})
             </button>
             <button
               onClick={() => setView('completed')}
@@ -360,9 +426,35 @@ export default function TaskBoardPage() {
                 view === 'completed' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               )}
             >
-              Completed this month ({completedThisMonth.length})
+              Completed this month ({filteredCompletedTasks.length})
             </button>
           </div>
+          {/* A staff account only ever has itself as an assignee, so the filter would be a
+              one-option no-op — skip it for them, same as the Assignee table column. */}
+          {!isStaff && (
+            <select
+              value={assigneeFilter}
+              onChange={(e) => setAssigneeFilter(e.target.value)}
+              className="input text-sm sm:max-w-[180px]"
+            >
+              <option value={ALL_ASSIGNEES}>All assignees</option>
+              {assigneeFilterOptions.map((a) => (
+                <option key={a.uid} value={a.uid}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <select
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value as 'all' | TaskPriority)}
+            className="input text-sm sm:max-w-[160px]"
+          >
+            <option value="all">All priorities</option>
+            <option value="High">High priority</option>
+            <option value="Medium">Medium priority</option>
+            <option value="Low">Low priority</option>
+          </select>
           {isAdmin && (
             <select
               value={branchFilter}
@@ -387,84 +479,162 @@ export default function TaskBoardPage() {
                   <th className="py-2 pr-4 font-medium">Task</th>
                   {!isStaff && <th className="py-2 pr-4 font-medium">Assignee</th>}
                   <th className="py-2 pr-4 font-medium">Priority</th>
-                  <th className="py-2 pr-4 font-medium">Assigned</th>
+                  <th className="py-2 pr-4 font-medium">Assigned Date</th>
                   <th className="py-2 pr-4 font-medium">Close Date</th>
+                  <th className="py-2 pr-4 font-medium">Progress Update</th>
                   {view === 'completed' && <th className="py-2 pr-4 font-medium">Confirmed</th>}
                   <th className="py-2 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((t) => (
-                  <tr key={t.id} className="border-b border-slate-50 last:border-0 align-top">
-                    <td className="py-2.5 pr-4">
-                      <p className="font-medium text-slate-800">{t.title}</p>
-                      {t.description && <p className="text-xs text-slate-400 mt-0.5">{t.description}</p>}
-                    </td>
-                    {!isStaff && <td className="py-2.5 pr-4 text-slate-600">{t.assigneeName}</td>}
-                    <td className="py-2.5 pr-4">
-                      {canManage && t.status !== 'closed' ? (
-                        <select
-                          value={t.priority}
-                          onChange={(e) => handlePriorityChange(t, e.target.value as TaskPriority)}
-                          className={clsx(
-                            'text-xs rounded-full px-2 py-1 border-0 font-medium',
-                            priorityBadgeClass(t.priority)
-                          )}
-                        >
-                          <option value="High">High</option>
-                          <option value="Medium">Medium</option>
-                          <option value="Low">Low</option>
-                        </select>
-                      ) : (
-                        <span className={clsx('text-xs rounded-full px-2 py-1 font-medium', priorityBadgeClass(t.priority))}>
-                          {t.priority}
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap">{formatDateTime(t.createdAt)}</td>
-                    <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap">
-                      {t.staffCompletedAt ? formatDateTime(t.staffCompletedAt) : '—'}
-                    </td>
-                    {view === 'completed' && (
-                      <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap">
-                        {t.closedAt ? formatDateTime(t.closedAt) : '—'}
-                        {t.closedByName && <span className="block text-xs text-slate-400">by {t.closedByName}</span>}
+                  <Fragment key={t.id}>
+                    <tr className="border-b border-slate-50 last:border-0 align-top">
+                      <td className="py-2.5 pr-4">
+                        <p className="font-medium text-slate-800">{t.title}</p>
+                        {t.description && <p className="text-xs text-slate-400 mt-0.5">{t.description}</p>}
                       </td>
-                    )}
-                    <td className="py-2.5 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-3">
-                        {isStaff && t.status === 'open' && (
-                          <button
-                            onClick={() => handleMarkDone(t)}
-                            className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                      {!isStaff && <td className="py-2.5 pr-4 text-slate-600">{t.assigneeName}</td>}
+                      <td className="py-2.5 pr-4">
+                        {canManage && t.status !== 'closed' ? (
+                          <select
+                            value={t.priority}
+                            onChange={(e) => handlePriorityChange(t, e.target.value as TaskPriority)}
+                            className={clsx(
+                              'text-xs rounded-full px-2 py-1 border-0 font-medium',
+                              priorityBadgeClass(t.priority)
+                            )}
                           >
-                            Mark as Done
-                          </button>
+                            <option value="High">High</option>
+                            <option value="Medium">Medium</option>
+                            <option value="Low">Low</option>
+                          </select>
+                        ) : (
+                          <span className={clsx('text-xs rounded-full px-2 py-1 font-medium', priorityBadgeClass(t.priority))}>
+                            {t.priority}
+                          </span>
                         )}
-                        {isStaff && t.status === 'staffCompleted' && (
-                          <span className="text-xs text-amber-600">Awaiting confirmation</span>
-                        )}
-                        {canManage && t.status === 'staffCompleted' && (
+                      </td>
+                      <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap">{formatDateTime(t.createdAt)}</td>
+                      <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap">
+                        {t.staffCompletedAt ? formatDateTime(t.staffCompletedAt) : '—'}
+                      </td>
+                      <td className="py-2.5 pr-4 max-w-[180px]">
+                        {t.progressUpdates.length > 0 ? (
                           <>
-                            <button
-                              onClick={() => handleClose(t)}
-                              className="text-xs font-medium text-emerald-600 hover:text-emerald-700"
+                            <p
+                              className="text-xs text-slate-600 truncate"
+                              title={t.progressUpdates[t.progressUpdates.length - 1].text}
                             >
-                              Close Task
-                            </button>
-                            <button onClick={() => handleReopen(t)} className="text-xs text-slate-500 hover:text-amber-600">
-                              Reopen
+                              {t.progressUpdates[t.progressUpdates.length - 1].text}
+                            </p>
+                            <button
+                              onClick={() => {
+                                setExpandedTaskId((cur) => (cur === t.id ? null : t.id));
+                                setProgressDraft('');
+                              }}
+                              className="text-xs text-blue-600 hover:text-blue-700 mt-0.5"
+                            >
+                              {expandedTaskId === t.id ? 'Hide' : `View log (${t.progressUpdates.length})`}
                             </button>
                           </>
-                        )}
-                        {canManage && (
-                          <button onClick={() => handleDelete(t)} className="text-xs text-slate-400 hover:text-rose-600">
-                            Delete
+                        ) : t.status !== 'closed' ? (
+                          <button
+                            onClick={() => {
+                              setExpandedTaskId((cur) => (cur === t.id ? null : t.id));
+                              setProgressDraft('');
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-700"
+                          >
+                            {expandedTaskId === t.id ? 'Hide' : 'Add update'}
                           </button>
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      {view === 'completed' && (
+                        <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap">
+                          {t.closedAt ? formatDateTime(t.closedAt) : '—'}
+                          {t.closedByName && <span className="block text-xs text-slate-400">by {t.closedByName}</span>}
+                        </td>
+                      )}
+                      <td className="py-2.5 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-3">
+                          {isStaff && t.status === 'open' && (
+                            <button
+                              onClick={() => handleMarkDone(t)}
+                              className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                            >
+                              Mark as Done
+                            </button>
+                          )}
+                          {isStaff && t.status === 'staffCompleted' && (
+                            <span className="text-xs text-amber-600">Awaiting confirmation</span>
+                          )}
+                          {canManage && t.status === 'staffCompleted' && (
+                            <>
+                              <button
+                                onClick={() => handleClose(t)}
+                                className="text-xs font-medium text-emerald-600 hover:text-emerald-700"
+                              >
+                                Close Task
+                              </button>
+                              <button onClick={() => handleReopen(t)} className="text-xs text-slate-500 hover:text-amber-600">
+                                Reopen
+                              </button>
+                            </>
+                          )}
+                          {canManage && (
+                            <button onClick={() => handleDelete(t)} className="text-xs text-slate-400 hover:text-rose-600">
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {expandedTaskId === t.id && (
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        <td colSpan={colCount} className="px-4 py-3">
+                          <div className="space-y-2 max-w-xl">
+                            {t.progressUpdates.length > 0 && (
+                              <ul className="space-y-1.5 max-h-40 overflow-y-auto">
+                                {[...t.progressUpdates].reverse().map((u, i) => (
+                                  <li key={i} className="text-xs text-slate-600 border-l-2 border-slate-200 pl-2">
+                                    <span className="block text-slate-400">
+                                      {formatDateTime(u.at)} · {u.byName}
+                                    </span>
+                                    {u.text}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                            {t.status !== 'closed' ? (
+                              <div className="flex items-start gap-2">
+                                <textarea
+                                  value={progressDraft}
+                                  onChange={(e) => setProgressDraft(e.target.value)}
+                                  placeholder="Add a progress update…"
+                                  rows={2}
+                                  className="input flex-1 text-xs"
+                                />
+                                <button
+                                  onClick={() => handleAddProgressUpdate(t)}
+                                  disabled={progressBusy || !progressDraft.trim()}
+                                  className="px-3 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-60 shrink-0"
+                                >
+                                  Post
+                                </button>
+                              </div>
+                            ) : (
+                              t.progressUpdates.length === 0 && (
+                                <p className="text-xs text-slate-400">No progress updates were logged on this task.</p>
+                              )
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
                 {rows.length === 0 && (
                   <tr>

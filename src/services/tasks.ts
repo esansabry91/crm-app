@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { addDoc, arrayUnion, collection, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { shouldStampTestData } from './settings';
 import type { TaskPriority } from '../types';
@@ -37,6 +37,7 @@ export async function assignTask(input: AssignTaskInput) {
     staffCompletedAt: null,
     closedAt: null,
     closedByName: null,
+    progressUpdates: [],
     isTestData: await shouldStampTestData(),
   });
 }
@@ -82,4 +83,13 @@ export async function reopenTask(taskId: string) {
 /** Manager/admin only (see firestore.rules) — for cleaning up a task assigned by mistake. */
 export async function deleteTask(taskId: string) {
   await deleteDoc(doc(db, 'tasks', taskId));
+}
+
+/** Appends one entry to a task's progress log — the assignee or a manager/admin (own
+ *  department) can post, any time before the task is 'closed'; see firestore.rules. Entries
+ *  are never edited or removed, only ever appended (arrayUnion), so this is the full history. */
+export async function addProgressUpdate(taskId: string, entry: { text: string; byUid: string; byName: string }) {
+  await updateDoc(doc(db, 'tasks', taskId), {
+    progressUpdates: arrayUnion({ text: entry.text, byUid: entry.byUid, byName: entry.byName, at: Date.now() }),
+  });
 }

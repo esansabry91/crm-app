@@ -796,6 +796,16 @@ export interface Invoice {
 
 export type TaskPriority = 'High' | 'Medium' | 'Low';
 
+/** One entry in a task's progress log — see addProgressUpdate() in services/tasks.ts. Entries
+ *  are append-only (arrayUnion), so this doubles as the full history: nothing is ever edited
+ *  or removed once posted, by either the assignee or the manager/admin who can also post. */
+export interface TaskProgressUpdate {
+  text: string;
+  byUid: string;
+  byName: string;
+  at: number;
+}
+
 /**
  * A single work item a Branch Manager (or admin) assigns to one of their own Operation Staff —
  * see TaskBoardPage.tsx. Status flow:
@@ -835,6 +845,10 @@ export interface StaffTask {
    *  services/tasks.ts) — the date used for the Completed stat tile/list's monthly window. */
   closedAt: number | null;
   closedByName: string | null;
+  /** Append-only progress log, oldest first — see TaskProgressUpdate and addProgressUpdate() in
+   *  services/tasks.ts. Either the assignee or a manager/admin can post an entry, any time
+   *  before the task is 'closed'. Always present (created as [] in assignTask()). */
+  progressUpdates: TaskProgressUpdate[];
   /** Same meaning and lifecycle as Tender.isTestData — see its doc comment. */
   isTestData?: boolean;
 }

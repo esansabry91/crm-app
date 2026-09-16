@@ -188,13 +188,16 @@ service cloud.firestore {
           )
         );
 
-      // Four narrow, mutually exclusive write shapes — everything else about a task (title,
+      // Five narrow, mutually exclusive write shapes — everything else about a task (title,
       // description, department, assignee) is frozen once created:
       //   1. Manager/admin: change priority any time before the task is closed.
       //   2. Manager/admin: confirm a staff-completed task ('staffCompleted' -> 'closed').
       //   3. Manager/admin: reopen a staff-completed task that wasn't actually done
       //      ('staffCompleted' -> 'open', clearing staffCompletedAt).
       //   4. The assignee themselves: mark their own open task done ('open' -> 'staffCompleted').
+      //   5. Manager/admin OR the assignee: append one entry to progressUpdates (arrayUnion, so
+      //      this can never remove/edit an existing entry, only add one) — any time before the
+      //      task is closed, same cutoff as priority above.
       allow update: if isSignedIn()
         && (
           (
@@ -208,12 +211,18 @@ service cloud.firestore {
             || (resource.data.status == 'staffCompleted'
                 && request.resource.data.status == 'open'
                 && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'staffCompletedAt']))
+            || (resource.data.status != 'closed'
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['progressUpdates']))
           )
           || (
             isTaskAssignee(resource.data)
-            && resource.data.status == 'open'
-            && request.resource.data.status == 'staffCompleted'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'staffCompletedAt'])
+            && (
+              (resource.data.status == 'open'
+                && request.resource.data.status == 'staffCompleted'
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'staffCompletedAt']))
+              || (resource.data.status != 'closed'
+                  && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['progressUpdates']))
+            )
           )
         );
 
