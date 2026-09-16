@@ -18,7 +18,18 @@ export function useTasks() {
     const unsub = onSnapshot(
       collection(db, 'tasks'),
       (snap) => {
-        setTasks(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<StaffTask, 'id'>) })));
+        // progressUpdates defaults to [] for any task assigned before that field existed (it
+        // was added after the first Task Board release) — Firestore simply omits a field that
+        // was never written, so an older doc comes back with it `undefined` at runtime despite
+        // StaffTask's type claiming it's always an array. Without this default, every access
+        // to progressUpdates.length in TaskBoardPage crashed the whole page for any account
+        // with a pre-existing task.
+        setTasks(
+          snap.docs.map((d) => {
+            const data = d.data() as Omit<StaffTask, 'id'>;
+            return { id: d.id, ...data, progressUpdates: data.progressUpdates || [] };
+          })
+        );
         setLoading(false);
       },
       (err) => {
