@@ -345,7 +345,7 @@ service cloud.firestore {
       // widened Active-Project-detail update rule above. Deliberately no hasOnly() field
       // allowlist here (unlike that rule) — every field on this doc IS a per-site detail field,
       // so there is nothing narrower to carve out.
-      function canReachTenderSiteDetails() {
+      function canReachTenderSiteDetails(siteId) {
         return isAdmin()
           || get(/databases/$(database)/documents/tenders/$(tenderId)).data.ownerUid == request.auth.uid
           || (
@@ -370,8 +370,8 @@ service cloud.firestore {
           );
       }
       match /siteDetails/{siteId} {
-        allow read: if isActiveUser() && canReachTenderSiteDetails();
-        allow write: if isActiveUser() && canReachTenderSiteDetails();
+        allow read: if isActiveUser() && canReachTenderSiteDetails(siteId);
+        allow write: if isActiveUser() && canReachTenderSiteDetails(siteId);
       }
     }
 
