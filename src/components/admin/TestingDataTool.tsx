@@ -134,6 +134,9 @@ export default function TestingDataTool() {
     return sites.filter((s) => s.name.toLowerCase().includes(needle)).slice(0, 25);
   }, [sites, siteLookupQuery]);
 
+  // Deliberately excludes invoices and tasks from this live on-page count — same reasoning
+  // as the code comment on the "Currently tagged as test data" card below: both still get
+  // fully deleted by the button, this indicator just isn't wired up to every collection.
   const taggedCount =
     tenders.filter((t) => t.isTestData).length +
     guards.filter((g) => g.isTestData).length +
@@ -182,7 +185,8 @@ export default function TestingDataTool() {
         e.message = `[reading current counts] ${e.message}`;
         throw e;
       }
-      const total = counts.tenders + counts.sites + counts.guards + counts.bufferGuards + counts.invoices;
+      const total =
+        counts.tenders + counts.sites + counts.guards + counts.bufferGuards + counts.invoices + counts.tasks;
       if (total === 0) {
         setResetMessage({ text: 'Nothing is currently tagged as test data — nothing to delete.', isError: false });
         return;
@@ -193,7 +197,8 @@ export default function TestingDataTool() {
           `- ${counts.sites} Duty Roster site(s), plus their schedule data\n` +
           `- ${counts.guards} Guard Bank guard(s)\n` +
           `- ${counts.bufferGuards} buffer guard(s)\n` +
-          `- ${counts.invoices} Branch Collection invoice(s)\n\n` +
+          `- ${counts.invoices} Branch Collection invoice(s)\n` +
+          `- ${counts.tasks} Task Board task(s)\n\n` +
           `Any real guard still deployed at a test site will be released back to the Guard Pool first. This cannot be undone. ` +
           `(This does not reset invoice numbering — a brand/branch/client's running sequence is left as-is so a future real invoice never risks reusing a number.)`
       );
@@ -207,7 +212,8 @@ export default function TestingDataTool() {
       setResetMessage({
         text:
           `Deleted ${result.tenders} tender(s), ${result.history} history entrie(s), ${result.sites} site(s), ` +
-          `${result.months} schedule record(s), ${result.guards} guard(s), ${result.bufferGuards} buffer guard(s), and ${result.invoices} invoice(s).` +
+          `${result.months} schedule record(s), ${result.guards} guard(s), ${result.bufferGuards} buffer guard(s), ` +
+          `${result.invoices} invoice(s), and ${result.tasks} task(s).` +
           (result.guardsReleased > 0 ? ` Released ${result.guardsReleased} real guard(s) back to the Guard Pool.` : ''),
         isError: false,
       });
@@ -258,9 +264,10 @@ export default function TestingDataTool() {
             <h3 className="text-sm font-semibold text-slate-800">Currently tagged as test data</h3>
             <p className="text-xs text-slate-400 mt-0.5 max-w-2xl">
               {taggedCount} record{taggedCount === 1 ? '' : 's'} across tenders, sites, guards and
-              buffer guards (this count doesn't include Branch Collection invoices, which the
-              button below still deletes — see it for the up-to-date total across everything,
-              invoices included). Deleting is permanent — each tender's history log and each
+              buffer guards (this count doesn't include Branch Collection invoices or Task
+              Board tasks, which the button below still deletes — see it for the up-to-date
+              total across everything, invoices and tasks included). Deleting is permanent —
+              each tender's history log and each
               site's schedule data goes with it, any real guard still deployed at a test site is
               released back to the Guard Pool first, and invoice numbering sequences are left
               untouched so a future real invoice never risks reusing a number.
