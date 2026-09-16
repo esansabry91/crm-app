@@ -6,11 +6,11 @@ import { useBranches } from '../hooks/useBranches';
 import { useTenderHistory } from '../hooks/useTenderHistory';
 import {
   acceptReassignment,
+  assignFirstActiveBranch,
   backfillActiveBranch,
   cancelReassignment,
   closeOutProject,
   requestReassignBranch,
-  setActiveBranch,
 } from '../services/tenders';
 import RenewContractModal from '../components/active-projects/RenewContractModal';
 import { formatDate, formatRM } from '../utils/format';
@@ -282,12 +282,12 @@ export default function ActiveProjectsPage() {
     const current = t.activeBranch;
     if (newBranch === current) return;
     if (!current) {
-      // First-ever assignment — nothing exists yet under a different branch for a receiving
-      // manager to protect or choose about, so this stays instant (see setActiveBranch()'s doc
-      // comment).
+      // First-ever assignment — uncontested (no receiving manager needs to accept), but a
+      // Duty Roster site can already exist for this project (see assignFirstActiveBranch()'s
+      // doc comment) so this still needs to sweep it over, not just flip activeBranch.
       const confirmed = window.confirm(`Assign "${t.clientName}" to ${newBranch}'s Active Projects?`);
       if (!confirmed) return;
-      setActiveBranch(t.id, newBranch);
+      assignFirstActiveBranch(t, newBranch);
       return;
     }
     const confirmed = window.confirm(

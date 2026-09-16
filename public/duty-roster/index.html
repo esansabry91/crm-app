@@ -496,12 +496,13 @@
               <select id="leaveCoverGuard"></select>
             </div>
           </div>
-          <!-- Admin + Branch Manager only (see canAssignSupportGuard()) — mirrors the "Assign a
-               support guard" panel in every way except it's triggered from THIS side (the guard
-               going on leave) instead of from the destination site's own unfilled-slot list, and
-               it also writes the "Support (Other Site)" safeguard leave entry at his home site
-               automatically (see syncHomeSiteSupportLeave()) instead of relying on someone to
-               remember to do it by hand. -->
+          <!-- Admin, Branch Manager, or the branch's own Operation Staff (see
+               canAssignSupportGuard()) — mirrors the "Assign a support guard" panel in every way
+               except it's triggered from THIS side (the guard going on leave) instead of from the
+               destination site's own unfilled-slot list, and it also writes the "Support (Other
+               Site)" safeguard leave entry at his home site automatically (see
+               syncHomeSiteSupportLeave()) instead of relying on someone to remember to do it by
+               hand. -->
           <div class="fieldrow" id="leaveSupportRow" hidden>
             <div style="flex:1;">
               <label class="small">From site (same branch)</label>
@@ -618,9 +619,9 @@
           </div>
         </div>
 
-        <!-- Admin + Branch Manager only (see canAssignSupportGuard()) — a Staff/dutyStaff
-             account never sees this panel at all, since picking a guard out of ANOTHER site's
-             roster is a cross-site action, unlike everything else on this tab. -->
+        <!-- Admin, Branch Manager, or the branch's own Operation Staff — see
+             canAssignSupportGuard(). Hidden only for Payroll/HR, who get no edit access on
+             this tab at all. -->
         <div class="panel" id="supportGuardPanel" hidden>
           <h2><span>Assign a support guard</span><span class="chev" aria-hidden="true">&#9662;</span></h2>
           <div class="panel-body">
@@ -984,9 +985,9 @@
   function canConfirmInvoiceSummary(){
     return state.canEdit;
   }
-  // Confirming/unconfirming Combined Hours is the same cross-site-aware, branch-level action as
-  // assigning a support guard (canAssignSupportGuard()) — Admin/HQ, or this site's own Branch
-  // Manager; never dutyStaff/Payroll, who only ever read the result once it's set.
+  // Unlike canAssignSupportGuard() (which now also includes a branch's own dutyStaff — see its
+  // doc comment), locking in Combined Hours stays Admin/HQ or this site's own Branch Manager
+  // only; dutyStaff/Payroll only ever read the result once it's set.
   function canConfirmCombinedHours(){
     return state.canEdit && (state.isPrivileged || state.myRole === "branchManager");
   }
@@ -3959,13 +3960,16 @@
   // everywhere else (grid, calendar, exports) with no separate code path, and
   // computeGuardSummary for why the hours count toward THIS site's own totals.
   //
-  // Admin + Branch Manager only — picking a guard out of ANOTHER site's roster is a cross-site
-  // action, unlike everything else on this tab, which a dutyStaff/Payroll account never gets.
-  // This is enforced here in the UI only (same as every other write this tool makes) — see
-  // firestore.rules' /sites/{id}/months block, which doesn't distinguish roles beyond Payroll's
-  // read-only lockdown.
+  // Admin, Branch Manager, or the branch's own Operation Staff (dutyStaff) — picking a guard
+  // out of ANOTHER site's roster is a cross-site action, but otherBranchSites()/canReachSite()
+  // already scope that to sites in the SAME branch, so a dutyStaff account can only ever borrow
+  // from (or lend to) their own branch's other sites, never a different branch entirely. Only
+  // Payroll/HR (never granted state.canEdit at all) are excluded. This is enforced here in the
+  // UI only (same as every other write this tool makes) — see firestore.rules'
+  // /sites/{id}/months block, which already doesn't distinguish roles beyond Payroll's
+  // read-only lockdown, so this UI change alone is enough to unlock it.
   function canAssignSupportGuard(){
-    return state.canEdit && (state.isPrivileged || state.myRole === "branchManager");
+    return state.canEdit && (state.isPrivileged || state.myRole === "branchManager" || state.myRole === "dutyStaff");
   }
 
   // Guards from another site in the same branch, straight out of state.configsCache — already

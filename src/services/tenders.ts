@@ -1093,16 +1093,56 @@ export async function setSubmissionExpiryDate(tenderId: string, submissionExpiry
 }
 
 /**
- * Sets activeBranch directly, with no pending/accept step — for DepartmentRepairTool.tsx's
- * data-cleanup use only (fixing a tender that's missing or has a stale activeBranch), and for
- * the very first assignment of an unassigned Won tender (see handleBranchChange in
- * ActiveProjectsPage.tsx: nothing yet exists for a receiving branch to protect in either case,
- * so there's nothing to gain by routing it through requestReassignBranch()/acceptReassignment()
- * below). Never call this to MOVE an already-active project from one branch to another —
- * that's exactly the case those two exist to handle safely.
+ * Sets activeBranch directly, with no pending/accept step and no site-branch sweep — for
+ * DepartmentRepairTool.tsx's data-cleanup use only (fixing a tender that's missing or has a
+ * stale activeBranch). Deliberately narrow: a repair-tool correction to a metadata typo
+ * shouldn't cascade into moving real Duty Roster sites around as a side effect. Never call this
+ * for an ordinary branch assignment/reassignment from the UI — see assignFirstActiveBranch() for
+ * a Won tender's first assignment, and requestReassignBranch()/acceptReassignment() below for
+ * MOVING an already-active project from one branch to another.
  */
 export async function setActiveBranch(tenderId: string, activeBranch: string) {
   await updateDoc(doc(db, 'tenders', tenderId), { activeBranch, updatedAt: Date.now() });
+}
+
+/**
+ * Moves every Duty Roster site linked to this tender that's still actually "following" it
+ * (its own `branch` still equals `fromBranch`, including both being null) over to `toBranch` —
+ * a site already delegated to a different branch (see createTenderSite()'s branchOverride
+ * param / ProjectDetailsModal.tsx's "Managing Branch" picker) is deliberately left alone.
+ * Shared by acceptReassignment()'s 'bring-over' choice and assignFirstActiveBranch() below —
+ * both are "the duty roster follows the project" moves, just with (acceptReassignment) or
+ * without (assignFirstActiveBranch) a contested branch on the other end to protect first.
+ */
+async function moveFollowingSitesToBranch(tenderId: string, fromBranch: string | null, toBranch: string): Promise<void> {
+  const snap = await getDocs(query(collection(db, 'sites'), where('tenderId', '==', tenderId)));
+  const sitesFollowingProject = snap.docs.filter((d) => (d.data().branch ?? null) === (fromBranch ?? null));
+  await Promise.all(
+    sitesFollowingProject.map((d) => updateDoc(d.ref, { branch: toBranch, updatedAt: Date.now() }))
+  );
+}
+
+/**
+ * The FIRST-EVER branch assignment of a Won tender whose `activeBranch` has never been set (see
+ * handleBranchChange in ActiveProjectsPage.tsx) — uncontested, so unlike
+ * requestReassignBranch()/acceptReassignment() below there's no receiving Branch Manager who
+ * needs to accept anything.
+ *
+ * This does NOT mean no Duty Roster site can already exist for this project, though — an
+ * unassigned tender's linked sites (created via Project Details' "+ Add Site", or an
+ * HQ-submitted tender that backfillActiveBranchIfMissing() deliberately skips — see its own doc
+ * comment) fall back to the tender's own `department` as their `branch` (see
+ * createTenderSite()'s doc comment). Sweeping those over here, the same way
+ * acceptReassignment()'s 'bring-over' choice does for a later reassignment, is what keeps this
+ * first assignment from silently orphaning an already-live duty roster: without it, the site's
+ * own `branch` field never moves off the tender's old `department`, so firestore.rules'
+ * canReachSite() keeps scoping it there forever — the project shows up in the new branch's
+ * Active Projects (activeBranch now matches), but its Duty Roster never does.
+ */
+export async function assignFirstActiveBranch(tender: Tender, toBranch: string): Promise<void> {
+  const fromBranch = tender.activeBranch || tender.department || null;
+  await moveFollowingSitesToBranch(tender.id, fromBranch, toBranch);
+  await updateDoc(doc(db, 'tenders', tender.id), { activeBranch: toBranch, updatedAt: Date.now() });
 }
 
 /** Answers the one-time "single site or multiple sites" question (see Tender.siteMode's doc
@@ -1173,18 +1213,17 @@ export async function acceptReassignment(
   toBranch: string,
   choice: 'bring-over' | 'new'
 ) {
-  const snap = await getDocs(query(collection(db, 'sites'), where('tenderId', '==', tenderId)));
-  const sitesFollowingProject = snap.docs.filter((d) => (d.data().branch ?? null) === (fromBranch ?? null));
-  await Promise.all(
-    sitesFollowingProject.map((d) =>
-      updateDoc(
-        d.ref,
-        choice === 'bring-over'
-          ? { branch: toBranch, updatedAt: Date.now() }
-          : { tenderId: null, archived: true, archivedAt: Date.now(), updatedAt: Date.now() }
+  if (choice === 'bring-over') {
+    await moveFollowingSitesToBranch(tenderId, fromBranch, toBranch);
+  } else {
+    const snap = await getDocs(query(collection(db, 'sites'), where('tenderId', '==', tenderId)));
+    const sitesFollowingProject = snap.docs.filter((d) => (d.data().branch ?? null) === (fromBranch ?? null));
+    await Promise.all(
+      sitesFollowingProject.map((d) =>
+        updateDoc(d.ref, { tenderId: null, archived: true, archivedAt: Date.now(), updatedAt: Date.now() })
       )
-    )
-  );
+    );
+  }
   await updateDoc(doc(db, 'tenders', tenderId), {
     activeBranch: toBranch,
     pendingReassignment: null,
