@@ -223,6 +223,11 @@
   .pill.inactive{ background:var(--critical-soft); color:var(--critical); }
   .pill.warn{ background:var(--warn-soft); color:var(--warn); }
   .pill.info{ background:var(--accent-soft); color:var(--accent); }
+  .rosterlock{ display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin:2px 0 10px; }
+  .rosterlock .hint{ font-size:12px; color:var(--muted); }
+  table.gt td[draggable="true"]{ cursor:grab; }
+  table.gt td.dragging{ opacity:0.4; }
+  table.gt td.drop-target{ box-shadow:inset 0 0 0 2px var(--accent); background:var(--accent-soft); }
 
   .loglist{ display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto; }
   .logitem{ font-size:12.5px; padding:8px 10px; background:var(--surface-2); border-radius:8px; border-left:3px solid var(--accent); }
@@ -345,6 +350,16 @@
 
     <div class="tablewrap" id="gridView" hidden>
       <div class="rtitle" id="gridTitle"></div>
+      <!-- Lock/unlock bar for drag-to-swap rearranging — see canManageRosterLock(),
+           isRosterLocked(), performDragSwap() and lockRoster()/unlockRoster() below. The
+           toggle + discard buttons are hidden entirely for anyone who isn't Admin/HQ or this
+           site's own Branch Manager (dutyStaff/Payroll see only the status pill). -->
+      <div class="rosterlock">
+        <span class="pill" id="rosterLockStatus"></span>
+        <button class="btn sm" id="rosterLockToggleBtn" type="button" hidden></button>
+        <button class="btn sm danger" id="rosterDiscardBtn" type="button" hidden>Discard changes</button>
+        <span class="hint" id="rosterLockHint" hidden>Drag a guard's tile onto another to swap them &mdash; nothing counts anywhere else until you Lock.</span>
+      </div>
       <div class="legend" id="gridLegend"></div>
       <div class="gt-wrap">
         <table class="gt" id="gridTable">
@@ -964,7 +979,7 @@
     // an existing one. guardId points at a real config guard (sourceMode "restday"), or —
     // exactly like tempGuards/supportGuards above — an id in one of those same two dicts
     // (sourceMode "temp"/"support"), resolved everywhere the same way via guardById().
-    return { month:key, overrides:{}, leaves:{}, log:[], tempGuards:{}, supportGuards:{}, extraGuards:{}, confirmed:null, confirmedIncoming:null, updatedAt: nowIso() };
+    return { month:key, overrides:{}, leaves:{}, log:[], tempGuards:{}, supportGuards:{}, extraGuards:{}, confirmed:null, confirmedIncoming:null, rosterLocked:true, draftOverrides:{}, updatedAt: nowIso() };
   }
   // Whether a Branch Manager (or Admin/HQ) has locked in this month's Combined Hours figures —
   // { byUid, byName, at } once confirmed, else null. Payroll can only ever see/export the frozen
@@ -1016,6 +1031,24 @@
   function monthTempGuards(ms){ if(!ms.tempGuards) ms.tempGuards = {}; return ms.tempGuards; }
   function monthSupportGuards(ms){ if(!ms.supportGuards) ms.supportGuards = {}; return ms.supportGuards; }
   function monthExtraGuards(ms){ if(!ms.extraGuards) ms.extraGuards = {}; return ms.extraGuards; }
+  // Same defensive-accessor idiom as the three above, for the Roster sheet's drag-to-swap
+  // staging area (see performDragSwap()/lockRoster() below) — months saved before this
+  // feature existed won't have it.
+  function monthDraftOverrides(ms){ if(!ms.draftOverrides) ms.draftOverrides = {}; return ms.draftOverrides; }
+  // Same tri-state idiom as guards' own `active !== false` a few lines up — a month saved
+  // before this feature existed has no rosterLocked field at all, and should read as locked
+  // (the safe default: nothing to rearrange, dragging simply isn't offered) rather than
+  // silently unlocked.
+  function isRosterLocked(ms){ return ms.rosterLocked !== false; }
+  // Same branch-level permission tier as canConfirmCombinedHours()/canAssignSupportGuard's
+  // pre-widening version — Admin/HQ, or this site's own Branch Manager, can unlock the
+  // Roster sheet for drag-to-swap rearranging and lock it back in. Deliberately narrower than
+  // canAssignSupportGuard() (which now also includes dutyStaff): rearranging the WHOLE
+  // roster is a bigger lever than covering one open slot, so this stays Branch Manager/Admin
+  // only, same as Combined Hours.
+  function canManageRosterLock(){
+    return state.canEdit && (state.isPrivileged || state.myRole === "branchManager");
+  }
   // Every Additional Guard (Temporary) entry whose date range covers dateStr and whose shift
   // matches shiftId, in a stable order (plain object key insertion order) — generateMonth()
   // derives each entry's slot index from this order every run (never persisted), so as long as
@@ -1362,6 +1395,19 @@
     const key = monthCacheKey(state.currentSiteId, state.currentMonth);
     if(!state.monthsCache[key]) state.monthsCache[key] = emptyMonthState(state.currentMonth);
     return state.monthsCache[key];
+  }
+  // Merges any in-progress drag rearrangement (monthDraftOverrides()) on top of the live,
+  // committed overrides — used ONLY for the Roster sheet's own grid render (see render()'s
+  // rosterSheetResult below and performDragSwap()), so dragging a tile shows its effect there
+  // immediately without ever touching ms.overrides itself. Every OTHER generateMonth() call in
+  // this file (Combined Hours, the plain Summary Report, Guard Bank sync, the Adjustments tab's
+  // own temp/support/additional-guard availability pickers, the Roster Calendar view) keeps
+  // calling generateMonth() against the real currentMonthState() elsewhere, entirely unaffected
+  // until lockRoster() actually merges the draft in for real.
+  function currentMonthStateForRosterDisplay(){
+    const ms = currentMonthState();
+    if(isRosterLocked(ms)) return ms;
+    return Object.assign({}, ms, { overrides: Object.assign({}, ms.overrides, monthDraftOverrides(ms)) });
   }
   // Resolves a slot's assigned id against the permanent roster first, then falls back to this
   // month's temporary guards (assigned via "Assign a temporary guard" in Adjustments) — this is
@@ -2004,7 +2050,14 @@
     lastResult = generateMonth(y, m, currentConfig(), currentMonthState());
     renderRosterStats(lastResult);
     renderRosterCalendar(y, m, lastResult);
-    renderRosterGrid(y, m, lastResult);
+    // The Roster sheet (grid) alone previews an in-progress drag rearrangement — everything
+    // else on this page (including the Calendar view just above, Combined Hours, Summary
+    // Report) stays on lastResult/the live overrides untouched until Lock. See
+    // currentMonthStateForRosterDisplay()'s doc comment.
+    const rosterSheetResult = isRosterLocked(currentMonthState())
+      ? lastResult
+      : generateMonth(y, m, currentConfig(), currentMonthStateForRosterDisplay());
+    renderRosterGrid(y, m, rosterSheetResult);
     renderFairness(lastResult);
     renderConflicts(lastResult);
     renderSummaryReport(lastResult);
@@ -2248,6 +2301,31 @@
     const nDays = result.days.length;
     const firstWeekday = new Date(Date.UTC(y, m-1, 1)).getUTCDay();
 
+    // Lock bar — see canManageRosterLock()/isRosterLocked()/monthDraftOverrides() above and
+    // performDragSwap()/lockRoster()/unlockRoster()/discardDraftChanges() below. Reads the
+    // REAL currentMonthState() (not `result`, which may already be the draft-merged preview)
+    // since the lock status and pending-change count are about the underlying data, not this
+    // one render's computed schedule.
+    const lockMs = currentMonthState();
+    const locked = isRosterLocked(lockMs);
+    const canDrag = canManageRosterLock();
+    const draftCount = Object.keys(monthDraftOverrides(lockMs)).length;
+    const statusEl = $("#rosterLockStatus");
+    if(statusEl){
+      statusEl.className = "pill " + (locked ? "info" : "warn");
+      statusEl.textContent = locked ? "\uD83D\uDD12 Locked" : ("\uD83D\uDD13 Unlocked" + (draftCount ? ` \u2014 ${draftCount} pending change${draftCount===1?"":"s"}` : " \u2014 rearranging"));
+    }
+    const toggleBtn = $("#rosterLockToggleBtn");
+    if(toggleBtn){
+      toggleBtn.hidden = !canDrag;
+      toggleBtn.textContent = locked ? "Unlock to rearrange" : "Lock roster";
+    }
+    const discardBtn = $("#rosterDiscardBtn");
+    if(discardBtn) discardBtn.hidden = !(canDrag && !locked && draftCount > 0);
+    const hintEl = $("#rosterLockHint");
+    if(hintEl) hintEl.hidden = locked || !canDrag;
+    const dragEnabled = canDrag && !locked;
+
     $("#gridTitle").textContent = `${monthLabel(y,m)} — ${nDays} days, starting on a ${FULL_DAY_NAMES[firstWeekday]}`;
     function windowText(st){
       const endHour = (st.startHour + st.hours) % 24;
@@ -2281,7 +2359,7 @@
           if(!guardId) return;
           const sd = shiftDefs[stIdx];
           const flag = result.flags.find(f => f.date===day.dateStr && f.shiftId===(sd?sd.id:"shift"+stIdx) && f.slot===slotIdx && f.restDay);
-          map.set(guardId, {stIdx, slot:slotIdx, flagged:!!flag, flagReason: flag ? flag.reason : null, label: sd?sd.label:""});
+          map.set(guardId, {stIdx, slot:slotIdx, flagged:!!flag, flagReason: flag ? flag.reason : null, label: sd?sd.label:"", shiftId: sd?sd.id:("shift"+stIdx)});
         });
       });
       return map;
@@ -2329,8 +2407,11 @@
             return `<td class="off">OFF</td>`;
           }
           const cls = SHIFT_CLASSES[a.stIdx % SHIFT_CLASSES.length] + (a.flagged ? " restday" : "");
-          const title = `Shift ${SHIFT_LETTERS[a.stIdx%SHIFT_LETTERS.length]} (${a.label}), Post ${a.slot+1}` + (a.flagged ? ` — ${a.flagReason}` : "");
-          return `<td class="${cls}" title="${escapeHtml(title)}">${SHIFT_LETTERS[a.stIdx%SHIFT_LETTERS.length]} P${a.slot+1}</td>`;
+          const title = `Shift ${SHIFT_LETTERS[a.stIdx%SHIFT_LETTERS.length]} (${a.label}), Post ${a.slot+1}` + (a.flagged ? ` — ${a.flagReason}` : "") + (dragEnabled ? " — drag onto another tile to swap" : "");
+          const dragAttrs = dragEnabled
+            ? ` draggable="true" data-roster-date="${escapeHtml(result.days[dayIdx].dateStr)}" data-roster-shift="${escapeHtml(a.shiftId)}" data-roster-slot="${a.slot}"`
+            : "";
+          return `<td class="${cls}" title="${escapeHtml(title)}"${dragAttrs}>${SHIFT_LETTERS[a.stIdx%SHIFT_LETTERS.length]} P${a.slot+1}</td>`;
         }).join("");
         const worked = result.totalShifts[g.id] || 0;
         return `<tr><td class="g">${escapeHtml(g.name)}</td>${cells}<td class="tot">${worked}</td><td class="tot">${nDays-worked}</td></tr>`;
@@ -5384,6 +5465,162 @@
     render();
   });
 
+  /* ---------------- roster sheet: drag-to-swap + lock ----------------
+   * Lets a Branch Manager (or Admin/HQ — see canManageRosterLock()) rearrange the Roster sheet
+   * by dragging one shift tile onto another, exactly like "Swap two shifts" above, but as a
+   * gesture on the grid itself. Nothing counts anywhere else in the app until they click "Lock
+   * roster": every drag while unlocked only ever writes into monthDraftOverrides() (see
+   * currentMonthStateForRosterDisplay()'s doc comment) — Combined Hours, the plain Summary
+   * Report, invoicing, Guard Bank sync and every other generateMonth() caller in this file stay
+   * on the live, locked-in ms.overrides throughout. Locking merges the draft into ms.overrides
+   * for real, which — same as any other live edit — revokes an already-confirmed Combined
+   * Hours/Invoice Summary figure via persistMonth()'s own revokeConfirmationIfPresent().
+   */
+
+  // Persists a draft-only rearrangement (writes monthDraftOverrides(), never ms.overrides
+  // itself) without the Combined-Hours/Invoice-confirmation revocation persistMonth() normally
+  // triggers on every edit — nothing "real" has changed yet, so an already-confirmed figure
+  // should stay valid until lockRoster() actually applies the draft. Same
+  // state.suppressConfirmRevoke idiom the Confirm/Unconfirm Combined Hours buttons already use.
+  function persistDraftChange(){
+    state.suppressConfirmRevoke = true;
+    persistMonth();
+    state.suppressConfirmRevoke = false;
+  }
+
+  // Swaps two Roster-sheet tiles via drag — same two-key override write "Swap two shifts"
+  // performs above, just scoped to monthDraftOverrides() instead of ms.overrides, and computed
+  // against currentMonthStateForRosterDisplay() so dragging twice in a row correctly builds on
+  // whatever the first drag already showed rather than the original locked-in arrangement.
+  function performDragSwap(src, dest){
+    if(!canManageRosterLock()) return;
+    const ms = currentMonthState();
+    if(isRosterLocked(ms)) return;
+    const {y, m} = parseYM(state.currentMonth);
+    const site = currentConfig().site;
+    const result = generateMonth(y, m, currentConfig(), currentMonthStateForRosterDisplay());
+    const shiftDefsA = computeShiftDefsForDay(site, dowMon(src.date));
+    const shiftDefsB = computeShiftDefsForDay(site, dowMon(dest.date));
+    const dayA = result.days.find(d => d.dateStr === src.date);
+    const dayB = result.days.find(d => d.dateStr === dest.date);
+    const stIdxA = shiftDefsA.findIndex(s => s.id === src.shiftId);
+    const stIdxB = shiftDefsB.findIndex(s => s.id === dest.shiftId);
+    const guardA = (dayA && stIdxA>=0) ? dayA.assignments[stIdxA][src.slot] : null;
+    const guardB = (dayB && stIdxB>=0) ? dayB.assignments[stIdxB][dest.slot] : null;
+    const draft = monthDraftOverrides(ms);
+    draft[src.date+"|"+src.shiftId+"|"+src.slot] = guardB || null;
+    draft[dest.date+"|"+dest.shiftId+"|"+dest.slot] = guardA || null;
+    persistDraftChange();
+    showToast('Swapped — click "Lock roster" to apply.');
+    render();
+  }
+
+  // Event delegation on #gridBody rather than per-cell listeners — the grid body is fully
+  // replaced via innerHTML on every render() (see renderRosterGrid()), so individually-attached
+  // listeners would need re-attaching every render anyway; delegating from a container that's
+  // never itself replaced avoids that entirely. Runs once at boot (see "boot" below) — safe to
+  // set up unconditionally since it's a no-op unless a cell actually carries draggable="true"
+  // (only true when dragEnabled — see renderRosterGrid()), which is itself gated on
+  // canManageRosterLock() + !locked.
+  function initRosterDragToSwap(){
+    const body = $("#gridBody");
+    if(!body) return;
+    let dragSrc = null;
+
+    body.addEventListener("dragstart", e => {
+      const td = e.target.closest('td[draggable="true"]');
+      if(!td) return;
+      dragSrc = {
+        date: td.getAttribute("data-roster-date"),
+        shiftId: td.getAttribute("data-roster-shift"),
+        slot: Number(td.getAttribute("data-roster-slot")),
+      };
+      td.classList.add("dragging");
+      if(e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+    });
+    body.addEventListener("dragend", () => {
+      $$('#gridBody td.dragging').forEach(el => el.classList.remove("dragging"));
+      $$('#gridBody td.drop-target').forEach(el => el.classList.remove("drop-target"));
+      dragSrc = null;
+    });
+    body.addEventListener("dragover", e => {
+      if(!dragSrc) return;
+      const td = e.target.closest('td[draggable="true"]');
+      if(!td) return;
+      e.preventDefault();
+      td.classList.add("drop-target");
+    });
+    body.addEventListener("dragleave", e => {
+      const td = e.target.closest('td[draggable="true"]');
+      if(td) td.classList.remove("drop-target");
+    });
+    body.addEventListener("drop", e => {
+      const td = e.target.closest('td[draggable="true"]');
+      if(!td || !dragSrc) return;
+      e.preventDefault();
+      td.classList.remove("drop-target");
+      const dest = {
+        date: td.getAttribute("data-roster-date"),
+        shiftId: td.getAttribute("data-roster-shift"),
+        slot: Number(td.getAttribute("data-roster-slot")),
+      };
+      const src = dragSrc;
+      dragSrc = null;
+      if(dest.date === src.date && dest.shiftId === src.shiftId && dest.slot === src.slot) return;
+      performDragSwap(src, dest);
+    });
+  }
+
+  function lockRoster(){
+    if(!canManageRosterLock()) return;
+    const ms = currentMonthState();
+    if(isRosterLocked(ms)) return;
+    const draft = monthDraftOverrides(ms);
+    const n = Object.keys(draft).length;
+    Object.assign(ms.overrides, draft);
+    ms.draftOverrides = {};
+    ms.rosterLocked = true;
+    addLog(n > 0 ? `Locked the roster sheet — applied ${n} drag rearrangement${n===1?"":"s"}.` : "Locked the roster sheet.");
+    persistMonth();
+    showToast("Roster locked.");
+    render();
+  }
+
+  function unlockRoster(){
+    if(!canManageRosterLock()) return;
+    const ms = currentMonthState();
+    if(!isRosterLocked(ms)) return;
+    ms.rosterLocked = false;
+    addLog("Unlocked the roster sheet for drag rearranging.");
+    persistMonth();
+    showToast('Roster unlocked — drag tiles to rearrange, then "Lock roster" to apply.');
+    render();
+  }
+
+  function discardDraftChanges(){
+    if(!canManageRosterLock()) return;
+    const ms = currentMonthState();
+    if(isRosterLocked(ms)) return;
+    if(!Object.keys(monthDraftOverrides(ms)).length) return;
+    ms.draftOverrides = {};
+    persistDraftChange();
+    showToast("Discarded the unlocked rearrangement.");
+    render();
+  }
+
+  $("#rosterLockToggleBtn").addEventListener("click", () => {
+    if(isRosterLocked(currentMonthState())) unlockRoster(); else lockRoster();
+  });
+  $("#rosterDiscardBtn").addEventListener("click", () => {
+    openConfirmModal({
+      title: "Discard unlocked changes",
+      message: "Discard every drag you've made since unlocking? The roster sheet goes back to what's currently locked in.",
+      okLabel: "Discard",
+      danger: true,
+      onConfirm: discardDraftChanges,
+    });
+  });
+
   /* ---------------- site management ---------------- */
   // opts.skipRender lets renderSiteSelect() (called from inside render() itself) switch sites
   // without kicking off a second, nested render() pass — the caller's own in-progress render()
@@ -6229,6 +6466,7 @@
   render();
   initDb();
   initCollapsiblePanels();
+  initRosterDragToSwap();
   // Safety net: if the db handshake hasn't settled the sync indicator within
   // a few seconds (slow network, an unexpected rejection somewhere in the
   // chain, etc.), stop showing "Connecting…" forever — the app is already
