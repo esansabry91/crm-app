@@ -183,6 +183,13 @@
   .panel{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px; box-shadow:var(--shadow); margin-bottom:16px; }
   .panel h2{ font-size:14px; margin-bottom:2px; }
   .panel .sub{ font-size:12px; color:var(--muted); margin:0 0 12px; }
+  .section-title{ margin:18px 0 10px; padding:8px 12px; background:var(--accent-soft); border-left:3px solid var(--accent); border-radius:8px; font-size:12px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:0.04em; }
+  .section-title:first-child{ margin-top:0; }
+  .panel > h2{ display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer; user-select:none; }
+  .panel > h2 .chev{ font-size:11px; color:var(--muted); transition:transform .15s ease; flex:none; }
+  .panel.collapsed > h2{ margin-bottom:0; }
+  .panel.collapsed .chev{ transform:rotate(-90deg); }
+  .panel.collapsed .panel-body{ display:none; }
   .fieldrow{ display:flex; gap:8px; margin-bottom:10px; }
   .fieldrow input, .fieldrow select{ flex:1; }
   input[type=text], input[type=number], input[type=date], input[type=time], select{
@@ -462,8 +469,10 @@
   <div class="view" id="view-adjust">
     <div class="grid2">
       <div>
-        <div class="panel">
-          <h2>Mark a guard on leave</h2>
+        <div class="section-title">In-Roster</div>
+        <div class="panel" id="leavePanel">
+          <h2><span>Mark a guard on leave</span><span class="chev" aria-hidden="true">&#9662;</span></h2>
+          <div class="panel-body">
           <p class="sub">If the guard has a shift on this date, choose how it's covered: a temporary guard, or another guard who's currently on a rest day</p>
           <div class="fieldrow">
             <div style="flex:1;"><label class="small">Guard</label><select id="leaveGuard"></select></div>
@@ -511,60 +520,7 @@
             <tbody id="leaveTableBody"></tbody>
           </table>
           <p class="empty" id="leaveEmpty" hidden>No leave recorded for this month.</p>
-        </div>
-
-        <div class="panel">
-          <h2>Assign a temporary guard</h2>
-          <p class="sub">Cover an empty slot left by a guard on leave/absent/MC when nobody else in the roster is available &mdash; logs the temp guard's name and rate so you can pay them</p>
-          <div class="fieldrow">
-            <div style="flex:1;"><label class="small">Unfilled slot to cover <span style="color:var(--critical);">*</span></label><select id="tempSlotSelect"></select></div>
           </div>
-          <div class="fieldrow">
-            <div style="flex:1;"><label class="small">Temporary guard's name <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardName" placeholder="e.g. Zul (relief)"></div>
-            <div style="flex:1;"><label class="small">Rate for this shift (RM) <span style="color:var(--critical);">*</span></label><input type="number" id="tempGuardRate" min="0" step="0.01" placeholder="0.00"></div>
-          </div>
-          <div class="fieldrow">
-            <div style="flex:1;"><label class="small">MyKad number <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardMykad" placeholder="901231-14-5678" maxlength="14"></div>
-            <div style="flex:1;"><label class="small">Age <span style="color:var(--critical);">*</span></label><input type="number" id="tempGuardAge" min="16" max="80" step="1"></div>
-            <div style="flex:1;"><label class="small">Phone number <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardPhone" placeholder="e.g. 012-3456789"></div>
-          </div>
-          <div class="fieldrow">
-            <div style="flex:1;"><label class="small">State <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardState" placeholder="e.g. Selangor"></div>
-            <div style="flex:1;"><label class="small">City <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardCity" placeholder="e.g. Petaling Jaya"></div>
-          </div>
-          <p class="sub" id="tempGuardMatchHint" hidden style="color:var(--accent);"></p>
-          <button class="btn primary sm" id="assignTempBtn">Assign temporary guard</button>
-          <p class="empty" id="tempSlotEmpty" hidden>No unfilled slots this month &mdash; nothing needs a temporary guard right now.</p>
-          <table class="simple" style="margin-top:12px;">
-            <thead><tr><th>Date</th><th>Shift / Slot</th><th>Name</th><th>Rate (RM)</th><th></th></tr></thead>
-            <tbody id="tempGuardTableBody"></tbody>
-          </table>
-          <p class="empty" id="tempGuardEmpty" hidden>No temporary guards used this month yet.</p>
-          <p class="sub" id="tempGuardTotal" style="margin-top:8px;"></p>
-        </div>
-
-        <!-- Admin + Branch Manager only (see canAssignSupportGuard()) — a Staff/dutyStaff
-             account never sees this panel at all, since picking a guard out of ANOTHER site's
-             roster is a cross-site action, unlike everything else on this tab. -->
-        <div class="panel" id="supportGuardPanel" hidden>
-          <h2>Assign a support guard</h2>
-          <p class="sub">Cover an empty slot with a real guard borrowed from another site in the same branch &mdash; unlike a temporary guard, this links back to his own record and counts toward his own hours, without ever touching his home site's own man-hour totals (see the Summary Report's "Combined" column there). The guard list only shows who's actually free at their own site that day.</p>
-          <div class="fieldrow">
-            <div style="flex:1;"><label class="small">Unfilled slot to cover</label><select id="supportSlotSelect"></select></div>
-          </div>
-          <div class="fieldrow">
-            <div style="flex:1;"><label class="small">From site (same branch)</label><select id="supportOriginSite"></select></div>
-            <div style="flex:1;"><label class="small">Guard</label><select id="supportGuardSelect"></select></div>
-          </div>
-          <p class="empty" id="supportNoOtherSites" hidden>No other sites in this branch yet &mdash; nothing to borrow a guard from.</p>
-          <button class="btn primary sm" id="assignSupportBtn">Assign support guard</button>
-          <p class="empty" id="supportSlotEmpty" hidden>No unfilled slots this month &mdash; nothing needs a support guard right now.</p>
-          <table class="simple" style="margin-top:12px;">
-            <thead><tr><th>Date</th><th>Shift / Slot</th><th>Name</th><th>From site</th><th></th></tr></thead>
-            <tbody id="supportGuardTableBody"></tbody>
-          </table>
-          <p class="empty" id="supportGuardEmpty" hidden>No support guards used this month yet.</p>
-          <p class="sub" style="margin-top:8px;">Also mark him "Support (Other Site)" under "Mark a guard on leave" at his OWN site for this date, so his home roster doesn't also schedule him there.</p>
         </div>
 
         <!-- "Additional Guard (Temporary)" — a client-requested extra guard post for a date
@@ -579,7 +535,8 @@
              check across a whole range (unlike the single-date pickers above); a real conflict
              still shows up afterward as a flag on the calendar, exactly like a manual override. -->
         <div class="panel" id="additionalGuardPanel">
-          <h2>Assign an additional guard</h2>
+          <h2><span>Assign an additional guard</span><span class="chev" aria-hidden="true">&#9662;</span></h2>
+          <div class="panel-body">
           <p class="sub">For an extra guard post the client asked for beyond this site's normal Client Site Requirement, for a date range &mdash; bills separately as "Additional Guard (Temporary)" in Branch Collection, and still counts toward payroll like any other shift.</p>
           <div class="fieldrow">
             <div style="flex:1;"><label class="small">Shift <span style="color:var(--critical);">*</span></label><select id="addlGuardShiftSelect"></select></div>
@@ -625,6 +582,66 @@
             <tbody id="additionalGuardTableBody"></tbody>
           </table>
           <p class="empty" id="additionalGuardEmpty" hidden>No additional guard posts added for this month yet.</p>
+          </div>
+        </div>
+
+        <div class="section-title">Replacement</div>
+        <div class="panel" id="tempGuardPanel">
+          <h2><span>Assign a temporary guard</span><span class="chev" aria-hidden="true">&#9662;</span></h2>
+          <div class="panel-body">
+          <p class="sub">Cover an empty slot left by a guard on leave/absent/MC when nobody else in the roster is available &mdash; logs the temp guard's name and rate so you can pay them</p>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">Unfilled slot to cover <span style="color:var(--critical);">*</span></label><select id="tempSlotSelect"></select></div>
+          </div>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">Temporary guard's name <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardName" placeholder="e.g. Zul (relief)"></div>
+            <div style="flex:1;"><label class="small">Rate for this shift (RM) <span style="color:var(--critical);">*</span></label><input type="number" id="tempGuardRate" min="0" step="0.01" placeholder="0.00"></div>
+          </div>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">MyKad number <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardMykad" placeholder="901231-14-5678" maxlength="14"></div>
+            <div style="flex:1;"><label class="small">Age <span style="color:var(--critical);">*</span></label><input type="number" id="tempGuardAge" min="16" max="80" step="1"></div>
+            <div style="flex:1;"><label class="small">Phone number <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardPhone" placeholder="e.g. 012-3456789"></div>
+          </div>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">State <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardState" placeholder="e.g. Selangor"></div>
+            <div style="flex:1;"><label class="small">City <span style="color:var(--critical);">*</span></label><input type="text" id="tempGuardCity" placeholder="e.g. Petaling Jaya"></div>
+          </div>
+          <p class="sub" id="tempGuardMatchHint" hidden style="color:var(--accent);"></p>
+          <button class="btn primary sm" id="assignTempBtn">Assign temporary guard</button>
+          <p class="empty" id="tempSlotEmpty" hidden>No unfilled slots this month &mdash; nothing needs a temporary guard right now.</p>
+          <table class="simple" style="margin-top:12px;">
+            <thead><tr><th>Date</th><th>Shift / Slot</th><th>Name</th><th>Rate (RM)</th><th></th></tr></thead>
+            <tbody id="tempGuardTableBody"></tbody>
+          </table>
+          <p class="empty" id="tempGuardEmpty" hidden>No temporary guards used this month yet.</p>
+          <p class="sub" id="tempGuardTotal" style="margin-top:8px;"></p>
+          </div>
+        </div>
+
+        <!-- Admin + Branch Manager only (see canAssignSupportGuard()) — a Staff/dutyStaff
+             account never sees this panel at all, since picking a guard out of ANOTHER site's
+             roster is a cross-site action, unlike everything else on this tab. -->
+        <div class="panel" id="supportGuardPanel" hidden>
+          <h2><span>Assign a support guard</span><span class="chev" aria-hidden="true">&#9662;</span></h2>
+          <div class="panel-body">
+          <p class="sub">Cover an empty slot with a real guard borrowed from another site in the same branch &mdash; unlike a temporary guard, this links back to his own record and counts toward his own hours, without ever touching his home site's own man-hour totals (see the Summary Report's "Combined" column there). The guard list only shows who's actually free at their own site that day.</p>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">Unfilled slot to cover</label><select id="supportSlotSelect"></select></div>
+          </div>
+          <div class="fieldrow">
+            <div style="flex:1;"><label class="small">From site (same branch)</label><select id="supportOriginSite"></select></div>
+            <div style="flex:1;"><label class="small">Guard</label><select id="supportGuardSelect"></select></div>
+          </div>
+          <p class="empty" id="supportNoOtherSites" hidden>No other sites in this branch yet &mdash; nothing to borrow a guard from.</p>
+          <button class="btn primary sm" id="assignSupportBtn">Assign support guard</button>
+          <p class="empty" id="supportSlotEmpty" hidden>No unfilled slots this month &mdash; nothing needs a support guard right now.</p>
+          <table class="simple" style="margin-top:12px;">
+            <thead><tr><th>Date</th><th>Shift / Slot</th><th>Name</th><th>From site</th><th></th></tr></thead>
+            <tbody id="supportGuardTableBody"></tbody>
+          </table>
+          <p class="empty" id="supportGuardEmpty" hidden>No support guards used this month yet.</p>
+          <p class="sub" style="margin-top:8px;">Also mark him "Support (Other Site)" under "Mark a guard on leave" at his OWN site for this date, so his home roster doesn't also schedule him there.</p>
+          </div>
         </div>
       </div>
 
@@ -6177,9 +6194,37 @@
     }
   }
 
+  /**
+   * Collapsible Adjustments-tab panels ("Mark a guard on leave", "Assign an additional
+   * guard", "Assign a temporary guard", "Assign a support guard") — a display toggle on
+   * static DOM, unrelated to and safe alongside renderSupportGuardPanel()'s own show/hide of
+   * #supportGuardPanel by permission (that toggles the `hidden` attribute on the *whole*
+   * panel; this toggles a `collapsed` class that only hides the `.panel-body` — the header
+   * stays visible either way, and a permission-hidden support panel simply has nothing
+   * visible to collapse). State persists per-panel in localStorage so it survives a reload.
+   */
+  function initCollapsiblePanels(){
+    const ids = ["leavePanel", "additionalGuardPanel", "tempGuardPanel", "supportGuardPanel"];
+    ids.forEach(id => {
+      const panel = document.getElementById(id);
+      if(!panel) return;
+      const header = panel.querySelector("h2");
+      if(!header) return;
+      const key = "dutyRoster.panelCollapsed." + id;
+      let collapsed = false;
+      try{ collapsed = localStorage.getItem(key) === "1"; }catch(e){}
+      if(collapsed) panel.classList.add("collapsed");
+      header.addEventListener("click", () => {
+        panel.classList.toggle("collapsed");
+        try{ localStorage.setItem(key, panel.classList.contains("collapsed") ? "1" : "0"); }catch(e){}
+      });
+    });
+  }
+
   /* ---------------- boot ---------------- */
   render();
   initDb();
+  initCollapsiblePanels();
   // Safety net: if the db handshake hasn't settled the sync indicator within
   // a few seconds (slow network, an unexpected rejection somewhere in the
   // chain, etc.), stop showing "Connecting…" forever — the app is already
