@@ -5645,14 +5645,23 @@
     render();
   }
 
+  // Discarding always lands back on locked — there's no "stay unlocked with nothing pending"
+  // state. The only two ways to leave "unlocked" are to apply the draft (lockRoster()) or
+  // throw it away, and either way the roster sheet re-locks, so it's never left sitting open
+  // for rearranging once there's nothing left to rearrange. Uses persistDraftChange()'s
+  // suppressConfirmRevoke, same as before: ms.overrides itself never changes here (the
+  // discarded draft never touched it), only rosterLocked flips back to true, so an
+  // already-confirmed Combined Hours/Invoice figure stays valid.
   function discardDraftChanges(){
     if(!canManageRosterLock()) return;
     const ms = currentMonthState();
     if(isRosterLocked(ms)) return;
     if(!Object.keys(monthDraftOverrides(ms)).length) return;
     ms.draftOverrides = {};
+    ms.rosterLocked = true;
+    addLog("Discarded the unlocked rearrangement and locked the roster sheet again.");
     persistDraftChange();
-    showToast("Discarded the unlocked rearrangement.");
+    showToast("Discarded — roster sheet is locked again.");
     render();
   }
 
@@ -5662,7 +5671,7 @@
   $("#rosterDiscardBtn").addEventListener("click", () => {
     openConfirmModal({
       title: "Discard unlocked changes",
-      message: "Discard every drag you've made since unlocking? The roster sheet goes back to what's currently locked in.",
+      message: "Discard every drag you've made since unlocking and lock the roster sheet again? It goes back to exactly what's currently locked in.",
       okLabel: "Discard",
       danger: true,
       onConfirm: discardDraftChanges,
