@@ -5662,6 +5662,31 @@
   // created via the other bootstrap path in recombineSitesAndRender's empty-branch case),
   // otherwise creates it. No-ops once handled, and no-ops entirely when there's no deep link —
   // safe to call on every site-list update.
+  // Best-effort: is there ALREADY a Duty Roster site for this tenderId anywhere, even in a
+  // branch state.sites doesn't currently include? state.sites is branch-scoped for a
+  // non-privileged viewer (see reachableSiteQueries()), so "no site with this tenderId in
+  // state.sites" does NOT mean "no site exists" — it can just mean the real one's `branch`
+  // field points somewhere this viewer's own branch-scoped listener doesn't cover (the exact
+  // gap assignFirstActiveBranch()/acceptReassignment() in the CRM's services/tenders.ts exist
+  // to close going forward, and the same gap an OLDER, already-affected project can still be
+  // sitting in). Without this check, two different people visiting the SAME project's Duty
+  // Roster link from two different branches used to each get their own createSite() call,
+  // silently producing a genuine duplicate site document with the same name — see
+  // handleTenderDeepLinkIfNeeded() below, the only caller.
+  //
+  // firestore.rules' canReadSite() already grants read access to a Won tender's current
+  // activeBranch (or its owner, or HQ) for ANY of its linked sites regardless of that site's
+  // OWN branch — the same widening useTenderSites.ts's "Linked Sites" list in Project Details
+  // relies on — so this plain where('tenderId','==',...) query correctly finds an
+  // already-existing site under a different branch instead of erroring, for exactly the
+  // people who'd actually be hitting this deep link.
+  function findAnySiteForTenderId(tenderId){
+    if(!dbHandle) return Promise.resolve(null);
+    return dbHandle.collection("sites").where("tenderId", "==", tenderId).limit(1).get()
+      .then(snap => snap.empty ? null : { id: snap.docs[0].id, branch: snap.docs[0].data().branch || null })
+      .catch(() => null);
+  }
+
   function handleTenderDeepLinkIfNeeded(){
     if(deepLinkHandled) return;
     if(deepLinkSiteId){
@@ -5680,17 +5705,33 @@
     }
     if(!deepLinkTenderId) return;
     const existing = state.sites.find(s => s.tenderId === deepLinkTenderId);
-    deepLinkHandled = true;
     if(existing){
+      deepLinkHandled = true;
       if(state.currentSiteId !== existing.id) switchSite(existing.id);
       return;
     }
-    createSite(
-      deepLinkParams.get("clientName") || "New site",
-      deepLinkParams.get("branch") || null,
-      deepLinkTenderId,
-      deepLinkParams.get("clientName") || null
-    );
+    // Set BEFORE the async check below, same as every other branch in this function — later
+    // site-list updates (this runs again on every onSnapshot fire while it's false) must not
+    // re-enter this while the findAnySiteForTenderId() check is still in flight, or they'd race
+    // into the exact double-create this check exists to prevent.
+    deepLinkHandled = true;
+    findAnySiteForTenderId(deepLinkTenderId).then(found => {
+      if(found){
+        // A site already exists — just under a branch state.sites doesn't currently cover — so
+        // don't create a duplicate. It won't be selectable here (this viewer's branch-scoped
+        // listener still won't return it), but the real fix is getting its `branch` field back
+        // in sync (see assignFirstActiveBranch()/acceptReassignment() in the CRM), not creating
+        // a second one; surface that plainly rather than silently doing nothing.
+        showToast("This project already has a Duty Roster site under a different branch — ask an Admin to check its branch assignment.", true);
+        return;
+      }
+      createSite(
+        deepLinkParams.get("clientName") || "New site",
+        deepLinkParams.get("branch") || null,
+        deepLinkTenderId,
+        deepLinkParams.get("clientName") || null
+      );
+    });
   }
 
   function renameSite(id, name){
@@ -6381,16 +6422,28 @@
         if(!merged.length){
           // A pending tenderId deep link (see top of file) means we're about to create the one
           // site that tender actually needs anyway — skip the generic seed and create the real
-          // one directly, instead of leaving an unused "Site 1" sitting alongside it.
+          // one directly, instead of leaving an unused "Site 1" sitting alongside it. But first
+          // check findAnySiteForTenderId() — this viewer's OWN branch-scoped list being empty
+          // doesn't mean no site exists anywhere for this tenderId (see its doc comment); without
+          // this check, a second branch visiting the same project's Duty Roster link used to
+          // create a genuine duplicate site every time.
           if(deepLinkTenderId && !deepLinkSiteId && !deepLinkHandled){
             deepLinkHandled = true;
-            createSite(
-              deepLinkParams.get("clientName") || "New site",
-              deepLinkParams.get("branch") || null,
-              deepLinkTenderId,
-              deepLinkParams.get("clientName") || null
-            );
-            setSyncUi("on");
+            findAnySiteForTenderId(deepLinkTenderId).then(found => {
+              if(found){
+                showToast("This project already has a Duty Roster site under a different branch — ask an Admin to check its branch assignment.", true);
+                setSyncUi("off");
+                render();
+                return;
+              }
+              createSite(
+                deepLinkParams.get("clientName") || "New site",
+                deepLinkParams.get("branch") || null,
+                deepLinkTenderId,
+                deepLinkParams.get("clientName") || null
+              );
+              setSyncUi("on");
+            });
             return;
           }
           // Genuinely nothing this user can reach — no auto-seed any more (see
