@@ -23,16 +23,68 @@ const navItemClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-100'
   );
 
+const SECTION_COLLAPSED_KEY_PREFIX = 'ipsb-desktop-sidebar-section-collapsed:';
+
+/** Mirrors getStoredSidebarCollapsed() above, but per-section — a per-browser convenience only,
+ *  so a read/write failure (private browsing, blocked storage) just falls back to "open" rather
+ *  than breaking anything. */
+function getStoredSectionCollapsed(title: string): boolean {
+  try {
+    return localStorage.getItem(SECTION_COLLAPSED_KEY_PREFIX + title) === '1';
+  } catch {
+    return false;
+  }
+}
+
 /**
- * A small, non-interactive group label above a run of nav links — purely visual grouping (see
- * NavContent's own sections below), not its own route or permission boundary. `first:pt-0` so
- * the very first section in a role's menu doesn't carry the same top gap every later one does.
+ * A colored, click-to-collapse group header above a run of nav links — purely visual/
+ * organizational grouping (see NavContent's own sections below), not its own route or
+ * permission boundary. Gives each section a shaded background so the segmentation reads at a
+ * glance, and lets a user tuck away sections they don't use — each section's open/closed choice
+ * is remembered per-browser via localStorage, keyed by its title, so e.g. collapsing "History"
+ * stays collapsed across reloads. `first:mt-0` so the very first section in a role's menu
+ * doesn't carry the same top gap every later one does.
  */
-function NavSectionTitle({ children }: { children: ReactNode }) {
+function NavSection({ title, children }: { title: string; children: ReactNode }) {
+  const [collapsed, setCollapsed] = useState(() => getStoredSectionCollapsed(title));
+
+  const toggle = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SECTION_COLLAPSED_KEY_PREFIX + title, next ? '1' : '0');
+      } catch {
+        // Best-effort only — the collapsed state still works for this session either way.
+      }
+      return next;
+    });
+  };
+
   return (
-    <p className="px-3 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400 first:pt-0">
-      {children}
-    </p>
+    <div className="mt-3 first:mt-0">
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={!collapsed}
+        className="w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 transition-colors"
+      >
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</span>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={clsx('shrink-0 text-slate-400 transition-transform', collapsed ? '-rotate-90' : 'rotate-0')}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {!collapsed && <div className="pt-1 space-y-1">{children}</div>}
+    </div>
   );
 }
 
@@ -74,103 +126,115 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      <nav className="flex-1 px-3 py-4 overflow-y-auto">
         {profile?.role !== 'dutyStaff' &&
           profile?.role !== 'payroll' &&
           profile?.role !== 'finance' &&
           profile?.role !== 'hr' && (
           <>
-            <NavSectionTitle>Performance Dashboard</NavSectionTitle>
-            <NavLink to="/pipeline" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🗂️</span> Pipeline
-            </NavLink>
-            <NavLink to="/analysis" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>📊</span> Pipeline Analysis
-            </NavLink>
+            <NavSection title="Performance Dashboard">
+              <NavLink to="/pipeline" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🗂️</span> Pipeline
+              </NavLink>
+              <NavLink to="/analysis" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>📊</span> Pipeline Analysis
+              </NavLink>
+            </NavSection>
 
-            <NavSectionTitle>Branch Operation</NavSectionTitle>
-            <NavLink to="/active-projects" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🏗️</span> Active Projects
-            </NavLink>
-            <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🗓️</span> Duty Roster
-            </NavLink>
+            <NavSection title="Branch Operation">
+              <NavLink to="/active-projects" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🏗️</span> Active Projects
+              </NavLink>
+              <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🗓️</span> Duty Roster
+              </NavLink>
+            </NavSection>
 
             {/* "Branch Collection" is now the SECTION title, not the tab itself — see
                 BranchCollectionPage.tsx's own header, renamed to match. */}
-            <NavSectionTitle>Branch Collection</NavSectionTitle>
-            <NavLink to="/branch-collection" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🧾</span> Invoices &amp; Revenue
-            </NavLink>
+            <NavSection title="Branch Collection">
+              <NavLink to="/branch-collection" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🧾</span> Invoices &amp; Revenue
+              </NavLink>
+            </NavSection>
 
-            <NavSectionTitle>Human Resource</NavSectionTitle>
-            <NavLink to="/guard-bank" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🛡️</span> Guard Bank
-            </NavLink>
+            <NavSection title="Human Resource">
+              <NavLink to="/guard-bank" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🛡️</span> Guard Bank
+              </NavLink>
+            </NavSection>
 
-            <NavSectionTitle>History</NavSectionTitle>
-            <NavLink to="/past-projects" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>📦</span> Past Projects
-            </NavLink>
-            <NavLink to="/archive" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🗄️</span> Archive
-            </NavLink>
+            <NavSection title="History">
+              <NavLink to="/past-projects" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>📦</span> Past Projects
+              </NavLink>
+              <NavLink to="/archive" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🗄️</span> Archive
+              </NavLink>
+            </NavSection>
 
-            <NavSectionTitle>Tools</NavSectionTitle>
-            <NavLink to="/quotation-calculator" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🧮</span> Quotation Calculator
-            </NavLink>
+            <NavSection title="Tools">
+              <NavLink to="/quotation-calculator" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🧮</span> Quotation Calculator
+              </NavLink>
+            </NavSection>
           </>
         )}
         {profile?.role === 'dutyStaff' && (
           <>
-            <NavSectionTitle>Branch Operation</NavSectionTitle>
-            <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🗓️</span> Duty Roster
-            </NavLink>
-            <NavSectionTitle>Human Resource</NavSectionTitle>
-            <NavLink to="/guard-bank" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🛡️</span> Guard Bank
-            </NavLink>
+            <NavSection title="Branch Operation">
+              <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🗓️</span> Duty Roster
+              </NavLink>
+            </NavSection>
+            <NavSection title="Human Resource">
+              <NavLink to="/guard-bank" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🛡️</span> Guard Bank
+              </NavLink>
+            </NavSection>
           </>
         )}
         {profile?.role === 'payroll' && (
-          <>
-            <NavSectionTitle>Branch Operation</NavSectionTitle>
+          <NavSection title="Branch Operation">
             <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
               <span aria-hidden>🗓️</span> Duty Roster
             </NavLink>
-          </>
+          </NavSection>
         )}
         {/* HR is Payroll's Duty Roster reach PLUS full Guard Bank access — see the Role doc
             comment in types.ts and isHr()/isPayrollLike() in firestore.rules. */}
         {profile?.role === 'hr' && (
           <>
-            <NavSectionTitle>Branch Operation</NavSectionTitle>
-            <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🗓️</span> Duty Roster
-            </NavLink>
-            <NavSectionTitle>Human Resource</NavSectionTitle>
-            <NavLink to="/guard-bank" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🛡️</span> Guard Bank
-            </NavLink>
+            <NavSection title="Branch Operation">
+              <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🗓️</span> Duty Roster
+              </NavLink>
+            </NavSection>
+            <NavSection title="Human Resource">
+              <NavLink to="/guard-bank" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🛡️</span> Guard Bank
+              </NavLink>
+            </NavSection>
           </>
         )}
         {profile?.role === 'finance' && (
-          <>
-            <NavSectionTitle>Branch Collection</NavSectionTitle>
+          <NavSection title="Branch Collection">
             <NavLink to="/branch-collection" className={navItemClass} onClick={onNavigate}>
               <span aria-hidden>🧾</span> Invoices &amp; Revenue
             </NavLink>
-          </>
+          </NavSection>
         )}
         {/* Admin Settings gets no section title of its own, matching before this restructure —
             now also reachable by a Branch Manager (see the /admin route's allowBranchManager
-            prop in App.tsx), scoped there to just the Team tab. */}
+            prop in App.tsx), scoped there to just the Team tab. Wrapped in the same mt-3
+            first:mt-0 spacing NavSection's own wrapper div uses, now that <nav> no longer applies
+            space-y-1 uniformly (each NavSection controls its own internal link spacing instead). */}
         {(isAdminRole(profile?.role) || profile?.role === 'branchManager') && (
-          <NavLink to="/admin" className={navItemClass} onClick={onNavigate}>
-            <span aria-hidden>⚙️</span> Admin Settings
-          </NavLink>
+          <div className="mt-3 first:mt-0">
+            <NavLink to="/admin" className={navItemClass} onClick={onNavigate}>
+              <span aria-hidden>⚙️</span> Admin Settings
+            </NavLink>
+          </div>
         )}
       </nav>
 
