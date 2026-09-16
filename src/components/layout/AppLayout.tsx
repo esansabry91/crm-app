@@ -66,9 +66,9 @@ function NavSection({ title, children }: { title: string; children: ReactNode })
         type="button"
         onClick={toggle}
         aria-expanded={!collapsed}
-        className="w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 transition-colors"
+        className="w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-md border-l-[3px] border-[#00a3da] bg-[#e6f6fc] hover:bg-[#cceefa] transition-colors"
       >
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-[#283278]">{title}</span>
         <svg
           width="12"
           height="12"
@@ -78,7 +78,7 @@ function NavSection({ title, children }: { title: string; children: ReactNode })
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={clsx('shrink-0 text-slate-400 transition-transform', collapsed ? '-rotate-90' : 'rotate-0')}
+          className={clsx('shrink-0 text-[#283278] transition-transform', collapsed ? '-rotate-90' : 'rotate-0')}
         >
           <polyline points="6 9 12 15 18 9" />
         </svg>
@@ -132,7 +132,7 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
           profile?.role !== 'finance' &&
           profile?.role !== 'hr' && (
           <>
-            <NavSection title="Performance Dashboard">
+            <NavSection title="Client Acquisition">
               <NavLink to="/pipeline" className={navItemClass} onClick={onNavigate}>
                 <span aria-hidden>🗂️</span> Pipeline
               </NavLink>
