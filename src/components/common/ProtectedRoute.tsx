@@ -9,6 +9,7 @@ export default function ProtectedRoute({
   allowBranchManager = false,
   hideFromStaff = false,
   hidePayrollOnly = false,
+  hideHr = false,
   hideFromFinance = false,
 }: {
   children: ReactNode;
@@ -36,6 +37,14 @@ export default function ProtectedRoute({
    * Bank carries the same read/write-affecting data, so it stays out of reach the same way.
    */
   hidePayrollOnly?: boolean;
+  /**
+   * Narrower still: blocks ONLY HR, leaving dutyStaff/branchManager/admin-tier roles through.
+   * Used by Task Board, which HR has no reason to reach (it's Branch Manager <-> Operation
+   * Staff task assignment, not a Guard Bank/Duty Roster concern) but which dutyStaff and
+   * payroll are excluded from differently: dutyStaff needs it (they're the assignee), so it
+   * isn't covered by hideFromStaff; payroll is covered by hidePayrollOnly above instead.
+   */
+  hideHr?: boolean;
   /**
    * The "Finance" role can only ever reach Branch Collection — every other route (including
    * Duty Roster and Guard Bank, which have no hideFromStaff of their own since dutyStaff/payroll
@@ -82,6 +91,10 @@ export default function ProtectedRoute({
   }
 
   if (hidePayrollOnly && profile?.role === 'payroll') {
+    return <Navigate to="/duty-roster" replace />;
+  }
+
+  if (hideHr && profile?.role === 'hr') {
     return <Navigate to="/duty-roster" replace />;
   }
 

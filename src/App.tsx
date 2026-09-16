@@ -9,6 +9,7 @@ import ActiveProjectsPage from './pages/ActiveProjectsPage';
 import PastProjectsPage from './pages/PastProjectsPage';
 import ArchivePage from './pages/ArchivePage';
 import DutyRosterPage from './pages/DutyRosterPage';
+import TaskBoardPage from './pages/TaskBoardPage';
 import GuardBankPage from './pages/GuardBankPage';
 import QuotationCalculatorPage from './pages/QuotationCalculatorPage';
 import AdminPage from './pages/AdminPage';
@@ -106,6 +107,21 @@ export default function App() {
               <ProtectedRoute hideFromFinance>
                 <AppLayout>
                   <DutyRosterPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/task-board"
+            element={
+              // Branch Manager <-> Operation Staff task assignment. hideHr/hidePayrollOnly keep
+              // Payroll and HR out (they have no reason to reach it — see ProtectedRoute.tsx's
+              // doc comment); no hideFromStaff, since dutyStaff IS the assignee side of this
+              // feature and needs to reach it to mark their own tasks done. hideFromFinance stays
+              // for the same reason every other non-Branch-Collection route has it.
+              <ProtectedRoute hidePayrollOnly hideHr hideFromFinance>
+                <AppLayout>
+                  <TaskBoardPage />
                 </AppLayout>
               </ProtectedRoute>
             }

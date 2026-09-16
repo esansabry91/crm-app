@@ -791,3 +791,50 @@ export interface Invoice {
   voidedByName?: string;
   voidReason?: string;
 }
+
+// ---- Task Board (Branch Manager -> Operation Staff task assignment) ----
+
+export type TaskPriority = 'High' | 'Medium' | 'Low';
+
+/**
+ * A single work item a Branch Manager (or admin) assigns to one of their own Operation Staff —
+ * see TaskBoardPage.tsx. Status flow:
+ *   'open'           -> assigned, the assignee hasn't marked it done yet.
+ *   'staffCompleted' -> the assignee clicked "Mark as done" (stamping staffCompletedAt); still
+ *                        waiting on the manager to confirm via closeTask() in services/tasks.ts.
+ *   'closed'         -> the manager confirmed it via the "Close Task" button (stamping closedAt).
+ *                        Only a 'closed' task with closedAt in the CURRENT calendar month counts
+ *                        toward the Completed stat tile/list — see isThisMonth() in
+ *                        TaskBoardPage.tsx. A manager can also send a 'staffCompleted' task back
+ *                        to 'open' via reopenTask() if the work wasn't actually done.
+ * 'open' and 'staffCompleted' both count as still-outstanding ("Open") for the stat tiles — they
+ * never disappear or reset on their own; only a genuinely 'closed' task ever leaves the Open
+ * count, and only once a manager has confirmed it.
+ */
+export interface StaffTask {
+  id: string;
+  title: string;
+  /** Free-form extra detail — optional, unlike title. */
+  description?: string;
+  /** Same branch name as the assignee's own UserProfile.department at the moment the task was
+   *  created — denormalized here so firestore.rules and every client query can scope by branch
+   *  without an extra doc read per task. */
+  department: string;
+  assigneeUid: string;
+  assigneeName: string;
+  priority: TaskPriority;
+  status: 'open' | 'staffCompleted' | 'closed';
+  createdAt: number;
+  createdByUid: string;
+  createdByName: string;
+  /** Set by the assignee themselves when they mark the task done (see markTaskDone() in
+   *  services/tasks.ts) — this is the "Close Date" shown in the task list. Cleared back to null
+   *  if the manager reopens the task via reopenTask(). */
+  staffCompletedAt: number | null;
+  /** Set by the Branch Manager/admin confirming completion (see closeTask() in
+   *  services/tasks.ts) — the date used for the Completed stat tile/list's monthly window. */
+  closedAt: number | null;
+  closedByName: string | null;
+  /** Same meaning and lifecycle as Tender.isTestData — see its doc comment. */
+  isTestData?: boolean;
+}

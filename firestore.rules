@@ -152,6 +152,74 @@ service cloud.firestore {
         || (isBranchManager() && isOwnBranchOperationStaff(resource.data));
     }
 
+    // ---- Task Board (Branch Manager -> Operation Staff task assignment) ----
+    // See the StaffTask status flow doc comment in types.ts: 'open' -> 'staffCompleted' (the
+    // assignee says it's done) -> 'closed' (the manager confirms it). Explicit `data` params
+    // throughout, not ambient match-block variables — see canReachTenderSiteDetails() above for
+    // why relying on an out-of-scope match wildcard is a bug here, not just a style choice.
+    match /tasks/{taskId} {
+      function isTaskAssignee(data) {
+        return data.assigneeUid == request.auth.uid;
+      }
+      function isTaskManager(data) {
+        return isBranchManager() && data.department == myDepartment();
+      }
+
+      allow read: if isSignedIn()
+        && (isAdmin() || isTaskManager(resource.data) || isTaskAssignee(resource.data));
+
+      // Only a Branch Manager (own branch) or admin can create a task, and only ever in the
+      // 'open' state with both completion timestamps unset. A Branch Manager is additionally
+      // required to target a real Operation Staff account in their OWN department — checked via
+      // get() against the assignee's own /users doc, not just trusted from the new task's own
+      // fields, so a manager can't point assigneeUid at a stray/fabricated uid or someone else's
+      // branch even if this were called with a hand-crafted payload.
+      allow create: if isSignedIn()
+        && request.resource.data.status == 'open'
+        && request.resource.data.staffCompletedAt == null
+        && request.resource.data.closedAt == null
+        && (
+          isAdmin()
+          || (
+            isBranchManager()
+            && request.resource.data.department == myDepartment()
+            && get(/databases/$(database)/documents/users/$(request.resource.data.assigneeUid)).data.role == 'dutyStaff'
+            && get(/databases/$(database)/documents/users/$(request.resource.data.assigneeUid)).data.department == myDepartment()
+          )
+        );
+
+      // Four narrow, mutually exclusive write shapes — everything else about a task (title,
+      // description, department, assignee) is frozen once created:
+      //   1. Manager/admin: change priority any time before the task is closed.
+      //   2. Manager/admin: confirm a staff-completed task ('staffCompleted' -> 'closed').
+      //   3. Manager/admin: reopen a staff-completed task that wasn't actually done
+      //      ('staffCompleted' -> 'open', clearing staffCompletedAt).
+      //   4. The assignee themselves: mark their own open task done ('open' -> 'staffCompleted').
+      allow update: if isSignedIn()
+        && (
+          (
+            isAdmin() || isTaskManager(resource.data)
+          ) && (
+            (resource.data.status != 'closed'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['priority']))
+            || (resource.data.status == 'staffCompleted'
+                && request.resource.data.status == 'closed'
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'closedAt', 'closedByName']))
+            || (resource.data.status == 'staffCompleted'
+                && request.resource.data.status == 'open'
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'staffCompletedAt']))
+          )
+          || (
+            isTaskAssignee(resource.data)
+            && resource.data.status == 'open'
+            && request.resource.data.status == 'staffCompleted'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'staffCompletedAt'])
+          )
+        );
+
+      allow delete: if isAdmin() || isTaskManager(resource.data);
+    }
+
     // ---- Branches & brands (admin-editable lookup lists) ----
     match /branches/{branchId} {
       allow read: if isActiveUser();

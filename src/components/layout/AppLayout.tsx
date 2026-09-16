@@ -148,6 +148,9 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
               <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
                 <span aria-hidden>🗓️</span> Duty Roster
               </NavLink>
+              <NavLink to="/task-board" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>📋</span> Task Board
+              </NavLink>
             </NavSection>
 
             {/* "Branch Collection" is now the SECTION title, not the tab itself — see
@@ -185,6 +188,9 @@ function NavContent({ onNavigate, onCollapse }: { onNavigate: () => void; onColl
             <NavSection title="Branch Operation">
               <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
                 <span aria-hidden>🗓️</span> Duty Roster
+              </NavLink>
+              <NavLink to="/task-board" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>📋</span> Task Board
               </NavLink>
             </NavSection>
             <NavSection title="Human Resource">
