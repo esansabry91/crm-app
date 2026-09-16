@@ -4812,12 +4812,60 @@
     });
   });
 
+  // Switches the active top-level tab (Roster / Guards & Shifts / Adjustments / Summary
+  // Report) — extracted out of the click handler below so warnIfRosterUnlockedThenSwitchTab()
+  // can call it directly once a pending-changes warning has been resolved (or found not to
+  // apply), without duplicating this DOM bookkeeping.
+  function activateTab(tab){
+    $$(".tab").forEach(t => t.classList.remove("active"));
+    $$(".view").forEach(v => v.classList.remove("active"));
+    tab.classList.add("active");
+    $("#view-"+tab.getAttribute("data-tab")).classList.add("active");
+  }
+
+  // Guards every top-level tab click while the Roster sheet is unlocked with unresolved drag
+  // rearrangements: Branch Manager/Admin/HQ (canManageRosterLock()) are the only roles who can
+  // ever unlock the roster sheet in the first place, so they're the only ones this warns —
+  // anyone else just switches tabs as before. Switching TO Roster itself is never intercepted
+  // (that's exactly where the pending changes already live), and a locked month, or an
+  // unlocked month with nothing dragged yet, switches tabs immediately too.
+  function warnIfRosterUnlockedThenSwitchTab(tab){
+    if(tab.getAttribute("data-tab") === "roster"){ activateTab(tab); return; }
+    if(!canManageRosterLock()){ activateTab(tab); return; }
+    const ms = currentMonthState();
+    if(isRosterLocked(ms)){ activateTab(tab); return; }
+    const pendingCount = Object.keys(monthDraftOverrides(ms)).length;
+    if(pendingCount === 0){ activateTab(tab); return; }
+    openRosterUnlockedWarningModal(tab, pendingCount);
+  }
+
+  // Purpose-built 3-button modal (Stay / Discard / Lock) for the warning above —
+  // openConfirmModal() only supports a Cancel + one action pair, not enough here. Uses its own
+  // element ids throughout so it never collides with openConfirmModal()/openAlertModal()'s
+  // shared #modalOk/#modalCancel.
+  function openRosterUnlockedWarningModal(tab, pendingCount){
+    const root = $("#modalRoot");
+    root.innerHTML = `
+      <div class="modalveil" id="modalVeil">
+        <div class="modalcard wide">
+          <h3>Roster sheet is unlocked</h3>
+          <p class="msg">You have ${pendingCount} pending drag rearrangement${pendingCount===1?"":"s"} that ${pendingCount===1?"isn't":"aren't"} locked in yet. Lock the roster or discard these changes before leaving this tab.</p>
+          <div class="modalbtns">
+            <button class="btn sm" id="rosterWarnStay" type="button">Stay here</button>
+            <button class="btn sm danger" id="rosterWarnDiscard" type="button">Discard changes</button>
+            <button class="btn sm primary" id="rosterWarnLock" type="button">Lock roster</button>
+          </div>
+        </div>
+      </div>`;
+    $("#rosterWarnStay").addEventListener("click", closeModal);
+    $("#rosterWarnDiscard").addEventListener("click", () => { closeModal(); discardDraftChanges(); activateTab(tab); });
+    $("#rosterWarnLock").addEventListener("click", () => { closeModal(); lockRoster(); activateTab(tab); });
+    $("#modalVeil").addEventListener("click", e => { if(e.target.id === "modalVeil") closeModal(); });
+  }
+
   $$(".tab").forEach(tab => {
     tab.addEventListener("click", () => {
-      $$(".tab").forEach(t => t.classList.remove("active"));
-      $$(".view").forEach(v => v.classList.remove("active"));
-      tab.classList.add("active");
-      $("#view-"+tab.getAttribute("data-tab")).classList.add("active");
+      warnIfRosterUnlockedThenSwitchTab(tab);
     });
   });
 
