@@ -14,7 +14,7 @@
  * (or holiday) at home — classifying it against a shared quota, or independently at the
  * destination, would both under- and over-count his home quota usage.
  */
-import type { GenerateMonthResult, MonthState } from "./types";
+import type { GenerateMonthResult, Guard, MonthState } from "./types";
 import { activeSupportIds, monthSupportGuards, monthTempGuards } from "./rosterModel";
 import { computeShiftDefsForDay } from "./shiftStructure";
 import { configHolidays } from "./holidays";
@@ -22,6 +22,7 @@ import { guardRate, supportGuardRate } from "./rateResolution";
 import type { TenderRateConfig } from "./types";
 import type { GenerateMonthConfig } from "./schedulingEngine";
 import { leaveEntriesFor } from "./rosterModel";
+import { daysInMonth, ymd } from "./dateUtils";
 
 /** The fixed monthly quota: the guard's first 26 non-holiday worked days in a month are
  * "normal," everything past that (still non-holiday) is rest-day work, unconditionally. */
@@ -300,8 +301,14 @@ export function computeSummaryTotals(
 
 export interface CategoryManHours {
   category: string;
-  /** Guards who actually worked hours in this category this month (normalManHours > 0) — a
-   *  roster guard on leave the whole month doesn't inflate this. */
+  /** How many permanent guards the site's active roster requires for this category, as of this
+   *  confirmed month — NOT how many distinct individuals happened to log hours in it. A guard on
+   *  leave the whole month doesn't inflate this, and — just as importantly — a mid-month
+   *  resignation-and-replacement doesn't either: only the guard still on the active roster as of
+   *  month-end counts, so a client-required 1-guard post reads as 1, not 2, even though two people
+   *  physically worked it that month. Temp/support guards never count here (they're covering a
+   *  gap, not part of the site's own required headcount) even though their hours still count
+   *  toward manHours below. */
   headcount: number;
   manHours: number;
 }
@@ -337,6 +344,12 @@ export const UNMATCHED_POSITION_CATEGORY_LABEL = "Unmatched position — needs a
  * their own to match, so — exactly like supportGuardRate() prices them — their hours go under
  * whichever named position currently has the LOWEST rate (the plain "normal guard" rate, never a
  * Leader/Supervisor premium); UNMATCHED_POSITION_CATEGORY_LABEL when no position is priced yet.
+ *
+ * headcount vs manHours are deliberately sourced differently (see CategoryManHours' own doc
+ * comment): manHours is gated on a category actually having billable hours from ANYONE that month
+ * (permanent, temp or support), exactly as before; headcount only counts permanent guards who were
+ * still on the site's active roster as of this month's last day (onActiveRosterForMonth below) —
+ * never temp/support, and never a guard purely because they logged hours before leaving mid-month.
  */
 export function computeCategoryBreakdown(
   y: number,
@@ -355,30 +368,51 @@ export function computeCategoryBreakdown(
   const n = (v: number | undefined) => v || 0;
   const normalManHours = (id: string) => Math.max(0, n(summary[id] && summary[id].manHours) - n(extraGuardHours[id]));
 
-  const buckets = new Map<string, { headcount: number; manHours: number }>();
-  const add = (category: string, hrs: number) => {
+  // A permanent guard still counts toward this confirmed month's required headcount if they
+  // hadn't yet left the active roster by the month's last day — reconstructed against THIS
+  // month's end date (not "today"), so confirming a past month late still gets that month's own
+  // headcount, not whoever happens to be active right now.
+  const monthEndStr = ymd(y, m, daysInMonth(y, m));
+  const onActiveRosterForMonth = (g: Guard) => g.active !== false && (!g.inactiveFrom || monthEndStr < g.inactiveFrom);
+
+  const manHoursByCategory = new Map<string, number>();
+  const addHours = (category: string, hrs: number) => {
     if (hrs <= 0) return;
-    const b = buckets.get(category) || { headcount: 0, manHours: 0 };
-    b.headcount += 1;
-    b.manHours += hrs;
-    buckets.set(category, b);
+    manHoursByCategory.set(category, (manHoursByCategory.get(category) || 0) + hrs);
+  };
+  const headcountByCategory = new Map<string, number>();
+  const addHeadcount = (category: string) => {
+    headcountByCategory.set(category, (headcountByCategory.get(category) || 0) + 1);
   };
 
   if (rateConfig.guardRateMode === "same") {
-    guards.forEach((g) => add(SAME_MODE_CATEGORY_LABEL, normalManHours(g.id)));
-    [...tempIds, ...supportIds].forEach((id) => add(SAME_MODE_CATEGORY_LABEL, normalManHours(id)));
+    guards.forEach((g) => {
+      addHours(SAME_MODE_CATEGORY_LABEL, normalManHours(g.id));
+      if (onActiveRosterForMonth(g)) addHeadcount(SAME_MODE_CATEGORY_LABEL);
+    });
+    [...tempIds, ...supportIds].forEach((id) => addHours(SAME_MODE_CATEGORY_LABEL, normalManHours(id)));
   } else if (rateConfig.guardRateMode === "multiple") {
     const positions = rateConfig.guardRatePositions || [];
     guards.forEach((g) => {
       const match = g.position && positions.some((p) => p.name === g.position);
-      add(match ? g.position! : UNMATCHED_POSITION_CATEGORY_LABEL, normalManHours(g.id));
+      const category = match ? g.position! : UNMATCHED_POSITION_CATEGORY_LABEL;
+      addHours(category, normalManHours(g.id));
+      if (onActiveRosterForMonth(g)) addHeadcount(category);
     });
     const priced = positions.filter((p) => Number.isFinite(Number(p.rate)));
     const cheapest = priced.length ? priced.reduce((min, p) => (Number(p.rate) < Number(min.rate) ? p : min)) : null;
-    [...tempIds, ...supportIds].forEach((id) => add(cheapest ? cheapest.name : UNMATCHED_POSITION_CATEGORY_LABEL, normalManHours(id)));
+    [...tempIds, ...supportIds].forEach((id) => addHours(cheapest ? cheapest.name : UNMATCHED_POSITION_CATEGORY_LABEL, normalManHours(id)));
   }
 
-  return Array.from(buckets.entries()).map(([category, b]) => ({ category, ...b }));
+  // Bucket existence still gated purely on manHours (unchanged from before) — a category only
+  // surfaces if something was actually billable in it this month; headcount is looked up
+  // independently and defaults to 0 for the (unusual) case where a category's only hours came
+  // from temp/support coverage with no active permanent guard of its own.
+  return Array.from(manHoursByCategory.entries()).map(([category, manHours]) => ({
+    category,
+    headcount: headcountByCategory.get(category) || 0,
+    manHours,
+  }));
 }
 
 export function normalHoursLabel(config: GenerateMonthConfig): number {
