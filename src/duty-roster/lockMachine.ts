@@ -42,9 +42,15 @@ export interface LockActionOutcome {
   /** The updated month state to persist (via whatever save call the hook layer uses). */
   ms: MonthState;
   toast: string;
-  /** True when this outcome actually needs a Firestore write — a couple of no-op guard clauses
-   * (not permitted, already in the target state) return `persist: false`. */
-  persist: boolean;
+  /** Whether the persist call should pass `{ suppressConfirmRevoke: true }` (see
+   * useMonthState.ts's persist()). Matches the original exactly: lockRoster()/unlockRoster()
+   * both persist via the NORMAL path (persistMonth() — confirmation IS revoked), because
+   * committing the draft, or opening the roster up for rearranging, both mean the schedule may
+   * have genuinely changed or is about to. discardDraftChanges()/performDragSwap() both persist
+   * via persistDraftChange() (suppressConfirmRevoke: true) — a draft that's been thrown away
+   * never touched ms.overrides, and an in-progress (not yet locked-in) drag isn't a committed
+   * change either, so neither should invalidate an existing confirmation. */
+  suppressConfirmRevoke: boolean;
 }
 
 /** lockRoster() — merges the in-progress draft into the real overrides, clears the draft, and
@@ -63,7 +69,7 @@ export function applyLock(ms: MonthState, session: RosterSession): LockActionOut
     rosterLocked: true,
   };
   next = appendLog(next, n > 0 ? `Locked the roster sheet — applied ${n} drag rearrangement${n === 1 ? "" : "s"}.` : "Locked the roster sheet.");
-  return { ms: next, toast: "Roster locked.", persist: true };
+  return { ms: next, toast: "Roster locked.", suppressConfirmRevoke: false };
 }
 
 /** unlockRoster() — flips rosterLocked to false so drag-to-swap becomes available. Returns null
@@ -73,7 +79,7 @@ export function applyUnlock(ms: MonthState, session: RosterSession): LockActionO
   if (!isRosterLocked(ms)) return null;
   let next: MonthState = { ...ms, rosterLocked: false };
   next = appendLog(next, "Unlocked the roster sheet for drag rearranging.");
-  return { ms: next, toast: 'Roster unlocked — drag tiles to rearrange, then "Lock roster" to apply.', persist: true };
+  return { ms: next, toast: 'Roster unlocked — drag tiles to rearrange, then "Lock roster" to apply.', suppressConfirmRevoke: false };
 }
 
 /** discardDraftChanges() — throws away the draft and re-locks. Discarding always lands back on
@@ -93,7 +99,7 @@ export function applyDiscard(ms: MonthState, session: RosterSession): LockAction
     next,
     hadDraft ? "Discarded the unlocked rearrangement and locked the roster sheet again." : "Locked the roster sheet (no changes to discard)."
   );
-  return { ms: next, toast: hadDraft ? "Discarded — roster sheet is locked again." : "Roster locked.", persist: true };
+  return { ms: next, toast: hadDraft ? "Discarded — roster sheet is locked again." : "Roster locked.", suppressConfirmRevoke: true };
 }
 
 /** Merges any in-progress drag rearrangement (draftOverrides) on top of the live, committed
@@ -147,7 +153,7 @@ export function computeDragSwap(
   draft[dest.date + "|" + dest.shiftId + "|" + dest.slot] = guardA || null;
 
   const next: MonthState = { ...ms, draftOverrides: draft };
-  return { ms: next, toast: 'Swapped — click "Lock roster" to apply.', persist: true };
+  return { ms: next, toast: 'Swapped — click "Lock roster" to apply.', suppressConfirmRevoke: true };
 }
 
 /** warnIfRosterUnlockedThenRun() equivalent, minus the cross-frame concerns (see module doc
