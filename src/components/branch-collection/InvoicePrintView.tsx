@@ -92,6 +92,7 @@ function LineRowsTable({ rows, mode }: { rows: InvoiceLineRow[]; mode: InvoiceBi
           {mode === 'manhour' ? (
             <>
               <th className="font-medium pr-2">MAN-HOURS</th>
+              <th className="font-medium pr-2">HEADCOUNT</th>
               <th className="font-medium pr-2">RATE</th>
               <th className="font-medium text-right pr-2">AMOUNT</th>
             </>
@@ -113,6 +114,7 @@ function LineRowsTable({ rows, mode }: { rows: InvoiceLineRow[]; mode: InvoiceBi
                 <td className="pr-2 uppercase">
                   {row.manHours || 0} × {row.category}
                 </td>
+                <td className="pr-2">{row.headcount || 0}</td>
                 <td className="pr-2">{row.rate.toFixed(2)}</td>
                 <td className="text-right pr-2">{formatMoney(row.amount)}</td>
               </>

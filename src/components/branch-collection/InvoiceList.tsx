@@ -476,7 +476,10 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
                 <tr className="text-left text-xs text-slate-400">
                   <th className="font-medium pb-1">Category</th>
                   {billingMode === 'manhour' ? (
-                    <th className="font-medium pb-1 w-24">Man-hours</th>
+                    <>
+                      <th className="font-medium pb-1 w-24">Man-hours</th>
+                      <th className="font-medium pb-1 w-20">Headcount</th>
+                    </>
                   ) : (
                     <>
                       <th className="font-medium pb-1 w-20">Headcount</th>
@@ -499,16 +502,27 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
                       />
                     </td>
                     {billingMode === 'manhour' ? (
-                      <td className="pr-2 py-1">
-                        <input
-                          type="number"
-                          step="0.5"
-                          value={row.manHours === 0 || row.manHours == null ? '' : row.manHours}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => updateRow(gi, ri, { manHours: Number(e.target.value) || 0 })}
-                          className="input w-full"
-                        />
-                      </td>
+                      <>
+                        <td className="pr-2 py-1">
+                          <input
+                            type="number"
+                            step="0.5"
+                            value={row.manHours === 0 || row.manHours == null ? '' : row.manHours}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => updateRow(gi, ri, { manHours: Number(e.target.value) || 0 })}
+                            className="input w-full"
+                          />
+                        </td>
+                        <td className="pr-2 py-1">
+                          <input
+                            type="number"
+                            value={row.headcount === 0 ? '' : row.headcount}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => updateRow(gi, ri, { headcount: Number(e.target.value) || 0 })}
+                            className="input w-full"
+                          />
+                        </td>
+                      </>
                     ) : (
                       <>
                         <td className="pr-2 py-1">

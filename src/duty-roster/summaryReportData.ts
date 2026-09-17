@@ -371,12 +371,19 @@ export interface ConfirmInvoiceOutcome {
  * the original) and that a `result` actually exists ("Nothing to confirm yet." toast, defensive
  * — should be unreachable in practice since a result is always available once the page has
  * rendered). Both of those are UI-layer early-returns in the original, not part of this pure
- * applier. */
+ * applier.
+ *
+ * `categories` — computeCategoryBreakdown()'s own output (payrollMath.ts), computed by the
+ * caller from the same y/m/config/ms/result/rateConfig this click already has in scope — is
+ * snapshotted alongside the totals purely for Branch Collection's man-hour billing mode to
+ * auto-pull from later; nothing here reads it back. Optional/omittable (defaults to []) so a
+ * caller that hasn't been updated to compute it yet still confirms the totals exactly as before. */
 export function applyConfirmInvoiceSummary(
   ms: MonthState,
   totals: SummaryTotals,
   actorUid: string | null,
-  actorName: string | null
+  actorName: string | null,
+  categories: ConfirmedMonthSummary["categories"] = []
 ): ConfirmInvoiceOutcome | { error: string } {
   if (!totals.hasAnyGuards) return { error: "Add guards to this site before confirming." };
   const invoiceConfirmed: ConfirmedMonthSummary = {
@@ -386,6 +393,7 @@ export function applyConfirmInvoiceSummary(
     manHours: totals.manHours,
     amount: totals.amount,
     additionalManHours: totals.additionalManHours,
+    categories,
   };
   return {
     ms: { ...ms, invoiceConfirmed },

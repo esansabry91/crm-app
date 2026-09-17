@@ -298,6 +298,89 @@ export function computeSummaryTotals(
   };
 }
 
+export interface CategoryManHours {
+  category: string;
+  /** Guards who actually worked hours in this category this month (normalManHours > 0) — a
+   *  roster guard on leave the whole month doesn't inflate this. */
+  headcount: number;
+  manHours: number;
+}
+
+/** Fallback category label for a 'same'-rate-mode site — kept in sync with
+ *  deriveRateCategoriesFromGuardRate()'s own fallback in services/invoices.ts so a category
+ *  auto-pulled from here always matches an option already in that site's Branch Collection rate
+ *  dropdown. */
+export const SAME_MODE_CATEGORY_LABEL = "Security Guard";
+
+/** Bucket label for a permanent guard whose own `position` doesn't match any of the linked
+ *  tender's priced guardRatePositions (unset, mistyped, or the position was later removed) — see
+ *  guardRate()'s own null-return case in rateResolution.ts. Deliberately visible/odd rather than
+ *  silently folded into a real category: computeSummaryTotals() still counts these hours toward
+ *  the grand total (anyMissingRate), so this bucket exists purely so they're not dropped from the
+ *  breakdown either — Branch Collection surfaces it for a human to fix the category by hand. */
+export const UNMATCHED_POSITION_CATEGORY_LABEL = "Unmatched position — needs a category";
+
+/**
+ * Per-category man-hours + headcount breakdown for this site+month, grouping guards' hours
+ * exactly the way guardRate()/supportGuardRate() (rateResolution.ts) already bill them — so a
+ * category here always lines up with the rate those hours were actually confirmed at. Snapshotted
+ * onto ConfirmedMonthSummary.categories at "Confirm for invoicing" time (see
+ * applyConfirmInvoiceSummary() in summaryReportData.ts) purely for Branch Collection's man-hour
+ * billing mode to auto-pull from — nothing in Duty Roster's own UI renders this breakdown.
+ * Returns [] when there's no linked rate config at all (nothing to bucket by).
+ *
+ * 'same' rate mode: every guard's hours land in one SAME_MODE_CATEGORY_LABEL bucket.
+ *
+ * 'multiple' rate mode: a permanent guard's hours go under their own `position` name — the exact
+ * position guardRate() matches against guardRatePositions; UNMATCHED_POSITION_CATEGORY_LABEL when
+ * it doesn't resolve (see that constant's doc comment). A temp/support guard has no `position` of
+ * their own to match, so — exactly like supportGuardRate() prices them — their hours go under
+ * whichever named position currently has the LOWEST rate (the plain "normal guard" rate, never a
+ * Leader/Supervisor premium); UNMATCHED_POSITION_CATEGORY_LABEL when no position is priced yet.
+ */
+export function computeCategoryBreakdown(
+  y: number,
+  m: number,
+  config: GenerateMonthConfig,
+  monthState: MonthState,
+  result: GenerateMonthResult,
+  rateConfig: TenderRateConfig | null
+): CategoryManHours[] {
+  if (!rateConfig) return [];
+  const summary = computeGuardSummary(y, m, config, monthState, result);
+  const guards = config.guards.filter((g) => g.active !== false || (result.totalShifts[g.id] || 0) > 0);
+  const tempIds = Object.keys(monthTempGuards(monthState));
+  const supportIds = activeSupportIds(monthState);
+  const extraGuardHours = result.extraGuardHours || {};
+  const n = (v: number | undefined) => v || 0;
+  const normalManHours = (id: string) => Math.max(0, n(summary[id] && summary[id].manHours) - n(extraGuardHours[id]));
+
+  const buckets = new Map<string, { headcount: number; manHours: number }>();
+  const add = (category: string, hrs: number) => {
+    if (hrs <= 0) return;
+    const b = buckets.get(category) || { headcount: 0, manHours: 0 };
+    b.headcount += 1;
+    b.manHours += hrs;
+    buckets.set(category, b);
+  };
+
+  if (rateConfig.guardRateMode === "same") {
+    guards.forEach((g) => add(SAME_MODE_CATEGORY_LABEL, normalManHours(g.id)));
+    [...tempIds, ...supportIds].forEach((id) => add(SAME_MODE_CATEGORY_LABEL, normalManHours(id)));
+  } else if (rateConfig.guardRateMode === "multiple") {
+    const positions = rateConfig.guardRatePositions || [];
+    guards.forEach((g) => {
+      const match = g.position && positions.some((p) => p.name === g.position);
+      add(match ? g.position! : UNMATCHED_POSITION_CATEGORY_LABEL, normalManHours(g.id));
+    });
+    const priced = positions.filter((p) => Number.isFinite(Number(p.rate)));
+    const cheapest = priced.length ? priced.reduce((min, p) => (Number(p.rate) < Number(min.rate) ? p : min)) : null;
+    [...tempIds, ...supportIds].forEach((id) => add(cheapest ? cheapest.name : UNMATCHED_POSITION_CATEGORY_LABEL, normalManHours(id)));
+  }
+
+  return Array.from(buckets.entries()).map(([category, b]) => ({ category, ...b }));
+}
+
 export function normalHoursLabel(config: GenerateMonthConfig): number {
   return Number(config.site.normalHoursPerDay) || 8;
 }

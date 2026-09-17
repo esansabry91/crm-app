@@ -4,7 +4,7 @@ import type { GenerateMonthConfig } from "../schedulingEngine";
 import type { RosterSession } from "../rosterModel";
 import { canConfirmInvoiceSummary, canConfirmCombinedHours } from "../rosterModel";
 import { appendLog } from "../lockMachine";
-import { computeSummaryTotals } from "../payrollMath";
+import { computeSummaryTotals, computeCategoryBreakdown } from "../payrollMath";
 import { applyConfirmInvoiceSummary, applyUnconfirmInvoiceSummary, UNCONFIRM_INVOICE_MODAL } from "../summaryReportData";
 import { applyConfirmCombinedHours, applyUnconfirmCombinedHours, UNCONFIRM_COMBINED_MODAL, NEED_REFRESH_TOAST } from "../combinedHoursData";
 import { computeIncomingSupportDates } from "../combinedHoursCrossSite";
@@ -79,7 +79,8 @@ export default function SummaryReportTab({
   function handleConfirmInvoice() {
     if (!canConfirmInvoiceSummary(session)) return;
     const totals = computeSummaryTotals(y, m, config, ms, result, rateConfig);
-    const outcome = applyConfirmInvoiceSummary(ms, totals, actorUid, actorName);
+    const categories = computeCategoryBreakdown(y, m, config, ms, result, rateConfig);
+    const outcome = applyConfirmInvoiceSummary(ms, totals, actorUid, actorName, categories);
     if ("error" in outcome) {
       onToast(outcome.error);
       return;

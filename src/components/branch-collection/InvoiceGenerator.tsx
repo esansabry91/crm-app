@@ -428,6 +428,32 @@ export default function InvoiceGenerator() {
     );
   }
 
+  /** Adds a new location group pre-filled with one row per category from the Duty Roster
+   *  Summary Report's confirmed breakdown (confirmedSummary.categories — see
+   *  computeCategoryBreakdown()'s doc comment in src/duty-roster/payrollMath.ts) — category,
+   *  headcount and man-hours all pulled straight from what was actually confirmed, rate looked
+   *  up from this site's own rate categories where the name matches. Purely a convenience
+   *  starting point: every pulled value stays a normal editable cell afterward (same inputs,
+   *  same updateRow), and this never touches any group/row already on screen — it only adds a
+   *  new one, so pulling twice (or after manually editing) never clobbers anything; the location
+   *  name is left blank for the user to fill in. No-op when there's nothing confirmed yet. */
+  function handlePullFromConfirmed() {
+    if (!confirmedSummary?.categories?.length) return;
+    const rows = confirmedSummary.categories.map((c) => {
+      const match = rateDraft.find((r) => r.category === c.category);
+      const rate = match ? match.hourlyRate : 0;
+      return {
+        category: c.category,
+        headcount: c.headcount,
+        days: 0,
+        manHours: c.manHours,
+        rate,
+        amount: computeManHourLineAmount(c.manHours, rate),
+      };
+    });
+    setLineGroups((prev) => [...prev, { location: '', rows }]);
+  }
+
   function addEquipmentRow() {
     const first = equipmentRateDraft[0];
     const quantity = first?.quantity || 0;
@@ -1105,6 +1131,14 @@ export default function InvoiceGenerator() {
                 Man-hour
               </button>
             </div>
+            {billingMode === 'manhour' && !!confirmedSummary?.categories?.length && (
+              <button
+                onClick={handlePullFromConfirmed}
+                className="text-xs font-medium text-emerald-700 hover:bg-emerald-50 rounded px-2.5 py-1 border border-emerald-200"
+              >
+                Pull from confirmed summary
+              </button>
+            )}
             <button
               onClick={addLineGroup}
               className="text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
@@ -1159,7 +1193,10 @@ export default function InvoiceGenerator() {
                 <tr className="text-left text-xs text-slate-400">
                   <th className="font-medium pb-1">Category</th>
                   {billingMode === 'manhour' ? (
-                    <th className="font-medium pb-1 w-28">Man-hours</th>
+                    <>
+                      <th className="font-medium pb-1 w-28">Man-hours</th>
+                      <th className="font-medium pb-1 w-24">Headcount</th>
+                    </>
                   ) : (
                     <>
                       <th className="font-medium pb-1 w-24">Headcount</th>
@@ -1189,19 +1226,33 @@ export default function InvoiceGenerator() {
                       </select>
                     </td>
                     {billingMode === 'manhour' ? (
-                      <td className="pr-2 py-1">
-                        <input
-                          type="number"
-                          step="0.5"
-                          value={row.manHours === 0 || row.manHours == null ? '' : row.manHours}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => {
-                            const raw = e.target.value.replace(/^0+(?=\d)/, '');
-                            updateRow(gi, ri, { manHours: raw === '' ? 0 : Number(raw) || 0 });
-                          }}
-                          className="input w-full"
-                        />
-                      </td>
+                      <>
+                        <td className="pr-2 py-1">
+                          <input
+                            type="number"
+                            step="0.5"
+                            value={row.manHours === 0 || row.manHours == null ? '' : row.manHours}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                              updateRow(gi, ri, { manHours: raw === '' ? 0 : Number(raw) || 0 });
+                            }}
+                            className="input w-full"
+                          />
+                        </td>
+                        <td className="pr-2 py-1">
+                          <input
+                            type="number"
+                            value={row.headcount === 0 ? '' : row.headcount}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                              updateRow(gi, ri, { headcount: raw === '' ? 0 : Number(raw) || 0 });
+                            }}
+                            className="input w-full"
+                          />
+                        </td>
+                      </>
                     ) : (
                       <>
                         <td className="pr-2 py-1">

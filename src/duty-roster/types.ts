@@ -238,6 +238,12 @@ export interface ConfirmedMonthSummary {
   /** Man-hours from "Additional Guard (Temporary)" posts this month — billed separately, not
    * included in manHours/amount above. */
   additionalManHours?: number;
+  /** Per-category headcount + man-hours breakdown for this same confirmed month — see
+   *  computeCategoryBreakdown()'s doc comment in payrollMath.ts for exactly how guards are
+   *  bucketed. Purely for Branch Collection's man-hour billing mode to auto-pull line items from;
+   *  Duty Roster's own UI never reads this back. Absent on every confirmation made before this
+   *  field existed, or when the site had no linked rate config at confirm time. */
+  categories?: { category: string; headcount: number; manHours: number }[];
 }
 
 /** One raw {dateStr, hours} worked-day entry, not yet classified normal/rest/holiday — the shape

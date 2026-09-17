@@ -2,6 +2,12 @@ import { useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 
+export interface ConfirmedCategoryManHours {
+  category: string;
+  headcount: number;
+  manHours: number;
+}
+
 export interface ConfirmedMonthSummary {
   manHours: number;
   amount: number;
@@ -11,6 +17,14 @@ export interface ConfirmedMonthSummary {
    *  separately in Branch Collection, not included in manHours/amount above. See
    *  public/duty-roster/index.html's computeSummaryTotals()/totalExtraGuardManHours(). */
   additionalManHours?: number;
+  /** Per-category headcount + man-hours breakdown snapshotted at the same "Confirm for
+   *  invoicing" moment — see computeCategoryBreakdown()'s doc comment in
+   *  src/duty-roster/payrollMath.ts for exactly how guards are bucketed by category (matches
+   *  the site's own Guard Rate positions when in 'multiple' mode, one flat category in 'same'
+   *  mode). Used by InvoiceGenerator/InvoiceSiteSection's "Pull from confirmed summary" to
+   *  auto-fill man-hour-mode line items. Absent on a confirmation made before this field
+   *  existed, or when the site had no linked rate config at confirm time. */
+  categories?: ConfirmedCategoryManHours[];
 }
 
 /**
