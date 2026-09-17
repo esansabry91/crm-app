@@ -65,10 +65,20 @@ export interface ResolvedGuard {
   homeGuardId?: string;
 }
 
-/** A month-scoped temporary guard record (`monthState.tempGuards[id]`). */
+/** A month-scoped temporary guard record (`monthState.tempGuards[id]`). Written both by "Assign a
+ * temporary guard" (Adjustments) and the temp-guard branch of "Assign an additional guard" — both
+ * require the full field set below (see the Adjustments-tab inventory's §4.1/§4.4 validation
+ * rules), so none of these are optional at creation time even though a few legacy records from
+ * before Guard Bank sync existed may lack them. */
 export interface TempGuardRecord {
   name: string;
-  rate?: number;
+  rate: number;
+  mykadNumber: string;
+  age: number;
+  phoneNumber: string;
+  state: string;
+  city: string;
+  createdAt: string;
 }
 
 /** A month-scoped support-guard record — a guard borrowed from another branch site for the
@@ -83,12 +93,17 @@ export interface SupportGuardRecord {
 }
 
 /** An "Additional Guard (Temporary)" billing-only entry — appended after normal slots, billed
- * separately, never counted in normal totals (`monthState.extraGuards[id]`). */
+ * separately, never counted in normal totals (`monthState.extraGuards[id]`). `guardId` points at
+ * a real Guard's id ("restday" source), a `tempGuards` key ("temp" source), or a `supportGuards`
+ * key ("support" source) depending on `sourceMode` — mirrors how `overrides[key]` is polymorphic
+ * elsewhere in this schema. */
 export interface ExtraGuardRecord {
   guardId: string;
   shiftId: string;
   startDate: string;
   endDate: string;
+  sourceMode: "restday" | "temp" | "support";
+  createdAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -182,7 +197,16 @@ export interface LeaveEntry {
   id: string; // guard id who is on leave
   reason: string; // one of LEAVE_REASONS
   replacementKey?: string; // "dateStr|shiftId|slot" override key holding the covering guard, if a replacement was chosen
+  replacementMode?: "temp" | "restday" | "support";
+  /** The covering guard's id (a real Guard for "restday", a `supportGuards` key for "support").
+   * Absent for "temp" mode — the reserved slot doesn't get a concrete guard until the "Assign a
+   * temporary guard" panel is used separately. */
+  replacementGuardId?: string;
   supportShiftEndMs?: number; // for "Support (Other Site)" leave: end-of-shift timestamp at the site being covered, folded into rest-hour math here
+  /** Set only on the auto-written home-site safeguard entry (by syncHomeSiteSupportLeave), never
+   * by a human picking a reason — identifies which site this guard is supporting. */
+  supportToSiteId?: string;
+  supportToSiteName?: string;
 }
 
 export interface LogEntry {
