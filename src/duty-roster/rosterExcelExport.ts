@@ -20,8 +20,8 @@ import * as XLSX from "xlsx-js-style";
 import type { Guard, GenerateMonthResult, MonthState } from "./types";
 import type { GenerateMonthConfig } from "./schedulingEngine";
 import { coveringGuardNameFor, monthSupportGuards, monthTempGuards, leaveEntriesFor } from "./rosterModel";
-import { computeShiftDefsForDay } from "./shiftStructure";
-import { dowMon, isWeekend, monthLabel, weekdayShort } from "./dateUtils";
+import { computeShiftDefsForDay, shiftLabelForKey } from "./shiftStructure";
+import { isWeekend, monthLabel, weekdayShort } from "./dateUtils";
 import { SHIFT_LETTERS, leaveAbbrev } from "./rosterColors";
 
 export function guardsExportRows(config: Pick<GenerateMonthConfig, "guards">): (string | number)[][] {
@@ -194,12 +194,6 @@ export function applyRosterSheetStyling(ws: XLSX.WorkSheet, meta: RosterCellMeta
   }
 }
 
-function shiftLabelForKey(config: GenerateMonthConfig, date: string, shiftId: string): string {
-  const defs = computeShiftDefsForDay(config.site, dowMon(date));
-  const st = defs.find((s) => s.id === shiftId);
-  return st ? st.label : shiftId;
-}
-
 export function tempGuardExportRows(config: GenerateMonthConfig, ms: MonthState): (string | number)[][] {
   const tg = monthTempGuards(ms);
   const header: (string | number)[] = ["Date", "Shift", "Slot", "Name", "Rate (RM)"];
@@ -208,7 +202,10 @@ export function tempGuardExportRows(config: GenerateMonthConfig, ms: MonthState)
       const key = Object.keys(ms.overrides).find((k) => ms.overrides[k] === tempId);
       if (!key) return null;
       const [date, shiftId, slot] = key.split("|");
-      return [date, shiftLabelForKey(config, date, shiftId), Number(slot) + 1, tg[tempId].name, Number(tg[tempId].rate) || 0] as (string | number)[];
+      return [date, shiftLabelForKey(config.site, date, shiftId), Number(slot) + 1, tg[tempId].name, Number(tg[tempId].rate) || 0] as (
+        | string
+        | number
+      )[];
     })
     .filter((r): r is (string | number)[] => r !== null)
     .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
@@ -227,7 +224,7 @@ export function supportGuardExportRows(config: GenerateMonthConfig, ms: MonthSta
       if (!key) return null;
       const [date, shiftId, slot] = key.split("|");
       const entry = sg[supportId] || ({} as (typeof sg)[string]);
-      return [date, shiftLabelForKey(config, date, shiftId), Number(slot) + 1, entry.employeeId || "", entry.name || "", entry.homeSiteName || ""] as (
+      return [date, shiftLabelForKey(config.site, date, shiftId), Number(slot) + 1, entry.employeeId || "", entry.name || "", entry.homeSiteName || ""] as (
         | string
         | number
       )[];

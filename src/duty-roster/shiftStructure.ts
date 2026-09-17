@@ -3,6 +3,7 @@
  * public/duty-roster/index.html lines ~795-897.
  */
 import type { ShiftDef, SiteRequirement } from "./types";
+import { dowMon } from "./dateUtils";
 
 export function computeShiftDefs(site: SiteRequirement): ShiftDef[] {
   const shiftHrs = Number(site.shiftHrs) || 0;
@@ -137,4 +138,16 @@ export function suggestedGuardCount(config: SuggestedGuardCountConfig): {
 export function maxConsecutiveDaysFor(config: { restRule: { restDaysPerWeek: number } }): number {
   const restDaysWeek = Math.max(0, Math.min(6, Math.round(Number(config.restRule.restDaysPerWeek) || 0)));
   return Math.max(1, 7 - restDaysWeek);
+}
+
+/** shiftLabelForKey() (index.html lines 3929-3934) — resolves a shift's display label fresh from
+ * the site's CURRENT shift structure for that date's day-of-week (handles FULLH's per-day-varying
+ * labels), since only the bare shiftId is ever persisted in an override/tempGuard/supportGuard
+ * key. Used everywhere the Adjustments tab and Excel export need a human label for a stored key.
+ * Falls back to the raw shiftId if the shift no longer exists in the current structure (e.g. the
+ * site's pattern changed since the key was written). */
+export function shiftLabelForKey(site: SiteRequirement, date: string, shiftId: string): string {
+  const defs = computeShiftDefsForDay(site, dowMon(date));
+  const st = defs.find((s) => s.id === shiftId);
+  return st ? st.label : shiftId;
 }
