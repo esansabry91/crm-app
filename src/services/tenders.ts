@@ -1106,17 +1106,39 @@ export async function setActiveBranch(tenderId: string, activeBranch: string) {
 }
 
 /**
- * Moves every Duty Roster site linked to this tender that's still actually "following" it
- * (its own `branch` still equals `fromBranch`, including both being null) over to `toBranch` —
- * a site already delegated to a different branch (see createTenderSite()'s branchOverride
- * param / ProjectDetailsModal.tsx's "Managing Branch" picker) is deliberately left alone.
- * Shared by acceptReassignment()'s 'bring-over' choice and assignFirstActiveBranch() below —
- * both are "the duty roster follows the project" moves, just with (acceptReassignment) or
- * without (assignFirstActiveBranch) a contested branch on the other end to protect first.
+ * Moves every Duty Roster site linked to this tender that's still actually "following" it over
+ * to `toBranch` — a site already delegated to a different branch (see createTenderSite()'s
+ * branchOverride param / ProjectDetailsModal.tsx's "Managing Branch" picker) is deliberately left
+ * alone. Shared by acceptReassignment()'s 'bring-over' choice and assignFirstActiveBranch()
+ * below — both are "the duty roster follows the project" moves, just with (acceptReassignment)
+ * or without (assignFirstActiveBranch) a contested branch on the other end to protect first.
+ *
+ * "Still following" normally means the site's own `branch` still equals `fromBranch` (including
+ * both being null). `alsoSweepUnassigned` widens that, ONLY for assignFirstActiveBranch()'s
+ * first-ever-assignment case below: a site whose `branch` is null gets swept regardless of what
+ * `fromBranch` computed to, not just when it happens to equal it. That case exists because
+ * `fromBranch` there falls back to the tender's `department` field, so a site that never actually
+ * inherited a branch (created before `department` propagated, or any other way it ended up null)
+ * would otherwise silently fail the exact-match check and get left behind forever — every later
+ * reassignment's `fromBranch` is computed from the tender's OWN prior branch, which this site can
+ * then never match either, so a mismatch here isn't self-correcting. A site genuinely delegated
+ * elsewhere always has a real (non-null) branch of its own, so it's never affected by this widening.
+ * acceptReassignment()'s 'bring-over' call below deliberately does NOT pass this — an established
+ * project's site left "Unassigned (visible to everyone)" on purpose should stay that way through an
+ * ordinary later branch-to-branch move, not get silently claimed by whichever branch accepts next.
  */
-async function moveFollowingSitesToBranch(tenderId: string, fromBranch: string | null, toBranch: string): Promise<void> {
+async function moveFollowingSitesToBranch(
+  tenderId: string,
+  fromBranch: string | null,
+  toBranch: string,
+  alsoSweepUnassigned = false
+): Promise<void> {
   const snap = await getDocs(query(collection(db, 'sites'), where('tenderId', '==', tenderId)));
-  const sitesFollowingProject = snap.docs.filter((d) => (d.data().branch ?? null) === (fromBranch ?? null));
+  const sitesFollowingProject = snap.docs.filter((d) => {
+    const currentBranch = (d.data().branch as string | null | undefined) ?? null;
+    if (currentBranch === (fromBranch ?? null)) return true;
+    return alsoSweepUnassigned && currentBranch === null;
+  });
   await Promise.all(
     sitesFollowingProject.map((d) => updateDoc(d.ref, { branch: toBranch, updatedAt: Date.now() }))
   );
@@ -1138,10 +1160,16 @@ async function moveFollowingSitesToBranch(tenderId: string, fromBranch: string |
  * own `branch` field never moves off the tender's old `department`, so firestore.rules'
  * canReachSite() keeps scoping it there forever — the project shows up in the new branch's
  * Active Projects (activeBranch now matches), but its Duty Roster never does.
+ *
+ * Passes `alsoSweepUnassigned: true` to moveFollowingSitesToBranch() — a site that's simply never
+ * had a branch (still null) must always come along on this first assignment even when it doesn't
+ * happen to equal `fromBranch` (e.g. the tender's `department` is set to something but this site's
+ * own `branch` never actually inherited it) — see that function's own doc comment for why this
+ * can't be left to self-correct on a later reassignment.
  */
 export async function assignFirstActiveBranch(tender: Tender, toBranch: string): Promise<void> {
   const fromBranch = tender.activeBranch || tender.department || null;
-  await moveFollowingSitesToBranch(tender.id, fromBranch, toBranch);
+  await moveFollowingSitesToBranch(tender.id, fromBranch, toBranch, true);
   await updateDoc(doc(db, 'tenders', tender.id), { activeBranch: toBranch, updatedAt: Date.now() });
 }
 
