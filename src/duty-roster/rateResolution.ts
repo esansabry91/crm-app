@@ -28,6 +28,14 @@ export function guardRate(rateConfig: TenderRateConfig | null, guard: Pick<Guard
  * lowest-priced listed position (the plain "normal guard" rate, as opposed to a Leader/
  * Supervisor premium). Returns null — shown as "Not set" — only when there's no rate config, or
  * a 'multiple'-mode config with no positions priced yet. */
+/** What position names are currently pickable for a NEW guard on this site, per the linked
+ * tender's live rate config — empty when the config isn't in "multiple" mode (or doesn't exist
+ * yet), in which case the Add Guard modal shows no Position field at all. */
+export function ratePositionNames(rateConfig: TenderRateConfig | null): string[] {
+  if (!rateConfig || rateConfig.guardRateMode !== "multiple") return [];
+  return (rateConfig.guardRatePositions || []).map((p) => p.name).filter(Boolean);
+}
+
 export function supportGuardRate(rateConfig: TenderRateConfig | null): number | null {
   if (!rateConfig) return null;
   if (rateConfig.guardRateMode === "same") {

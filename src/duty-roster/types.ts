@@ -22,6 +22,21 @@ export interface Guard {
    * `guardRatePositions` in 'multiple' rate mode. Absent for guards created before per-position
    * rates existed, or on a site with no tender-linked rate config at all. */
   position?: string | null;
+
+  // Guard Bank identity fields — mirrored out (never in) to the top-level `guards` collection by
+  // guardBankSync.ts on add/dismiss/reactivate/return-to-pool. See that module's doc comment.
+  category?: "local" | "nepal" | string;
+  age?: number | null;
+  state?: string | null;
+  city?: string | null;
+  /** "nepal" category only. */
+  passportNumber?: string | null;
+  /** "nepal" category only. */
+  permitExpiryDate?: string | null;
+  /** Non-"nepal" categories only. */
+  mykadNumber?: string | null;
+  /** Non-"nepal" categories only. */
+  phoneNumber?: string | null;
 }
 
 /** The linked tender's (Active Project's) guard-rate configuration for a site, as read live via
