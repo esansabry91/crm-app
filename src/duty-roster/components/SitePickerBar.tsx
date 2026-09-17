@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { RosterViewer } from "../rosterViewer";
-import { buildSitePickerView, UNASSIGNED_BRANCH_FILTER, type SiteListEntry, type SitePickerFilters } from "../siteListData";
+import { buildSitePickerView, type SiteListEntry, type SitePickerFilters } from "../siteListData";
 
 /**
  * The Site/Client/Branch picker bar (`.sitebar`, index.html lines 296-309) — Branch filter,
@@ -114,5 +114,3 @@ export default function SitePickerBar({ viewer, allSites, branches, currentSiteI
     </div>
   );
 }
-
-export { UNASSIGNED_BRANCH_FILTER };

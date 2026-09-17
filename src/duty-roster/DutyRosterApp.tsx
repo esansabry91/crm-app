@@ -20,8 +20,7 @@ import { useReportRosterPending } from "../contexts/RosterPendingContext";
 import { deriveRosterViewer } from "./rosterViewer";
 import { useSiteList, pickInitialSiteId } from "./hooks/useSiteList";
 import { parseDeepLinkParams, useTenderDeepLink } from "./tenderDeepLink";
-import { UNASSIGNED_BRANCH_FILTER, type SitePickerFilters } from "./siteListData";
-import { buildSitePickerView } from "./siteListData";
+import { buildSitePickerView, type SitePickerFilters } from "./siteListData";
 import SitePickerBar from "./components/SitePickerBar";
 import { useSiteConfig } from "./hooks/useSiteConfig";
 import { useTenderRate } from "./hooks/useTenderRate";
@@ -149,6 +148,7 @@ export default function DutyRosterApp() {
 
   const [activeTab, setActiveTab] = useState<TabId>("roster");
   function goToTab(next: TabId) {
+    if (next === activeTab) return;
     if (!ms) {
       setActiveTab(next);
       return;
@@ -327,5 +327,3 @@ function DutyRosterHeader({
     </div>
   );
 }
-
-export { UNASSIGNED_BRANCH_FILTER };
