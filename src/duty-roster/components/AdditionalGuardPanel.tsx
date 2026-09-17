@@ -97,6 +97,13 @@ export default function AdditionalGuardPanel({
     setTempForm(EMPTY_TEMP_FORM);
     setOriginSiteId("");
     setOriginGuardId("");
+    setError(null);
+  }
+
+  const hasInput = !!(shiftId || startDate || endDate || mode);
+
+  function handleCancel() {
+    resetForm();
   }
 
   function handleAssign() {
@@ -128,7 +135,6 @@ export default function AdditionalGuardPanel({
 
     const outcome = applyAssignAdditionalGuard(config, ms, { shiftId, startDate, endDate }, choice);
     if ("error" in outcome) return setError(outcome.error);
-    setError(null);
     resetForm();
     onSave(outcome.ms, outcome.toast);
 
@@ -242,13 +248,16 @@ export default function AdditionalGuardPanel({
         )}
 
         {error && <p className="text-sm text-rose-600">{error}</p>}
-        <button
-          type="button"
-          onClick={handleAssign}
-          className="self-end px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
-        >
-          Assign
-        </button>
+        <div className="self-end flex items-center gap-2">
+          {hasInput && (
+            <button type="button" onClick={handleCancel} className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800">
+              Cancel
+            </button>
+          )}
+          <button type="button" onClick={handleAssign} className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
+            Assign
+          </button>
+        </div>
       </div>
 
       {rows.length > 0 && (

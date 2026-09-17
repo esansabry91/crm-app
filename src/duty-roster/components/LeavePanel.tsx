@@ -138,6 +138,17 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, allSi
     }
   }
 
+  function handleCancel() {
+    setGuardId("");
+    setDateStr("");
+    setReason(LEAVE_REASONS[0]);
+    setMode("");
+    setCoverGuardId("");
+    setOriginSiteId("");
+    setOriginGuardId("");
+    setError(null);
+  }
+
   function handleClear(date: string) {
     const supportHomeSiteIds: Record<string, { homeSiteId: string; homeGuardId: string }> = {};
     Object.keys(ms.supportGuards || {}).forEach((id) => {
@@ -233,7 +244,12 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, allSi
 
       {error && <p className="text-sm text-rose-600 mt-2">{error}</p>}
 
-      <div className="flex justify-end mt-3">
+      <div className="flex justify-end gap-2 mt-3">
+        {(guardId || dateStr) && (
+          <button type="button" onClick={handleCancel} className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800">
+            Cancel
+          </button>
+        )}
         <button type="button" onClick={handleAdd} className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
           Mark on leave
         </button>

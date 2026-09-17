@@ -80,7 +80,10 @@ export default function RosterTab({
   onDragSwap,
   onPersistMonth,
 }: RosterTabProps) {
-  const [view, setView] = useState<ViewMode>("calendar");
+  // Defaults to the Grid ("Roster sheet") view — matches the day-to-day workflow better than
+  // Calendar (drag-to-swap rearranging, at-a-glance shift-letter/post columns), per Ihsan's own
+  // preference.
+  const [view, setView] = useState<ViewMode>("grid");
 
   function handleExport() {
     const { logText } = exportCurrentMonthToExcel(y, m, config, ms, result, siteName, monthKey);

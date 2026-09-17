@@ -56,6 +56,12 @@ export default function RosterGrid({
   const cellRef = (dateStr: string, cell: GridCell): SlotRef | null =>
     cell.kind === "assigned" ? { date: dateStr, shiftId: cell.shiftId, slot: cell.slot } : null;
 
+  // Every header/body cell gets a 1px border (table has border-collapse, so adjacent cells share
+  // one line) so the grid reads clearly even where the fill color alone doesn't distinguish
+  // adjacent cells — merge this into each cell's own style object rather than a bare className
+  // so it composes with the background/color/boxShadow every cell kind already sets.
+  const cellBorder = { border: `1px solid ${ROSTER_TOKENS.line}` };
+
   return (
     <div>
       <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
@@ -125,7 +131,7 @@ export default function RosterGrid({
             <tr>
               <th
                 className="sticky left-0 z-[3] text-left font-semibold px-2 py-1.5"
-                style={{ background: ROSTER_TOKENS.surface }}
+                style={{ ...cellBorder, background: ROSTER_TOKENS.surface }}
               >
                 Guard
               </th>
@@ -133,20 +139,32 @@ export default function RosterGrid({
                 <th
                   key={d.dateStr}
                   className="px-1.5 py-1.5 font-medium text-center"
-                  style={d.isWeekend ? { background: ROSTER_TOKENS.accentSoft, color: ROSTER_TOKENS.accent } : undefined}
+                  style={{ ...cellBorder, ...(d.isWeekend ? { background: ROSTER_TOKENS.accentSoft, color: ROSTER_TOKENS.accent } : undefined) }}
                 >
-                  {d.dayNum} {d.weekdayInitial}
+                  {/* Date always on top, weekday initial always below — two explicit lines
+                      instead of one text run with a space, so it never wraps inconsistently
+                      depending on column width (single- vs double-digit day numbers). */}
+                  <div className="flex flex-col items-center leading-tight gap-0.5">
+                    <span>{d.dayNum}</span>
+                    <span className="text-[10px] font-normal opacity-75">{d.weekdayInitial}</span>
+                  </div>
                 </th>
               ))}
-              <th className="px-2 py-1.5">Shifts</th>
-              <th className="px-2 py-1.5">Rest days</th>
+              <th className="px-2 py-1.5" style={cellBorder}>
+                Shifts
+              </th>
+              <th className="px-2 py-1.5" style={cellBorder}>
+                Rest days
+              </th>
             </tr>
           </thead>
           <tbody>
             {!data.rows.length ? (
               <tr>
-                <td className="px-2 py-2">—</td>
-                <td colSpan={data.headerDays.length + 2} className="px-2 py-2 text-center" style={{ color: ROSTER_TOKENS.muted }}>
+                <td className="px-2 py-2" style={cellBorder}>
+                  —
+                </td>
+                <td colSpan={data.headerDays.length + 2} className="px-2 py-2 text-center" style={{ ...cellBorder, color: ROSTER_TOKENS.muted }}>
                   Add guards to see the roster sheet.
                 </td>
               </tr>
@@ -155,7 +173,7 @@ export default function RosterGrid({
                 <tr key={row.guardId}>
                   <td
                     className="sticky left-0 z-[1] text-left font-semibold px-2 py-1.5"
-                    style={{ background: ROSTER_TOKENS.surface }}
+                    style={{ ...cellBorder, background: ROSTER_TOKENS.surface }}
                   >
                     {row.guardName}
                   </td>
@@ -164,7 +182,7 @@ export default function RosterGrid({
                     const ref = cellRef(dateStr, cell);
                     if (cell.kind === "off") {
                       return (
-                        <td key={dayIdx} className="px-1.5 py-1.5 text-center" style={{ color: ROSTER_TOKENS.muted }}>
+                        <td key={dayIdx} className="px-1.5 py-1.5 text-center" style={{ ...cellBorder, color: ROSTER_TOKENS.muted }}>
                           OFF
                         </td>
                       );
@@ -176,6 +194,7 @@ export default function RosterGrid({
                           title={cell.title}
                           className="px-1.5 py-1.5 text-center font-bold"
                           style={{
+                            ...cellBorder,
                             color: ROSTER_TOKENS.warn,
                             background: ROSTER_TOKENS.warnSoft,
                             boxShadow: cell.covered ? `inset 0 0 0 2px ${ROSTER_TOKENS.accent}` : undefined,
@@ -203,6 +222,7 @@ export default function RosterGrid({
                         }}
                         className="px-1.5 py-1.5 text-center font-semibold"
                         style={{
+                          ...cellBorder,
                           background: color.bg,
                           color: color.ink,
                           cursor: cell.draggable ? "grab" : undefined,
@@ -213,10 +233,10 @@ export default function RosterGrid({
                       </td>
                     );
                   })}
-                  <td className="px-2 py-1.5 text-center font-bold" style={{ background: ROSTER_TOKENS.surface2 }}>
+                  <td className="px-2 py-1.5 text-center font-bold" style={{ ...cellBorder, background: ROSTER_TOKENS.surface2 }}>
                     {row.totalShifts}
                   </td>
-                  <td className="px-2 py-1.5 text-center font-bold" style={{ background: ROSTER_TOKENS.surface2 }}>
+                  <td className="px-2 py-1.5 text-center font-bold" style={{ ...cellBorder, background: ROSTER_TOKENS.surface2 }}>
                     {row.restDays}
                   </td>
                 </tr>
