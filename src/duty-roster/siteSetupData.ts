@@ -21,6 +21,7 @@ import {
   configHolidayNames,
   applyStateHolidays,
 } from "./holidays";
+import { COMPLIANCE_MAX_WEEKLY_HOURS } from "./complianceRules";
 import {
   FULLH_CATEGORIES,
   coverageDaysPerWeek,
@@ -247,6 +248,9 @@ export interface SiteSummary {
   suggested: number;
   /** Always "." — kept as a field rather than a literal so the component doesn't hardcode it. */
   after: string;
+  /** Present only when restRule.complianceMode is on. Explains the number above and shows what
+   * it would have been without the cap, so a manager can see how much headcount the toggle adds. */
+  complianceNote?: string;
 }
 
 /** #siteSummary computed text (renderSiteRequirement(), lines ~3760-3783). Structured (rather
@@ -272,10 +276,16 @@ export function siteSummary(config: Pick<SiteConfig, "site" | "restRule">): Site
     shiftLine = `${defs.length} shift${defs.length === 1 ? "" : "s"}/day — ${describe(defs)}.`;
   }
 
+  const complianceNote =
+    config.restRule.complianceMode && sug.weeklyManHours != null
+      ? `RBA/SMETA compliance mode is on: no guard may exceed ${COMPLIANCE_MAX_WEEKLY_HOURS}h/week. This site's ~${Math.round(sug.weeklyManHours)}h/week of coverage needs at least ${sug.suggested} guard${sug.suggested === 1 ? "" : "s"} to keep every guard's shifts under that cap${sug.suggested > sug.suggestedWithoutCompliance ? ` — ${sug.suggested - sug.suggestedWithoutCompliance} more than the ${sug.suggestedWithoutCompliance} the roster/rest-day math alone would suggest` : " (already covered by the roster/rest-day math alone)"}.`
+      : undefined;
+
   return {
     before: `${shiftLine} Site needs coverage ${cov} day${cov === 1 ? "" : "s"}/week. Suggested headcount from this scenario: `,
     suggested: sug.suggested,
     after: ".",
+    complianceNote,
   };
 }
 
@@ -289,13 +299,23 @@ export { maxConsecutiveDaysFor };
 
 /** #saveRestBtn handler (lines 5141-5148). `restDaysPerWeek` is clamped 0–6; `minRestHours`
  * is NOT clamped (any non-negative-looking number is accepted, matching the original). */
-export function applySaveRestRules(config: SiteConfig, ms: MonthState, restDaysPerWeekRaw: number, minRestHoursRaw: number): ConfigActionOutcome {
+export function applySaveRestRules(
+  config: SiteConfig,
+  ms: MonthState,
+  restDaysPerWeekRaw: number,
+  minRestHoursRaw: number,
+  complianceMode = false
+): ConfigActionOutcome {
   const nextConfig = deepClone(config);
   const restDaysPerWeek = Math.max(0, Math.min(6, Number(restDaysPerWeekRaw) || 0));
   const minRestHours = Number(minRestHoursRaw) || 0;
-  nextConfig.restRule = { restDaysPerWeek, minRestHours };
+  nextConfig.restRule = { restDaysPerWeek, minRestHours, complianceMode: !!complianceMode };
   markSiteSetupSaved(nextConfig, "rest");
-  const nextMs = appendLog(ms, `Updated rest rules: ${restDaysPerWeek} rest day(s)/week, min ${minRestHours}h rest between shifts.`);
+  const complianceNote = complianceMode ? `, RBA/SMETA compliance mode ON (${COMPLIANCE_MAX_WEEKLY_HOURS}h/week cap)` : "";
+  const nextMs = appendLog(
+    ms,
+    `Updated rest rules: ${restDaysPerWeek} rest day(s)/week, min ${minRestHours}h rest between shifts${complianceNote}.`
+  );
   return { config: nextConfig, ms: nextMs, toast: "Rest rules saved." };
 }
 

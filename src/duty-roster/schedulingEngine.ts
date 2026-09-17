@@ -22,6 +22,7 @@ import type {
 import { RESERVED_FOR_TEMP } from "./types";
 import { daysInMonth, dowMon, prevDateStr, shiftStartEnd, ymd } from "./dateUtils";
 import { computeShiftDefsForDay, coverageDaysPerWeek, maxConsecutiveDaysFor, postsAt } from "./shiftStructure";
+import { COMPLIANCE_MAX_WEEKLY_HOURS } from "./complianceRules";
 import {
   activeGuardsOn,
   extraGuardEntriesFor,
@@ -43,11 +44,19 @@ export function generateMonth(
   const cov = coverageDaysPerWeek(config.site);
   const maxConsecutiveDays = maxConsecutiveDaysFor(config);
   const minRestHours = Number(config.restRule.minRestHours) || 0;
+  // "RBA/SMETA compliance mode" — see complianceRules.ts. When on, no guard's total hours in any
+  // single Monday-Sunday week may exceed COMPLIANCE_MAX_WEEKLY_HOURS; unlike minRestHours/
+  // maxConsecutiveDays (which the rest-day fallback below is allowed to override), this cap is
+  // never bypassed — a shift that can't be filled without breaching it is left a conflict instead.
+  const complianceMode = !!config.restRule.complianceMode;
   const totalShifts: Record<string, number> = {};
   const lastShiftEnd: Record<string, number> = {};
   const lastWorkDate: Record<string, string> = {};
   const streak: Record<string, number> = {};
   const extraGuardHours: Record<string, number> = {};
+  // Hours worked so far in the current Monday-Sunday week, reset whenever a new week starts
+  // (dm === 0). Only meaningful/enforced when complianceMode is on.
+  let weeklyHours: Record<string, number> = {};
   config.guards.forEach((g) => {
     totalShifts[g.id] = 0;
   });
@@ -58,6 +67,7 @@ export function generateMonth(
   for (let d = 1; d <= nDays; d++) {
     const dateStr = ymd(y, m, d);
     const dm = dowMon(dateStr);
+    if (dm === 0) weeklyHours = {}; // new Monday-Sunday week starts — reset every guard's tally
     const covered = dm < cov;
     const shiftDefs = computeShiftDefsForDay(config.site, dm); // recomputed per day (FULLH varies)
     const leaveEntriesToday = leaveEntriesFor(monthState, dateStr);
@@ -95,6 +105,8 @@ export function generateMonth(
             const gapH = (start.getTime() - lastShiftEnd[overrideGuard]) / 3600000;
             if (gapH < minRestHours) reasons.push("less than " + minRestHours + "h rest");
           }
+          if (complianceMode && (weeklyHours[overrideGuard] || 0) + st.hours > COMPLIANCE_MAX_WEEKLY_HOURS)
+            reasons.push(`would exceed ${COMPLIANCE_MAX_WEEKLY_HOURS}h weekly cap (RBA/SMETA compliance)`);
           if (reasons.length)
             flags.push({ date: dateStr, shiftId: st.id, shiftLabel: st.label, slot, guardId: overrideGuard, reason: reasons.join(", ") });
         } else {
@@ -106,6 +118,8 @@ export function generateMonth(
             if (ea !== eb) return ea - eb;
             return a.id < b.id ? -1 : 1;
           };
+          const exceedsComplianceCap = (guardId: string) =>
+            complianceMode && (weeklyHours[guardId] || 0) + st.hours > COMPLIANCE_MAX_WEEKLY_HOURS;
           const rested = activeGuardsOn(config, dateStr).filter((g) => {
             if (leaveList.includes(g.id)) return false;
             if (workedToday.has(g.id)) return false;
@@ -115,14 +129,18 @@ export function generateMonth(
               const gapH = (start.getTime() - lastShiftEnd[g.id]) / 3600000;
               if (gapH < minRestHours) return false;
             }
+            if (exceedsComplianceCap(g.id)) return false;
             return true;
           });
           if (rested.length) {
             rested.sort(byFairness);
             chosen = rested[0].id;
           } else {
+            // Compliance mode's weekly-hours cap is deliberately NOT bypassed here, unlike
+            // minRestHours/maxConsecutiveDays above — a shift that can only be filled by breaching
+            // it is left a conflict (see the else-branch below) rather than auto-assigned anyway.
             const anyAvailable = activeGuardsOn(config, dateStr).filter(
-              (g) => !leaveList.includes(g.id) && !workedToday.has(g.id)
+              (g) => !leaveList.includes(g.id) && !workedToday.has(g.id) && !exceedsComplianceCap(g.id)
             );
             if (anyAvailable.length) {
               anyAvailable.sort(byFairness);
@@ -156,6 +174,7 @@ export function generateMonth(
         if (chosen) {
           workedToday.add(chosen);
           totalShifts[chosen] = (totalShifts[chosen] || 0) + 1;
+          weeklyHours[chosen] = (weeklyHours[chosen] || 0) + st.hours;
           const { end } = shiftStartEnd(dateStr, st);
           lastShiftEnd[chosen] = end.getTime();
         }
@@ -180,6 +199,8 @@ export function generateMonth(
             const gapH = (start.getTime() - lastShiftEnd[guardId]) / 3600000;
             if (gapH < minRestHours) reasons.push("less than " + minRestHours + "h rest");
           }
+          if (complianceMode && (weeklyHours[guardId] || 0) + st.hours > COMPLIANCE_MAX_WEEKLY_HOURS)
+            reasons.push(`would exceed ${COMPLIANCE_MAX_WEEKLY_HOURS}h weekly cap (RBA/SMETA compliance)`);
           flags.push({
             date: dateStr,
             shiftId: st.id,
@@ -191,6 +212,7 @@ export function generateMonth(
           });
           workedToday.add(guardId);
           totalShifts[guardId] = (totalShifts[guardId] || 0) + 1;
+          weeklyHours[guardId] = (weeklyHours[guardId] || 0) + st.hours;
           extraGuardHours[guardId] = (extraGuardHours[guardId] || 0) + st.hours;
           const { end } = shiftStartEnd(dateStr, st);
           lastShiftEnd[guardId] = end.getTime();

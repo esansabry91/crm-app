@@ -157,6 +157,12 @@ export interface ShiftDef {
 export interface RestRule {
   restDaysPerWeek: number;
   minRestHours: number;
+  /** "RBA/SMETA compliance mode" — when true, the scheduling engine and the suggested-headcount
+   * estimate additionally cap every guard's total hours (regular + OT) at
+   * COMPLIANCE_MAX_WEEKLY_HOURS in any single calendar week, leaving a slot unfilled (flagged as a
+   * conflict) rather than breach it. See complianceRules.ts for what this covers and why. Optional
+   * — absent/undefined on every site created before this existed, and treated as false. */
+  complianceMode?: boolean;
 }
 
 export interface SiteSetupSaved {

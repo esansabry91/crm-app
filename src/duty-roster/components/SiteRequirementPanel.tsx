@@ -233,6 +233,11 @@ export default function SiteRequirementPanel({ config, ms, onSave }: SiteRequire
         <strong>{summary.suggested}</strong>
         {summary.after}
       </p>
+      {summary.complianceNote && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
+          {summary.complianceNote}
+        </p>
+      )}
 
       <div className="flex justify-end mt-4">
         <button type="button" onClick={handleSave} className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">

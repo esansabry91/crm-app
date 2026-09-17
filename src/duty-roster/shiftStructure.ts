@@ -4,6 +4,7 @@
  */
 import type { ShiftDef, SiteRequirement } from "./types";
 import { dowMon } from "./dateUtils";
+import { COMPLIANCE_MAX_WEEKLY_HOURS } from "./complianceRules";
 
 export function computeShiftDefs(site: SiteRequirement): ShiftDef[] {
   const shiftHrs = Number(site.shiftHrs) || 0;
@@ -107,32 +108,83 @@ export function coverageDaysPerWeek(site: SiteRequirement): number {
 
 export interface SuggestedGuardCountConfig {
   site: SiteRequirement;
-  restRule: { restDaysPerWeek: number };
+  restRule: { restDaysPerWeek: number; complianceMode?: boolean };
 }
 
 export function suggestedGuardCount(config: SuggestedGuardCountConfig): {
   slotsWeek: number;
   maxDaySlots: number;
   workDaysWeek: number;
+  /** Total guard-hours needed to cover one representative week (sum of posts x shift-hours over
+   * every covered day) — only meaningful when compliance mode is on; null otherwise, since it's
+   * not otherwise part of the scenario's math. */
+  weeklyManHours: number | null;
+  /** Minimum headcount implied purely by the COMPLIANCE_MAX_WEEKLY_HOURS/guard/week cap, treating
+   * hours as freely divisible — a loose lower bound in its own right (real shifts aren't
+   * divisible), kept mainly as an input to `byShiftCapacity` and for display. null when compliance
+   * mode is off. */
+  byManHours: number | null;
+  /** Minimum headcount from an exact discrete-shift count: each guard can work at most
+   * floor(COMPLIANCE_MAX_WEEKLY_HOURS / shiftHrs) whole shifts/week (never fractional), further
+   * capped by workDaysWeek (one shift/day). This is the tight, correct bound for every pattern
+   * except FULLH, whose shift lengths vary by day — there this falls back to `byManHours`
+   * (rounded up), which is an *approximation* that can under-count by a guard or two; the Roster
+   * screen itself is always the ground truth once actual assignment runs into conflicts. null
+   * when compliance mode is off. */
+  byShiftCapacity: number | null;
+  /** Same as `suggested` below, but always excludes the compliance-mode hours constraint — kept
+   * so callers can show "N (was M without compliance mode)" when the toggle changes the number. */
+  suggestedWithoutCompliance: number;
   suggested: number;
 } {
   const site = config.site;
   const cov = coverageDaysPerWeek(site);
+  const complianceMode = !!config.restRule.complianceMode;
   let slotsWeek = 0;
   let maxDaySlots = 0;
+  let weeklyManHours = 0;
   for (let dm = 0; dm < cov; dm++) {
     let daySlots = 0;
     computeShiftDefsForDay(site, dm).forEach((sd) => {
       const p = Math.max(0, postsAt(site, dm, sd.night));
       daySlots += p;
       slotsWeek += p;
+      weeklyManHours += p * (Number(sd.hours) || 0);
     });
     if (daySlots > maxDaySlots) maxDaySlots = daySlots;
   }
   const restDaysWeek = Math.max(0, Math.min(6, Math.round(Number(config.restRule.restDaysPerWeek) || 0)));
   const workDaysWeek = 7 - restDaysWeek;
   const byRoster = workDaysWeek > 0 ? Math.ceil(slotsWeek / workDaysWeek) : 0;
-  return { slotsWeek, maxDaySlots, workDaysWeek, suggested: Math.max(byRoster, maxDaySlots) };
+  const suggestedWithoutCompliance = Math.max(byRoster, maxDaySlots);
+
+  const byManHours = complianceMode ? Math.ceil(weeklyManHours / COMPLIANCE_MAX_WEEKLY_HOURS) : null;
+  // Every non-FULLH pattern shares one site.shiftHrs across all its shifts (see computeShiftDefs),
+  // so the discrete-shift bound is exact there. FULLH's per-day-varying shift lengths don't have a
+  // single "shiftHrs" to divide by, so byShiftCapacity falls back to the man-hours estimate.
+  let byShiftCapacity: number | null = null;
+  if (complianceMode) {
+    const shiftHrs = Number(site.shiftHrs) || 0;
+    if (site.pattern !== "FULLH" && shiftHrs > 0) {
+      const maxShiftsPerGuardWeek = Math.max(1, Math.min(workDaysWeek, Math.floor(COMPLIANCE_MAX_WEEKLY_HOURS / shiftHrs)));
+      byShiftCapacity = Math.ceil(slotsWeek / maxShiftsPerGuardWeek);
+    } else {
+      byShiftCapacity = byManHours;
+    }
+  }
+  const suggested = complianceMode
+    ? Math.max(suggestedWithoutCompliance, byManHours || 0, byShiftCapacity || 0)
+    : suggestedWithoutCompliance;
+  return {
+    slotsWeek,
+    maxDaySlots,
+    workDaysWeek,
+    weeklyManHours: complianceMode ? weeklyManHours : null,
+    byManHours,
+    byShiftCapacity,
+    suggestedWithoutCompliance,
+    suggested,
+  };
 }
 
 export function maxConsecutiveDaysFor(config: { restRule: { restDaysPerWeek: number } }): number {
