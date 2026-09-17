@@ -5,23 +5,21 @@
  * an explicit "Refresh combined hours" click, read by the Combined Hours panel and the
  * TimeAttendance export.
  *
- * PORTING NOTE (Task #22 composition dependency): the original called
- * invalidateCombinedHoursCache() from FOUR call sites — persistSiteConfig(), persistMonthByKey()
- * (i.e. EVERY site-config or month-state write, anywhere in the app, not just this tab), the
- * live onSnapshot handler in subscribeMonth() (another user's edit landing), and
- * syncHomeSiteSupportLeave()'s own best-effort cross-site write (index.html line ~4318). In
- * short: "invalidate on essentially any mutation to any site's roster data, local or remote."
- * This hook only owns the cache's storage; wiring `invalidateAll()` into every one of those call
- * sites needs a cache instance that outlives a single tab and is reachable from
- * useMonthState.ts/useSiteConfig.ts/supportGuardCrossSite.ts — i.e. lifted into a context above
- * every tab, which doesn't exist until Task #22 composes the page (every other Adjustments-tab
- * panel already declares the same kind of "Task #22 wires the shared subscription" dependency —
- * see AdjustmentsTab.tsx's own doc comment). Until then this hook is owned locally by
- * SummaryReportTab, which is correct for the common case (this tab's own Refresh/Confirm
- * actions invalidate its own cache immediately below) but can go stale if a mutation on another
- * tab (e.g. assigning a support guard in Adjustments) changes a SIBLING site's combined figure
- * without the user revisiting this tab in between. Task #22 should lift this hook above the tab
- * set and thread its `invalidateAll` into the four call sites listed above.
+ * PORTING NOTE (Task #22 resolution): the original called invalidateCombinedHoursCache() from
+ * FOUR call sites — persistSiteConfig(), persistMonthByKey() (i.e. EVERY site-config or
+ * month-state write, anywhere in the app), the live onSnapshot handler in subscribeMonth()
+ * (another user's edit landing), and syncHomeSiteSupportLeave()'s own best-effort cross-site
+ * write. Task #22's page shell (src/duty-roster/DutyRosterApp.tsx) now owns this hook (lifted
+ * above the tab set, passed into SummaryReportTab as `combinedCache`) and calls `invalidateAll()`
+ * from a `useEffect` watching the CURRENT site's own `config`/`ms` object identity — which fires
+ * for every local edit AND every remote onSnapshot update landing on THIS site, covering the
+ * first three of the original's four call sites in one place (object-identity change is a
+ * simpler, equally-correct stand-in for enumerating every individual write path). The one case
+ * that's NOT covered automatically is a mutation on a SIBLING site the user isn't currently
+ * looking at (support-guard-elsewhere edits, syncHomeSiteSupportLeave()'s own case) — watching
+ * every other site's own subscription just to keep one cache warm isn't worth the extra
+ * listeners, so that gap is exactly what the "Refresh combined hours" button (this cache's own
+ * primary populate mechanism, not a fallback) already exists to close by hand.
  */
 import { useCallback, useState } from "react";
 import type { IncomingSupportMap } from "../types";

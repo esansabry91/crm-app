@@ -2,8 +2,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { isAdminRole } from '../../types';
-import { useDutyRosterPending } from '../../hooks/useDutyRosterPending';
-import { resolveDutyRosterPending } from '../../services/dutyRosterBridge';
+import { RosterPendingProvider, useRosterPendingConsumer } from '../../contexts/RosterPendingContext';
 import clsx from 'clsx';
 
 const SIDEBAR_COLLAPSED_KEY = 'ipsb-desktop-sidebar-collapsed';
@@ -104,8 +103,8 @@ function NavContent({
 }: {
   onNavigate: () => void;
   onCollapse?: () => void;
-  /** Whether the embedded Duty Roster console currently has an unlocked roster with pending
-   *  drag changes — see useDutyRosterPending()/dutyRosterBridge.ts. */
+  /** Whether the Duty Roster page currently has an unlocked roster with pending drag changes
+   *  — see contexts/RosterPendingContext.tsx. */
   pending: boolean;
   /** Runs `action` immediately when nothing's pending; otherwise opens AppLayout's own warning
    *  modal (Stay here / Discard changes / Lock roster) and defers `action` until it resolves. */
@@ -376,14 +375,16 @@ function DutyRosterLeaveWarningModal({
   );
 }
 
-export default function AppLayout({ children }: { children: ReactNode }) {
+function AppLayoutInner({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(getStoredSidebarCollapsed);
-  const pending = useDutyRosterPending();
-  // The nav/logout action waiting on the warning modal below, and which of its two resolving
-  // actions (if any) is currently in flight. Both null = no modal showing.
+  const { pending, resolvers } = useRosterPendingConsumer();
+  // The nav/logout action waiting on the warning modal below. Unlike the old iframe/postMessage
+  // bridge, resolving is now a direct, synchronous call into the same React tree (see
+  // RosterPendingContext.tsx's own doc comment) — no cross-frame race to wait out, so there's no
+  // "resolving" busy state or timeout fallback needed any more; the parked action just runs
+  // immediately after the resolver fires.
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
-  const [resolving, setResolving] = useState<'lock' | 'discard' | null>(null);
 
   useEffect(() => {
     try {
@@ -393,9 +394,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     }
   }, [desktopCollapsed]);
 
-  // Runs `action` immediately when the Duty Roster console has nothing pending; otherwise
-  // parks it and opens the warning modal (see DutyRosterLeaveWarningModal below) — passed down
-  // to NavContent as guardAction, and used directly by the Sign out button.
+  // Runs `action` immediately when the Duty Roster page has nothing pending; otherwise parks it
+  // and opens the warning modal (see DutyRosterLeaveWarningModal below) — passed down to
+  // NavContent as guardAction, and used directly by the Sign out button.
   function guardAction(action: () => void) {
     if (!pending) {
       action();
@@ -404,30 +405,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     setPendingAction(() => action);
   }
 
-  // Once "Discard changes"/"Lock roster" is clicked, resolveDutyRosterPending() (below) tells
-  // the iframe to act; this waits for its next lock-status message to confirm `pending` actually
-  // dropped back to false before running the parked action, so a nav/logout never races ahead of
-  // the iframe's own Firestore write. A 5s timeout is a last resort in case that message never
-  // arrives (e.g. the iframe somehow went away mid-resolve) — the underlying change is already
-  // safely persisted server-side either way (see discardDraftChanges()/lockRoster() in
-  // index.html), so proceeding anyway beats leaving the performer stuck behind the modal.
-  useEffect(() => {
-    if (!resolving) return undefined;
-    if (!pending) {
-      const action = pendingAction;
-      setResolving(null);
-      setPendingAction(null);
-      action?.();
-      return undefined;
-    }
-    const timeout = setTimeout(() => {
-      const action = pendingAction;
-      setResolving(null);
-      setPendingAction(null);
-      action?.();
-    }, 5000);
-    return () => clearTimeout(timeout);
-  }, [pending, resolving, pendingAction]);
+  function resolveAndProceed(action: 'lock' | 'discard') {
+    resolvers?.[action]();
+    const proceed = pendingAction;
+    setPendingAction(null);
+    proceed?.();
+  }
 
   return (
     <div className="h-screen flex flex-col lg:flex-row bg-slate-50">
@@ -510,18 +493,23 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       {pendingAction && (
         <DutyRosterLeaveWarningModal
-          resolving={resolving}
+          resolving={null}
           onStay={() => setPendingAction(null)}
-          onDiscard={() => {
-            setResolving('discard');
-            resolveDutyRosterPending('discard');
-          }}
-          onLock={() => {
-            setResolving('lock');
-            resolveDutyRosterPending('lock');
-          }}
+          onDiscard={() => resolveAndProceed('discard')}
+          onLock={() => resolveAndProceed('lock')}
         />
       )}
     </div>
+  );
+}
+
+/** Provides the RosterPendingContext AppLayoutInner (above) and the Duty Roster page's own
+ * composed shell (Task #22) both need — see RosterPendingContext.tsx's own doc comment for why
+ * this replaced the old iframe/postMessage bridge. */
+export default function AppLayout({ children }: { children: ReactNode }) {
+  return (
+    <RosterPendingProvider>
+      <AppLayoutInner>{children}</AppLayoutInner>
+    </RosterPendingProvider>
   );
 }

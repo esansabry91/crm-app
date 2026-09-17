@@ -9,7 +9,7 @@ import { applyConfirmInvoiceSummary, applyUnconfirmInvoiceSummary, UNCONFIRM_INV
 import { applyConfirmCombinedHours, applyUnconfirmCombinedHours, UNCONFIRM_COMBINED_MODAL, NEED_REFRESH_TOAST } from "../combinedHoursData";
 import { computeIncomingSupportDates } from "../combinedHoursCrossSite";
 import { exportTimeAttendanceToExcel } from "../timeAttendanceExport";
-import { useCombinedHoursCache } from "../hooks/useCombinedHoursCache";
+import type { CombinedHoursCache } from "../hooks/useCombinedHoursCache";
 import SummaryReportPanel from "./SummaryReportPanel";
 import CombinedHoursPanel from "./CombinedHoursPanel";
 import ConfirmModal from "./modals/ConfirmModal";
@@ -28,10 +28,15 @@ import ConfirmModal from "./modals/ConfirmModal";
  * tab in this port, month navigation is page-level state (Task #22 composes the shared
  * useSiteConfig()/useMonthState() subscription and its month nav across every tab).
  *
- * `actorUid`/`actorName` stand in for `state.myUid`/`state.myName || state.myDepartment` — this
- * port has no signed-in-user/session hook built yet (out of scope for Task #20), so the caller
- * passes through whatever it already knows; Task #22 should wire these from the real auth/
- * profile hook.
+ * `actorUid`/`actorName` stand in for `state.myUid`/`state.myName || state.myDepartment` — wired
+ * by Task #22's page shell from the real CRM's useAuth()/RosterViewer.
+ *
+ * `combinedCache` is passed in rather than owned here (originally a local
+ * `useCombinedHoursCache()` call) — see that hook's own doc comment: Task #22 lifts it to the
+ * page shell, which invalidates it on every local site-config/month-state change so a stale
+ * figure doesn't survive this tab being remounted (e.g. switching away and back), while the
+ * "Refresh combined hours" button below stays the mechanism for picking up an edit made on a
+ * SIBLING site (the shell has no cheap way to watch every other site's own writes).
  */
 export interface SummaryReportTabProps {
   config: SiteConfig;
@@ -42,6 +47,7 @@ export interface SummaryReportTabProps {
   rateConfig: TenderRateConfig | null;
   allSites: Pick<SiteConfig, "id" | "name" | "branch" | "archived">[];
   siteConfigsCache: Record<string, GenerateMonthConfig>;
+  combinedCache: CombinedHoursCache;
   actorUid: string | null;
   actorName: string | null;
   onPersistMonth: (ms: MonthState, opts?: { suppressConfirmRevoke?: boolean }) => void;
@@ -57,6 +63,7 @@ export default function SummaryReportTab({
   rateConfig,
   allSites,
   siteConfigsCache,
+  combinedCache,
   actorUid,
   actorName,
   onPersistMonth,
@@ -65,7 +72,6 @@ export default function SummaryReportTab({
   const [refreshing, setRefreshing] = useState(false);
   const [unconfirmInvoiceOpen, setUnconfirmInvoiceOpen] = useState(false);
   const [unconfirmCombinedOpen, setUnconfirmCombinedOpen] = useState(false);
-  const combinedCache = useCombinedHoursCache();
 
   const [y, m] = currentMonthKey.split("-").map(Number);
   const liveIncoming = combinedCache.get(config.id, currentMonthKey);

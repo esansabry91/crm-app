@@ -29,6 +29,11 @@ export interface UseRosterLockResult {
   /** ms with any in-progress draft merged on top, for the grid's own render only — see
    * currentMonthStateForRosterDisplay()'s doc comment in lockMachine.ts. */
   displayMs: MonthState | null;
+  /** The underlying useMonthState() persist, re-exposed so a caller that also needs generic
+   * "save this MonthState" access (every other tab's own edits — Guards & Shifts, Adjustments,
+   * Summary Report) can share this hook's single onSnapshot subscription instead of opening a
+   * second one via its own separate useMonthState(siteId, monthKey) call. */
+  persist: (next: MonthState, opts?: { suppressConfirmRevoke?: boolean }) => Promise<void>;
   locked: boolean;
   canManage: boolean;
   pendingCount: number;
@@ -90,6 +95,7 @@ export function useRosterLock(
     ms,
     loading,
     displayMs,
+    persist,
     locked: ms ? isRosterLocked(ms) : true,
     canManage: canManageRosterLock(session),
     pendingCount: ms ? pendingDraftCount(ms) : 0,
