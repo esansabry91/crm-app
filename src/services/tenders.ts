@@ -1214,14 +1214,21 @@ export async function cancelReassignment(tenderId: string) {
  * requestReassignBranch()). `choice` decides what happens to EVERY linked Duty Roster site that
  * was actually following this project's own branch (see `fromBranch` below):
  *  - 'bring-over': the site just moves to the new branch (its `branch` field changes) — same
- *    guards, schedule and history, nothing lost or recreated.
+ *    guards, schedule and history, nothing lost or recreated. Guards stay 'deployed' at the same
+ *    siteId throughout — nothing to release. (Their own mirrored `branch` field in the top-level
+ *    Guard Bank collection is a snapshot from whenever each was assigned, so it can lag behind
+ *    the site's new branch until Guard Bank's "Refresh from Duty Roster" resyncs it — same
+ *    staleness backfillGuardsFromDutyRoster() in services/guards.ts already exists to fix.)
  *  - 'new': the site is archived and unlinked from this tender (`tenderId` cleared, `archived`
  *    set) — kept forever for Admin/HQ/Payroll history/audit, exactly like a closed-out project's
  *    site (see setLinkedSitesArchived() below), but no longer "the" site for this tender. The
  *    very next Duty Roster visit for this tender then creates a brand-new, empty site under the
  *    new branch on its own, via the existing ?tenderId= deep-link bootstrap (see
  *    handleTenderDeepLinkIfNeeded() in public/duty-roster/index.html) — no separate
- *    site-creation logic needed here.
+ *    site-creation logic needed here. Same as setLinkedSitesArchived()'s own close-out archiving,
+ *    this also releases any guard still 'deployed' at the archived site back to the Guard Pool
+ *    (releaseGuardsFromSite()) — a guard's deployment shouldn't outlive the site it was archived
+ *    out from under, any more than it should outlive a closed-out project.
  *
  * `fromBranch` — the tender's own activeBranch/department BEFORE this reassignment (pass
  * `tender.activeBranch || tender.department`) — is what keeps this from sweeping up a site that
@@ -1251,6 +1258,9 @@ export async function acceptReassignment(
         updateDoc(d.ref, { tenderId: null, archived: true, archivedAt: Date.now(), updatedAt: Date.now() })
       )
     );
+    // Mirrors setLinkedSitesArchived()'s own archiving below — a guard shouldn't stay marked
+    // 'deployed' against a site that just got archived out from under this project.
+    await Promise.all(sitesFollowingProject.map((d) => releaseGuardsFromSite(d.id)));
   }
   await updateDoc(doc(db, 'tenders', tenderId), {
     activeBranch: toBranch,
