@@ -4874,8 +4874,15 @@
   // embedded (opened directly in its own tab/window during local testing, say) since there's no
   // parent frame to tell. Called at the end of every render() (both exit paths — see render()
   // itself) so it's always current, not just right after a drag/lock/discard.
+  // Set while the cross-frame message handler below is actively resolving a lock/discard on the
+  // CRM shell's behalf, so the render() calls inside lockRoster()/discardDraftChanges() don't
+  // post a premature "pending: false" before the Firestore write those trigger has actually
+  // landed — see that handler's own comment for why this matters.
+  let suppressLockStatusPost = false;
+
   function postLockStatusToParent(){
     if(window.parent === window) return;
+    if(suppressLockStatusPost) return;
     let pending = false;
     if(canManageRosterLock()){
       const ms = currentMonthState();
@@ -4899,8 +4906,22 @@
   window.addEventListener("message", e => {
     if(e.origin !== window.location.origin) return;
     if(!e.data || e.data.source !== "inter-prominent-crm" || e.data.type !== "resolve-pending") return;
-    if(e.data.action === "lock") lockRoster();
-    else if(e.data.action === "discard") discardDraftChanges();
+    // lockRoster()/discardDraftChanges() update in-memory state and re-render immediately (so
+    // this page's own UI never looks delayed), but their Firestore write is fire-and-forget —
+    // if we let render()'s normal postLockStatusToParent() call fire right away, the CRM shell
+    // sees "pending: false" and navigates before that write has actually reached the server,
+    // tearing down this iframe (and the in-flight request with it) mid-write. Suppressing that
+    // call and only reporting status once the write's own promise has settled means the shell
+    // never gets the "all clear" until the change is genuinely persisted.
+    suppressLockStatusPost = true;
+    let persisted;
+    if(e.data.action === "lock") persisted = lockRoster();
+    else if(e.data.action === "discard") persisted = discardDraftChanges();
+    else { suppressLockStatusPost = false; return; }
+    Promise.resolve(persisted).finally(() => {
+      suppressLockStatusPost = false;
+      postLockStatusToParent();
+    });
   });
 
   // Guards any action that would move away from the Roster sheet while it's unlocked with
@@ -5622,8 +5643,9 @@
   // state.suppressConfirmRevoke idiom the Confirm/Unconfirm Combined Hours buttons already use.
   function persistDraftChange(){
     state.suppressConfirmRevoke = true;
-    persistMonth();
+    const p = persistMonth();
     state.suppressConfirmRevoke = false;
+    return p;
   }
 
   // Swaps two Roster-sheet tiles via drag — same two-key override write "Swap two shifts"
@@ -5710,18 +5732,19 @@
   }
 
   function lockRoster(){
-    if(!canManageRosterLock()) return;
+    if(!canManageRosterLock()) return Promise.resolve();
     const ms = currentMonthState();
-    if(isRosterLocked(ms)) return;
+    if(isRosterLocked(ms)) return Promise.resolve();
     const draft = monthDraftOverrides(ms);
     const n = Object.keys(draft).length;
     Object.assign(ms.overrides, draft);
     ms.draftOverrides = {};
     ms.rosterLocked = true;
     addLog(n > 0 ? `Locked the roster sheet — applied ${n} drag rearrangement${n===1?"":"s"}.` : "Locked the roster sheet.");
-    persistMonth();
+    const persisted = persistMonth();
     showToast("Roster locked.");
     render();
+    return persisted;
   }
 
   function unlockRoster(){
@@ -5743,9 +5766,9 @@
   // discarded draft never touched it), only rosterLocked flips back to true, so an
   // already-confirmed Combined Hours/Invoice figure stays valid.
   function discardDraftChanges(){
-    if(!canManageRosterLock()) return;
+    if(!canManageRosterLock()) return Promise.resolve();
     const ms = currentMonthState();
-    if(isRosterLocked(ms)) return;
+    if(isRosterLocked(ms)) return Promise.resolve();
     // No early-return when the draft is already empty — per the comment above, discarding must
     // always land back on locked, even when there's nothing to throw away (an unlocked roster
     // with an empty draft is exactly the "hit another tab before dragging anything" case).
@@ -5753,9 +5776,10 @@
     ms.draftOverrides = {};
     ms.rosterLocked = true;
     addLog(hadDraft ? "Discarded the unlocked rearrangement and locked the roster sheet again." : "Locked the roster sheet (no changes to discard).");
-    persistDraftChange();
+    const persisted = persistDraftChange();
     showToast(hadDraft ? "Discarded — roster sheet is locked again." : "Roster locked.");
     render();
+    return persisted;
   }
 
   $("#rosterLockToggleBtn").addEventListener("click", () => {
@@ -6108,15 +6132,19 @@
     if(!dbHandle || suppressPersist) return;
     dbHandle.doc("sites/"+siteId).set(cfg).catch(()=>{});
   }
-  function persistMonth(){ persistMonthByKey(state.currentSiteId, state.currentMonth); }
+  // Returns the write's own promise (resolved immediately when there's nothing to persist, e.g.
+  // no dbHandle yet) so callers that need to know the change actually landed server-side — see
+  // the cross-frame message handler above — can wait on it, instead of only on the in-memory
+  // state flip render() reflects instantly.
+  function persistMonth(){ return persistMonthByKey(state.currentSiteId, state.currentMonth); }
   function persistMonthByKey(siteId, key){
     const ms = state.monthsCache[monthCacheKey(siteId, key)];
-    if(!ms) return;
+    if(!ms) return Promise.resolve();
     invalidateCombinedHoursCache();
     if(!state.suppressConfirmRevoke) revokeConfirmationIfPresent(ms);
     ms.updatedAt = nowIso();
-    if(!dbHandle || suppressPersist) return;
-    dbHandle.doc("sites/"+siteId).collection("months").doc(key).set(ms).catch(()=>{});
+    if(!dbHandle || suppressPersist) return Promise.resolve();
+    return dbHandle.doc("sites/"+siteId).collection("months").doc(key).set(ms).catch(()=>{});
   }
 
   /* ---------------- Guard Bank sync (best-effort, never blocks a Duty Roster edit) ----------------
