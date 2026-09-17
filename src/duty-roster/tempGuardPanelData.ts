@@ -52,8 +52,7 @@ export function buildTempGuardRows(config: Pick<SiteConfig, "site">, ms: MonthSt
   return { rows, total };
 }
 
-export interface TempGuardFormValues {
-  slotKey: string;
+export interface TempGuardIdentityFormValues {
   name: string;
   rateRaw: string;
   mykadNumber: string;
@@ -63,10 +62,16 @@ export interface TempGuardFormValues {
   city: string;
 }
 
-/** #assignTempBtn validation, exact original order (first failure wins). Shared verbatim with the
- * temp-guard branch of "Assign an additional guard" (additionalGuardData.ts calls this too). */
-export function validateTempGuardForm(form: TempGuardFormValues): { error: string } | { record: TempGuardRecord } {
-  if (!form.slotKey) return { error: "Pick an unfilled slot first." };
+export interface TempGuardFormValues extends TempGuardIdentityFormValues {
+  slotKey: string;
+}
+
+/** The 7-field identity/rate validation shared verbatim by both callers that create a
+ * TempGuardRecord: the standalone "Assign a temporary guard" panel (which additionally requires a
+ * slot pick first, see validateTempGuardForm() below) and the temp-guard branch of "Assign an
+ * additional guard" (additionalGuardData.ts), which validates its date range separately instead
+ * of a slot. */
+export function validateTempGuardIdentityFields(form: TempGuardIdentityFormValues): { error: string } | { record: TempGuardRecord } {
   const name = form.name.trim();
   if (!name) return { error: "Enter the temporary guard's name." };
   const rate = Number(form.rateRaw);
@@ -83,6 +88,13 @@ export function validateTempGuardForm(form: TempGuardFormValues): { error: strin
   return {
     record: { name, rate, mykadNumber: form.mykadNumber, age, phoneNumber: form.phoneNumber, state, city, createdAt: nowIso() },
   };
+}
+
+/** #assignTempBtn validation, exact original order (first failure wins): the slot pick, THEN the
+ * 7 identity/rate fields via validateTempGuardIdentityFields(). */
+export function validateTempGuardForm(form: TempGuardFormValues): { error: string } | { record: TempGuardRecord } {
+  if (!form.slotKey) return { error: "Pick an unfilled slot first." };
+  return validateTempGuardIdentityFields(form);
 }
 
 export interface AssignTempGuardOutcome {

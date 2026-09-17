@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
-import type { SiteConfig, MonthState, GenerateMonthResult } from "../types";
+import { useEffect, useMemo, useState } from "react";
+import type { Guard, SiteConfig, MonthState, GenerateMonthResult } from "../types";
 import { LEAVE_REASONS } from "../types";
+import type { GenerateMonthConfig } from "../schedulingEngine";
 import {
   activeGuardOptions,
   findGuardSlotOnDate,
@@ -12,6 +13,9 @@ import {
   type LeaveReplacementMode,
   type MarkLeaveChoice,
 } from "../leaveData";
+import { otherBranchSites, computeFreeGuardsAt, syncHomeSiteSupportLeave, type SitePickerOption } from "../supportGuardCrossSite";
+import { computeShiftDefsForDay } from "../shiftStructure";
+import { dowMon, shiftStartEnd } from "../dateUtils";
 
 /**
  * "Mark a guard on leave" panel + leave table (renderLeaveGuardSelect()/updateLeaveReplacementUI()
@@ -22,23 +26,28 @@ import {
  * that cross-month capability depends on the page-level Firestore composition being built in
  * Task #22 and is deliberately deferred, matching how this rewrite has consistently kept
  * Firestore-specific concerns out of the presentational layer until that task wires the real
- * hooks together. Support-mode replacement is likewise deferred here — `canAssignSupport`
- * gates it off entirely until supportGuardCrossSite.ts (Task #19 continuation) is wired in.
+ * hooks together.
  */
 export interface LeavePanelProps {
   config: SiteConfig;
   ms: MonthState;
   result: GenerateMonthResult;
   canAssignSupport: boolean;
+  allSites: Pick<SiteConfig, "id" | "name" | "branch" | "archived">[];
+  siteConfigsCache: Record<string, GenerateMonthConfig>;
   onSave: (ms: MonthState, toast?: string) => void;
 }
 
-export default function LeavePanel({ config, ms, result, canAssignSupport, onSave }: LeavePanelProps) {
+export default function LeavePanel({ config, ms, result, canAssignSupport, allSites, siteConfigsCache, onSave }: LeavePanelProps) {
   const [guardId, setGuardId] = useState("");
   const [dateStr, setDateStr] = useState("");
   const [reason, setReason] = useState<string>(LEAVE_REASONS[0]);
   const [mode, setMode] = useState<LeaveReplacementMode>("");
   const [coverGuardId, setCoverGuardId] = useState("");
+  const [originSiteId, setOriginSiteId] = useState("");
+  const [originGuardId, setOriginGuardId] = useState("");
+  const [freeGuards, setFreeGuards] = useState<Guard[] | null>(null);
+  const [freeGuardsLoading, setFreeGuardsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const guards = activeGuardOptions(config);
@@ -48,8 +57,39 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, onSav
     () => (slotInfo && day ? restingGuardsOn(config, ms, dateStr, guardId, day) : []),
     [slotInfo, day, config, ms, dateStr, guardId]
   );
-  const note =
-    guardId && dateStr ? leaveReplacementNote(config, ms, guardId, dateStr, slotInfo, mode, resting.length) : "";
+  const note = guardId && dateStr ? leaveReplacementNote(config, ms, guardId, dateStr, slotInfo, mode, resting.length) : "";
+  const supportSites: SitePickerOption[] = canAssignSupport ? otherBranchSites(allSites, config.id, config.branch) : [];
+
+  // fillLeaveSupportSites()/fillLeaveSupportGuardSelect() (lines ~4230-4260) — mirrors
+  // SupportGuardPanel's own availability lookup, keyed off the leave panel's own slot/origin
+  // selection instead.
+  useEffect(() => {
+    setOriginGuardId("");
+    setFreeGuards(null);
+    if (mode !== "support" || !slotInfo || !originSiteId) return;
+    const originConfig = siteConfigsCache[originSiteId];
+    if (!originConfig) return;
+    const defs = computeShiftDefsForDay(config.site, dowMon(dateStr));
+    const sd = defs.find((s) => s.id === slotInfo.shiftId);
+    const supportWindow = sd
+      ? (() => {
+          const { start, end } = shiftStartEnd(dateStr, sd);
+          return { startMs: start.getTime(), endMs: end.getTime() };
+        })()
+      : null;
+    let cancelled = false;
+    setFreeGuardsLoading(true);
+    computeFreeGuardsAt(originConfig, originSiteId, dateStr, dateStr.slice(0, 7), supportWindow)
+      .then((list) => {
+        if (!cancelled) setFreeGuards(list);
+      })
+      .finally(() => {
+        if (!cancelled) setFreeGuardsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, slotInfo, originSiteId, siteConfigsCache, config.site, dateStr]);
 
   const rows = buildLeaveTableRows(config, ms);
 
@@ -61,9 +101,23 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, onSav
       if (mode === "temp") choice = { mode: "temp" };
       else if (mode === "restday") choice = { mode: "restday", coverGuardId };
       else if (mode === "support") {
-        // Support mode requires a cross-site guard lookup this panel doesn't have wired yet.
-        setError("Support guard replacement isn't available from this panel yet — use Temporary guard or Rest day.");
-        return;
+        if (!canAssignSupport) return; // silent, matches the original's defensive guard
+        if (!originSiteId) return setError("Pick which site to borrow a guard from.");
+        if (!originGuardId) return setError("Pick which guard is covering this shift.");
+        const originSite = supportSites.find((s) => s.id === originSiteId);
+        const originGuard = (freeGuards || []).find((g) => g.id === originGuardId);
+        if (!originSite || !originGuard) return setError("Couldn't find that guard — try again.");
+        const defs = computeShiftDefsForDay(config.site, dowMon(dateStr));
+        const sd = defs.find((s) => s.id === slotInfo.shiftId);
+        const supportShiftEndMs = sd ? shiftStartEnd(dateStr, sd).end.getTime() : Date.now();
+        choice = {
+          mode: "support",
+          originGuardId,
+          originGuardName: originGuard.name,
+          originSiteId,
+          originSiteName: originSite.name,
+          supportShiftEndMs,
+        };
       }
     }
     const outcome = applyMarkLeave(config, ms, guardId, dateStr, reason, slotInfo, choice);
@@ -73,12 +127,28 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, onSav
     }
     setMode("");
     setCoverGuardId("");
-    onSave(outcome.ms);
+    setOriginSiteId("");
+    setOriginGuardId("");
+    onSave(outcome.ms, outcome.toast);
+    if (outcome.supportSync && slotInfo) {
+      const defs = computeShiftDefsForDay(config.site, dowMon(dateStr));
+      const sd = defs.find((s) => s.id === slotInfo.shiftId);
+      const endMs = sd ? shiftStartEnd(dateStr, sd).end.getTime() : undefined;
+      void syncHomeSiteSupportLeave(outcome.supportSync.originSiteId, outcome.supportSync.originGuardId, dateStr, true, endMs, config.id, config.name);
+    }
   }
 
   function handleClear(date: string) {
-    const outcome = applyClearLeaveDay(ms, date, {});
+    const supportHomeSiteIds: Record<string, { homeSiteId: string; homeGuardId: string }> = {};
+    Object.keys(ms.supportGuards || {}).forEach((id) => {
+      const sg = ms.supportGuards[id];
+      if (sg) supportHomeSiteIds[id] = { homeSiteId: sg.homeSiteId, homeGuardId: sg.homeGuardId };
+    });
+    const outcome = applyClearLeaveDay(ms, date, supportHomeSiteIds);
     onSave(outcome.ms);
+    outcome.supportSyncsToUndo.forEach((s) => {
+      void syncHomeSiteSupportLeave(s.originSiteId, s.originGuardId, date, false);
+    });
   }
 
   return (
@@ -124,6 +194,37 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, onSav
                     </option>
                   ))}
                 </select>
+              )}
+              {mode === "support" && (
+                <>
+                  <select className="input" value={originSiteId} onChange={(e) => setOriginSiteId(e.target.value)}>
+                    <option value="">Coming from…</option>
+                    {supportSites.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className="input"
+                    value={originGuardId}
+                    onChange={(e) => setOriginGuardId(e.target.value)}
+                    disabled={freeGuardsLoading || !freeGuards}
+                  >
+                    <option value="">
+                      {freeGuardsLoading
+                        ? "Checking availability…"
+                        : (freeGuards?.length ?? 0) === 0 && freeGuards
+                          ? "No guards free that day (or would end up under-rested)"
+                          : "Select a guard…"}
+                    </option>
+                    {(freeGuards || []).map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name} {g.employeeId ? `(${g.employeeId})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </>
               )}
             </div>
           )}

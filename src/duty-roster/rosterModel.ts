@@ -175,6 +175,17 @@ export function canManageRosterLock(session: RosterSession): boolean {
   return session.canEdit && (session.isPrivileged || session.myRole === "branchManager");
 }
 
+/** canAssignSupportGuard() — gates the whole "Assign a support guard" panel, the "support" option
+ * in both the leave-replacement and additional-guard source-mode selects, and (in the original)
+ * forces a live-selected "support" mode back to "" if access is revoked mid-session (a React
+ * port re-derives this on every render instead, so there's no separate "force reset" step to
+ * port — the option simply stops being offered). Broader than canManageRosterLock() (also
+ * includes dutyStaff) — covering one open slot with a borrowed guard is a smaller lever than
+ * rearranging the whole roster. */
+export function canAssignSupportGuard(session: RosterSession): boolean {
+  return session.canEdit && (session.isPrivileged || session.myRole === "branchManager" || session.myRole === "dutyStaff");
+}
+
 /** Every Additional Guard (Temporary) entry whose date range covers dateStr and whose shift
  * matches shiftId, in a stable order (object key insertion order) — generateMonth() derives
  * each entry's slot index from this order every run (never persisted), so as long as entries
