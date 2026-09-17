@@ -4879,7 +4879,11 @@
     let pending = false;
     if(canManageRosterLock()){
       const ms = currentMonthState();
-      if(!isRosterLocked(ms) && Object.keys(monthDraftOverrides(ms)).length > 0) pending = true;
+      // Report pending purely from lock state, not from whether anything's been dragged yet —
+      // an unlocked roster with an empty draft is still "pending" (the performer could navigate
+      // away without ever locking it back), so the CRM shell's own leave-guard must catch that
+      // case too, not just the "unlocked + something dragged" case this used to check for.
+      if(!isRosterLocked(ms)) pending = true;
     }
     window.parent.postMessage({ source: "inter-prominent-duty-roster", type: "lock-status", pending: pending }, window.location.origin);
   }
@@ -4915,7 +4919,10 @@
     const ms = currentMonthState();
     if(isRosterLocked(ms)){ proceed(); return; }
     const pendingCount = Object.keys(monthDraftOverrides(ms)).length;
-    if(pendingCount === 0){ proceed(); return; }
+    // Unlocked with nothing dragged yet: no warning needed (there's nothing to lose), but leaving
+    // it silently unlocked would strand the roster in "pending" indefinitely — lockRoster() on an
+    // empty draft is a safe no-op merge, so just re-lock it and proceed.
+    if(pendingCount === 0){ lockRoster(); proceed(); return; }
     openRosterUnlockedWarningModal(proceed, revert, pendingCount);
   }
 
@@ -5739,12 +5746,15 @@
     if(!canManageRosterLock()) return;
     const ms = currentMonthState();
     if(isRosterLocked(ms)) return;
-    if(!Object.keys(monthDraftOverrides(ms)).length) return;
+    // No early-return when the draft is already empty — per the comment above, discarding must
+    // always land back on locked, even when there's nothing to throw away (an unlocked roster
+    // with an empty draft is exactly the "hit another tab before dragging anything" case).
+    const hadDraft = Object.keys(monthDraftOverrides(ms)).length > 0;
     ms.draftOverrides = {};
     ms.rosterLocked = true;
-    addLog("Discarded the unlocked rearrangement and locked the roster sheet again.");
+    addLog(hadDraft ? "Discarded the unlocked rearrangement and locked the roster sheet again." : "Locked the roster sheet (no changes to discard).");
     persistDraftChange();
-    showToast("Discarded — roster sheet is locked again.");
+    showToast(hadDraft ? "Discarded — roster sheet is locked again." : "Roster locked.");
     render();
   }
 
