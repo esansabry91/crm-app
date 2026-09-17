@@ -623,14 +623,32 @@ export interface SiteEquipmentRate {
   quantity?: number;
 }
 
-/** One row within an invoice line group — one guard category's headcount/days/rate for one
- *  location. `amount` is computed as headcount * days * 12 (a 12-hour shift) * rate and stored
- *  alongside the inputs so a saved invoice's total never silently drifts if the formula changes
- *  later. */
+/** Which formula an invoice's (or, for a combined invoice, one site's) line items are billed
+ *  with — see InvoiceLineRow's doc comment for what each mode does to `amount`. Absent on every
+ *  invoice saved before this feature existed; those are always treated as 'headcount', the
+ *  original and still-default behavior. Chosen once per site (Invoice.billingMode for the
+ *  primary site, InvoiceSiteBill.billingMode for each additional one) — every row within that
+ *  site's line items shares the same mode, rather than a per-row choice. */
+export type InvoiceBillingMode = 'headcount' | 'manhour';
+
+/** One row within an invoice line group — one guard category's billing for one location.
+ *  `amount` is computed one of two ways depending on the site's InvoiceBillingMode:
+ *  'headcount' (the original, still-default behavior) is headcount * days * 12 (a 12-hour
+ *  shift) * rate; 'manhour' is `manHours` * rate directly, for a post whose actual hours don't
+ *  divide evenly into whole guard-days (temp/support coverage, partial shifts) — see
+ *  computeLineAmount()/computeManHourLineAmount() in services/invoices.ts. `amount` is always
+ *  stored alongside the inputs so a saved invoice's total never silently drifts if either
+ *  formula changes later. `headcount`/`days` are unused (kept at 0) on a 'manhour'-mode row, and
+ *  `manHours` is unused (kept at 0/absent) on a 'headcount'-mode row — never both meaningful at
+ *  once. */
 export interface InvoiceLineRow {
   category: string;
   headcount: number;
   days: number;
+  /** Total man-hours for this row, used only when this row's site is in 'manhour' billing mode
+   *  — see InvoiceBillingMode's doc comment. Absent/0 on a 'headcount'-mode row, and on every
+   *  row saved before this feature existed. */
+  manHours?: number;
   rate: number;
   amount: number;
 }
@@ -675,6 +693,10 @@ export interface InvoiceSiteBill {
   siteName: string;
   lineGroups: InvoiceLineGroup[];
   equipmentRows: InvoiceEquipmentRow[];
+  /** This site's own billing mode — see InvoiceBillingMode's doc comment. Independent of the
+   *  primary site's own Invoice.billingMode and of every other additional site on the same
+   *  combined invoice; absent/'headcount' on a site added before this feature existed. */
+  billingMode?: InvoiceBillingMode;
   /** This site's own subtotal (its lineGroups + equipmentRows amounts), computed and stored the
    *  same way Invoice.subTotal is, so it never silently drifts and prints instantly without
    *  re-deriving it. Folded into the invoice's overall subTotal/sstAmount/total. */
@@ -737,6 +759,11 @@ export interface Invoice {
   contractRef?: string;
   quotationNo?: string;
   paymentTermsDays: number;
+  /** This invoice's primary site's billing mode — see InvoiceBillingMode's doc comment. Each
+   *  additional site combined onto this invoice (additionalSiteBills below) carries its own,
+   *  independent mode instead. Absent/'headcount' on every invoice saved before this feature
+   *  existed. */
+  billingMode?: InvoiceBillingMode;
   lineGroups: InvoiceLineGroup[];
   /** Equipment/add-on rows (e-bikes, drones, etc.) billed on this invoice — see
    *  InvoiceEquipmentRow's doc comment. Absent/empty on invoices saved before this feature

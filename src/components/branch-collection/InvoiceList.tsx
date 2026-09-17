@@ -7,6 +7,7 @@ import {
   voidInvoice,
   updateInvoiceContent,
   computeLineAmount,
+  computeManHourLineAmount,
   sumLineGroups,
   sumEquipmentRows,
   roundMoney,
@@ -17,7 +18,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import InvoicePrintView from './InvoicePrintView';
 import StatCard from '../analytics/StatCard';
 import { isAdminRole } from '../../types';
-import type { Invoice, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceStatus } from '../../types';
+import type { Invoice, InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceStatus } from '../../types';
 
 const STATUS_LABEL: Record<InvoiceStatus, string> = {
   unpaid: 'Unpaid',
@@ -259,6 +260,10 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
   const [lineGroups, setLineGroups] = useState<InvoiceLineGroup[]>(() =>
     invoice.lineGroups.map((g) => ({ location: g.location, rows: g.rows.map((r) => ({ ...r })) }))
   );
+  // This invoice's primary-site billing mode — see InvoiceBillingMode's doc comment in
+  // types.ts. Loaded from the saved invoice; absent there means it predates this feature and is
+  // treated as 'headcount', the original behavior.
+  const [billingMode, setBillingMode] = useState<InvoiceBillingMode>(invoice.billingMode || 'headcount');
   // Equipment/add-on rows (e-bikes, drones, etc.) — see InvoiceEquipmentRow's doc comment in
   // types.ts. Absent on an invoice saved before this feature existed.
   const [equipmentRows, setEquipmentRows] = useState<InvoiceEquipmentRow[]>(() =>
@@ -279,14 +284,14 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
   function addRow(gi: number) {
     setLineGroups((prev) =>
       prev.map((g, i) =>
-        i === gi ? { ...g, rows: [...g.rows, { category: '', headcount: 0, days: 0, rate: 0, amount: 0 }] } : g
+        i === gi ? { ...g, rows: [...g.rows, { category: '', headcount: 0, days: 0, manHours: 0, rate: 0, amount: 0 }] } : g
       )
     );
   }
   function removeRow(gi: number, ri: number) {
     setLineGroups((prev) => prev.map((g, i) => (i === gi ? { ...g, rows: g.rows.filter((_, j) => j !== ri) } : g)));
   }
-  function updateRow(gi: number, ri: number, patch: Partial<{ category: string; headcount: number; days: number; rate: number }>) {
+  function updateRow(gi: number, ri: number, patch: Partial<{ category: string; headcount: number; days: number; manHours: number; rate: number }>) {
     setLineGroups((prev) =>
       prev.map((g, i) => {
         if (i !== gi) return g;
@@ -295,11 +300,32 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
           rows: g.rows.map((r, j) => {
             if (j !== ri) return r;
             const next = { ...r, ...patch };
-            next.amount = computeLineAmount(next.headcount, next.days, next.rate);
+            next.amount =
+              billingMode === 'manhour'
+                ? computeManHourLineAmount(next.manHours || 0, next.rate)
+                : computeLineAmount(next.headcount, next.days, next.rate);
             return next;
           }),
         };
       })
+    );
+  }
+
+  /** Switches this invoice's billing mode AND immediately recomputes every row's amount under
+   *  the new formula — same as InvoiceGenerator/InvoiceSiteSection's own handleBillingModeChange. */
+  function handleBillingModeChange(mode: InvoiceBillingMode) {
+    setBillingMode(mode);
+    setLineGroups((prev) =>
+      prev.map((g) => ({
+        ...g,
+        rows: g.rows.map((r) => ({
+          ...r,
+          amount:
+            mode === 'manhour'
+              ? computeManHourLineAmount(r.manHours || 0, r.rate)
+              : computeLineAmount(r.headcount, r.days, r.rate),
+        })),
+      }))
     );
   }
 
@@ -342,6 +368,7 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
         quotationNo,
         paymentTermsDays,
         sstRate,
+        billingMode,
         lineGroups,
         equipmentRows,
       };
@@ -405,9 +432,31 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <p className="text-xs font-medium text-slate-600">Line items</p>
-          <button onClick={addLineGroup} className="text-xs font-medium text-blue-700 hover:underline">
-            + Add location
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 rounded-md border border-slate-200 p-0.5">
+              <button
+                type="button"
+                onClick={() => handleBillingModeChange('headcount')}
+                className={`text-xs font-medium rounded px-2 py-1 ${
+                  billingMode === 'headcount' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                Headcount &amp; days
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBillingModeChange('manhour')}
+                className={`text-xs font-medium rounded px-2 py-1 ${
+                  billingMode === 'manhour' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                Man-hour
+              </button>
+            </div>
+            <button onClick={addLineGroup} className="text-xs font-medium text-blue-700 hover:underline">
+              + Add location
+            </button>
+          </div>
         </div>
         {lineGroups.map((group, gi) => (
           <div key={gi} className="border border-slate-200 rounded-lg p-2.5 mb-2">
@@ -426,8 +475,14 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
               <thead>
                 <tr className="text-left text-xs text-slate-400">
                   <th className="font-medium pb-1">Category</th>
-                  <th className="font-medium pb-1 w-20">Headcount</th>
-                  <th className="font-medium pb-1 w-20">Days</th>
+                  {billingMode === 'manhour' ? (
+                    <th className="font-medium pb-1 w-24">Man-hours</th>
+                  ) : (
+                    <>
+                      <th className="font-medium pb-1 w-20">Headcount</th>
+                      <th className="font-medium pb-1 w-20">Days</th>
+                    </>
+                  )}
                   <th className="font-medium pb-1 w-24">Rate</th>
                   <th className="font-medium pb-1 w-24 text-right">Amount</th>
                   <th className="w-14" />
@@ -443,25 +498,40 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
                         className="input w-full"
                       />
                     </td>
-                    <td className="pr-2 py-1">
-                      <input
-                        type="number"
-                        value={row.headcount === 0 ? '' : row.headcount}
-                        onFocus={(e) => e.target.select()}
-                        onChange={(e) => updateRow(gi, ri, { headcount: Number(e.target.value) || 0 })}
-                        className="input w-full"
-                      />
-                    </td>
-                    <td className="pr-2 py-1">
-                      <input
-                        type="number"
-                        step="0.5"
-                        value={row.days === 0 ? '' : row.days}
-                        onFocus={(e) => e.target.select()}
-                        onChange={(e) => updateRow(gi, ri, { days: Number(e.target.value) || 0 })}
-                        className="input w-full"
-                      />
-                    </td>
+                    {billingMode === 'manhour' ? (
+                      <td className="pr-2 py-1">
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={row.manHours === 0 || row.manHours == null ? '' : row.manHours}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => updateRow(gi, ri, { manHours: Number(e.target.value) || 0 })}
+                          className="input w-full"
+                        />
+                      </td>
+                    ) : (
+                      <>
+                        <td className="pr-2 py-1">
+                          <input
+                            type="number"
+                            value={row.headcount === 0 ? '' : row.headcount}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => updateRow(gi, ri, { headcount: Number(e.target.value) || 0 })}
+                            className="input w-full"
+                          />
+                        </td>
+                        <td className="pr-2 py-1">
+                          <input
+                            type="number"
+                            step="0.5"
+                            value={row.days === 0 ? '' : row.days}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => updateRow(gi, ri, { days: Number(e.target.value) || 0 })}
+                            className="input w-full"
+                          />
+                        </td>
+                      </>
+                    )}
                     <td className="pr-2 py-1">
                       <input
                         type="number"

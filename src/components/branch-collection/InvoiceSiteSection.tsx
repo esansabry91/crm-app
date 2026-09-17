@@ -5,6 +5,7 @@ import { getTenderSiteDetails } from '../../services/tenders';
 import { useConfirmedMonthSummary } from '../../services/dutyRosterSummary';
 import {
   computeLineAmount,
+  computeManHourLineAmount,
   sumLineGroups,
   sumEquipmentRows,
   deriveRateCategoriesFromGuardRate,
@@ -13,6 +14,7 @@ import {
 } from '../../services/invoices';
 import type { BillingSite } from '../../services/siteBilling';
 import type {
+  InvoiceBillingMode,
   InvoiceEquipmentRow,
   InvoiceLineGroup,
   SiteBillingRate,
@@ -25,6 +27,10 @@ export interface InvoiceSiteSectionData {
   siteName: string;
   lineGroups: InvoiceLineGroup[];
   equipmentRows: InvoiceEquipmentRow[];
+  /** This site's own billing mode — see InvoiceBillingMode's doc comment in types.ts.
+   *  Independent of the primary site's mode and of every other additional site on this
+   *  combined invoice. */
+  billingMode: InvoiceBillingMode;
   subTotal: number;
   canSave: boolean;
 }
@@ -67,6 +73,8 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
   const [tenderEquipment, setTenderEquipment] = useState<TenderEquipmentItem[]>([]);
 
   const [lineGroups, setLineGroups] = useState<InvoiceLineGroup[]>([]);
+  // This site's own billing-mode toggle — see InvoiceSiteSectionData.billingMode's doc comment.
+  const [billingMode, setBillingMode] = useState<InvoiceBillingMode>('headcount');
   const [equipmentRows, setEquipmentRows] = useState<InvoiceEquipmentRow[]>([]);
   const [discrepancyAcknowledged, setDiscrepancyAcknowledged] = useState(false);
 
@@ -152,7 +160,7 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
               ...g,
               rows: [
                 ...g.rows,
-                { category: firstRate?.category || '', headcount: 0, days: 0, rate: firstRate?.hourlyRate || 0, amount: 0 },
+                { category: firstRate?.category || '', headcount: 0, days: 0, manHours: 0, rate: firstRate?.hourlyRate || 0, amount: 0 },
               ],
             }
           : g
@@ -162,7 +170,7 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
   function removeRow(gi: number, ri: number) {
     setLineGroups((prev) => prev.map((g, i) => (i === gi ? { ...g, rows: g.rows.filter((_, j) => j !== ri) } : g)));
   }
-  function updateRow(gi: number, ri: number, patch: Partial<{ category: string; headcount: number; days: number; rate: number }>) {
+  function updateRow(gi: number, ri: number, patch: Partial<{ category: string; headcount: number; days: number; manHours: number; rate: number }>) {
     setLineGroups((prev) =>
       prev.map((g, i) => {
         if (i !== gi) return g;
@@ -171,7 +179,10 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
           rows: g.rows.map((r, j) => {
             if (j !== ri) return r;
             const next = { ...r, ...patch };
-            next.amount = computeLineAmount(next.headcount, next.days, next.rate);
+            next.amount =
+              billingMode === 'manhour'
+                ? computeManHourLineAmount(next.manHours || 0, next.rate)
+                : computeLineAmount(next.headcount, next.days, next.rate);
             return next;
           }),
         };
@@ -181,6 +192,24 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
   function handleCategoryChange(gi: number, ri: number, category: string) {
     const match = rateCatalog.find((r) => r.category === category);
     updateRow(gi, ri, { category, rate: match ? match.hourlyRate : 0 });
+  }
+
+  /** Same as InvoiceGenerator's own handleBillingModeChange — switches this site's mode AND
+   *  immediately recomputes every already-typed row's amount under the new formula. */
+  function handleBillingModeChange(mode: InvoiceBillingMode) {
+    setBillingMode(mode);
+    setLineGroups((prev) =>
+      prev.map((g) => ({
+        ...g,
+        rows: g.rows.map((r) => ({
+          ...r,
+          amount:
+            mode === 'manhour'
+              ? computeManHourLineAmount(r.manHours || 0, r.rate)
+              : computeLineAmount(r.headcount, r.days, r.rate),
+        })),
+      }))
+    );
   }
 
   function addEquipmentRow() {
@@ -230,7 +259,12 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
   const subTotal = sumLineGroups(lineGroups) + sumEquipmentRows(equipmentRows);
 
   const lineManHours = lineGroups.reduce(
-    (sum, g) => sum + g.rows.reduce((s, r) => s + r.headcount * r.days * INVOICE_HOURS_PER_SHIFT, 0),
+    (sum, g) =>
+      sum +
+      g.rows.reduce(
+        (s, r) => s + (billingMode === 'manhour' ? r.manHours || 0 : r.headcount * r.days * INVOICE_HOURS_PER_SHIFT),
+        0
+      ),
     0
   );
   const remainingManHours = confirmedSummary ? confirmedSummary.manHours - lineManHours : null;
@@ -244,7 +278,7 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
     0
   );
   const siteGuardCount = site.guardCount ?? null;
-  const headcountExceedsSite = siteGuardCount != null && totalHeadcount > siteGuardCount;
+  const headcountExceedsSite = billingMode === 'headcount' && siteGuardCount != null && totalHeadcount > siteGuardCount;
 
   const canSave =
     (lineGroups.length > 0 || equipmentRows.length > 0)
@@ -257,9 +291,9 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
   // fresh function identity from the parent every render) so this only re-fires when this site's
   // OWN data actually changes, never as a side effect of the parent re-rendering.
   useEffect(() => {
-    onChange({ siteId: site.id, siteName: site.name, lineGroups, equipmentRows, subTotal, canSave });
+    onChange({ siteId: site.id, siteName: site.name, lineGroups, billingMode, equipmentRows, subTotal, canSave });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [site.id, site.name, lineGroups, equipmentRows, subTotal, canSave]);
+  }, [site.id, site.name, lineGroups, billingMode, equipmentRows, subTotal, canSave]);
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
@@ -342,7 +376,7 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
         </p>
       )}
 
-      {siteGuardCount != null && (
+      {billingMode === 'headcount' && siteGuardCount != null && (
         <div className={`rounded-lg px-3 py-2 text-sm ${headcountExceedsSite ? 'bg-rose-50 text-rose-800' : 'bg-slate-50 text-slate-600'}`}>
           <p className="font-medium">
             Headcount: {totalHeadcount} / {siteGuardCount} guard post{siteGuardCount === 1 ? '' : 's'} required at this
@@ -357,12 +391,34 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs font-medium text-slate-500">Line items</p>
-          <button
-            onClick={addLineGroup}
-            className="text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
-          >
-            + Add location
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 rounded-md border border-slate-200 p-0.5">
+              <button
+                type="button"
+                onClick={() => handleBillingModeChange('headcount')}
+                className={`text-xs font-medium rounded px-2 py-1 ${
+                  billingMode === 'headcount' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                Headcount &amp; days
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBillingModeChange('manhour')}
+                className={`text-xs font-medium rounded px-2 py-1 ${
+                  billingMode === 'manhour' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                Man-hour
+              </button>
+            </div>
+            <button
+              onClick={addLineGroup}
+              className="text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
+            >
+              + Add location
+            </button>
+          </div>
         </div>
         {lineGroups.map((group, gi) => (
           <div key={gi} className="border border-slate-200 rounded-lg p-3 mb-3">
@@ -382,8 +438,14 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
               <thead>
                 <tr className="text-left text-xs text-slate-400">
                   <th className="font-medium pb-1">Category</th>
-                  <th className="font-medium pb-1 w-24">Headcount</th>
-                  <th className="font-medium pb-1 w-24">Days</th>
+                  {billingMode === 'manhour' ? (
+                    <th className="font-medium pb-1 w-28">Man-hours</th>
+                  ) : (
+                    <>
+                      <th className="font-medium pb-1 w-24">Headcount</th>
+                      <th className="font-medium pb-1 w-24">Days</th>
+                    </>
+                  )}
                   <th className="font-medium pb-1 w-24">Rate</th>
                   <th className="font-medium pb-1 w-28 text-right">Amount</th>
                   <th className="w-16" />
@@ -406,35 +468,53 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
                         ))}
                       </select>
                     </td>
-                    <td className="pr-2 py-1">
-                      <input
-                        type="number"
-                        value={row.headcount === 0 ? '' : row.headcount}
-                        onFocus={(e) => e.target.select()}
-                        onChange={(e) => {
-                          const raw = e.target.value.replace(/^0+(?=\d)/, '');
-                          let parsed = raw === '' ? 0 : Number(raw) || 0;
-                          const remaining = remainingHeadcountFor(gi, ri);
-                          if (remaining != null) parsed = Math.min(parsed, remaining);
-                          updateRow(gi, ri, { headcount: parsed });
-                        }}
-                        max={remainingHeadcountFor(gi, ri) ?? undefined}
-                        className="input w-full"
-                      />
-                    </td>
-                    <td className="pr-2 py-1">
-                      <input
-                        type="number"
-                        step="0.5"
-                        value={row.days === 0 ? '' : row.days}
-                        onFocus={(e) => e.target.select()}
-                        onChange={(e) => {
-                          const raw = e.target.value.replace(/^0+(?=\d)/, '');
-                          updateRow(gi, ri, { days: raw === '' ? 0 : Number(raw) || 0 });
-                        }}
-                        className="input w-full"
-                      />
-                    </td>
+                    {billingMode === 'manhour' ? (
+                      <td className="pr-2 py-1">
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={row.manHours === 0 || row.manHours == null ? '' : row.manHours}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                            updateRow(gi, ri, { manHours: raw === '' ? 0 : Number(raw) || 0 });
+                          }}
+                          className="input w-full"
+                        />
+                      </td>
+                    ) : (
+                      <>
+                        <td className="pr-2 py-1">
+                          <input
+                            type="number"
+                            value={row.headcount === 0 ? '' : row.headcount}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                              let parsed = raw === '' ? 0 : Number(raw) || 0;
+                              const remaining = remainingHeadcountFor(gi, ri);
+                              if (remaining != null) parsed = Math.min(parsed, remaining);
+                              updateRow(gi, ri, { headcount: parsed });
+                            }}
+                            max={remainingHeadcountFor(gi, ri) ?? undefined}
+                            className="input w-full"
+                          />
+                        </td>
+                        <td className="pr-2 py-1">
+                          <input
+                            type="number"
+                            step="0.5"
+                            value={row.days === 0 ? '' : row.days}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                              updateRow(gi, ri, { days: raw === '' ? 0 : Number(raw) || 0 });
+                            }}
+                            className="input w-full"
+                          />
+                        </td>
+                      </>
+                    )}
                     <td className="pr-2 py-1">
                       <input
                         type="number"

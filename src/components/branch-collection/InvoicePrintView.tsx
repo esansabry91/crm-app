@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import { amountToRinggitWords, cardinalWordsLower } from '../../utils/numberToWords';
 import { sumEquipmentRows, sumLineGroups } from '../../services/invoices';
-import type { Brand, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceSiteBill, InvoiceStatus } from '../../types';
+import type { Brand, InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceLineRow, InvoiceSiteBill, InvoiceStatus } from '../../types';
 
 export interface InvoicePrintData {
   brand: Brand;
@@ -19,6 +19,10 @@ export interface InvoicePrintData {
    *  label above its own lineGroups/equipmentRows section. Unused (and unlabeled) on a normal
    *  single-site invoice, matching the print layout from before this field existed. */
   siteName?: string;
+  /** This invoice's primary site's billing mode — see InvoiceBillingMode's doc comment in
+   *  types.ts. Each entry in additionalSiteBills below carries its own mode instead. Absent/
+   *  'headcount' for every invoice saved before this feature existed. */
+  billingMode?: InvoiceBillingMode;
   lineGroups: InvoiceLineGroup[];
   /** Equipment/add-on rows (e-bikes, drones, etc.) — see InvoiceEquipmentRow's doc comment
    *  in types.ts. Absent/empty for a guard-only invoice, or one saved before this feature
@@ -76,18 +80,77 @@ function formatVoidDate(ts: number | undefined): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/** Renders one location group's guard-category rows — shared by both the single-site layout
+ *  and the per-site (combined invoice) layout below, so the two mode-aware column sets
+ *  (headcount/days vs man-hours — see InvoiceBillingMode's doc comment in types.ts) are defined
+ *  in exactly one place instead of drifting apart between the two call sites. */
+function LineRowsTable({ rows, mode }: { rows: InvoiceLineRow[]; mode: InvoiceBillingMode }) {
+  return (
+    <table className="w-full text-xs mt-1">
+      <thead>
+        <tr className="text-left text-slate-500">
+          {mode === 'manhour' ? (
+            <>
+              <th className="font-medium pr-2">MAN-HOURS</th>
+              <th className="font-medium pr-2">RATE</th>
+              <th className="font-medium text-right pr-2">AMOUNT</th>
+            </>
+          ) : (
+            <>
+              <th className="font-medium pr-2">HEADCOUNT</th>
+              <th className="font-medium pr-2">RATE</th>
+              <th className="font-medium pr-2">DAYS</th>
+              <th className="font-medium text-right pr-2">AMOUNT</th>
+            </>
+          )}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, ri) => (
+          <tr key={ri}>
+            {mode === 'manhour' ? (
+              <>
+                <td className="pr-2 uppercase">
+                  {row.manHours || 0} × {row.category}
+                </td>
+                <td className="pr-2">{row.rate.toFixed(2)}</td>
+                <td className="text-right pr-2">{formatMoney(row.amount)}</td>
+              </>
+            ) : (
+              <>
+                <td className="pr-2 uppercase">
+                  {row.headcount} × {row.category}
+                </td>
+                <td className="pr-2">{row.rate.toFixed(2)}</td>
+                <td className="pr-2">{row.days}</td>
+                <td className="text-right pr-2">{formatMoney(row.amount)}</td>
+              </>
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
   const { brand } = data;
   const displayName = brand.legalName || brand.name;
   const isVoid = data.status === 'void';
   const hasAdditionalSites = !!(data.additionalSiteBills && data.additionalSiteBills.length > 0);
-  const siteBills: { siteName: string; lineGroups: InvoiceLineGroup[]; equipmentRows: InvoiceEquipmentRow[] }[] = hasAdditionalSites
+  const siteBills: { siteName: string; lineGroups: InvoiceLineGroup[]; equipmentRows: InvoiceEquipmentRow[]; billingMode: InvoiceBillingMode }[] = hasAdditionalSites
     ? [
-        { siteName: data.siteName || 'Site 1', lineGroups: data.lineGroups, equipmentRows: data.equipmentRows || [] },
+        {
+          siteName: data.siteName || 'Site 1',
+          lineGroups: data.lineGroups,
+          equipmentRows: data.equipmentRows || [],
+          billingMode: data.billingMode || 'headcount',
+        },
         ...(data.additionalSiteBills || []).map((b) => ({
           siteName: b.siteName,
           lineGroups: b.lineGroups,
           equipmentRows: b.equipmentRows,
+          billingMode: b.billingMode || 'headcount',
         })),
       ]
     : [];
@@ -248,28 +311,7 @@ export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
                           <td className="text-center align-top">{no}</td>
                           <td colSpan={2}>
                             <p className="font-semibold underline">{group.location}</p>
-                            <table className="w-full text-xs mt-1">
-                              <thead>
-                                <tr className="text-left text-slate-500">
-                                  <th className="font-medium pr-2">HEADCOUNT</th>
-                                  <th className="font-medium pr-2">RATE</th>
-                                  <th className="font-medium pr-2">DAYS</th>
-                                  <th className="font-medium text-right pr-2">AMOUNT</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {group.rows.map((row, ri) => (
-                                  <tr key={ri}>
-                                    <td className="pr-2 uppercase">
-                                      {row.headcount} × {row.category}
-                                    </td>
-                                    <td className="pr-2">{row.rate.toFixed(2)}</td>
-                                    <td className="pr-2">{row.days}</td>
-                                    <td className="text-right pr-2">{formatMoney(row.amount)}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                            <LineRowsTable rows={group.rows} mode={siteBill.billingMode} />
                           </td>
                         </tr>
                       );
@@ -303,28 +345,7 @@ export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
                     <td className="text-center align-top">{gi + 1}</td>
                     <td colSpan={2}>
                       <p className="font-semibold underline">{group.location}</p>
-                      <table className="w-full text-xs mt-1">
-                        <thead>
-                          <tr className="text-left text-slate-500">
-                            <th className="font-medium pr-2">HEADCOUNT</th>
-                            <th className="font-medium pr-2">RATE</th>
-                            <th className="font-medium pr-2">DAYS</th>
-                            <th className="font-medium text-right pr-2">AMOUNT</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.rows.map((row, ri) => (
-                            <tr key={ri}>
-                              <td className="pr-2 uppercase">
-                                {row.headcount} × {row.category}
-                              </td>
-                              <td className="pr-2">{row.rate.toFixed(2)}</td>
-                              <td className="pr-2">{row.days}</td>
-                              <td className="text-right pr-2">{formatMoney(row.amount)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <LineRowsTable rows={group.rows} mode={data.billingMode || 'headcount'} />
                     </td>
                   </tr>
               ))}

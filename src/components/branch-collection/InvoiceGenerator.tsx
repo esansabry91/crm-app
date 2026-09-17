@@ -9,6 +9,7 @@ import { useConfirmedMonthSummary } from '../../services/dutyRosterSummary';
 import {
   createInvoice,
   computeLineAmount,
+  computeManHourLineAmount,
   sumLineGroups,
   sumEquipmentRows,
   peekNextInvoiceNumber,
@@ -19,7 +20,7 @@ import {
 } from '../../services/invoices';
 import InvoicePrintView from './InvoicePrintView';
 import InvoiceSiteSection, { type InvoiceSiteSectionData } from './InvoiceSiteSection';
-import type { InvoiceEquipmentRow, InvoiceLineGroup, SiteBillingRate, SiteEquipmentRate, TenderEquipmentItem } from '../../types';
+import type { InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, SiteBillingRate, SiteEquipmentRate, TenderEquipmentItem } from '../../types';
 
 const MONTH_NAMES = [
   'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
@@ -85,6 +86,12 @@ export default function InvoiceGenerator() {
   const [paymentTermsDays, setPaymentTermsDays] = useState(30);
   const [sstRate, setSstRate] = useState(0.08);
   const [lineGroups, setLineGroups] = useState<InvoiceLineGroup[]>([]);
+  // Whether this (primary) site's line items are billed headcount * days * a 12-hour shift, or
+  // directly by man-hours — see InvoiceBillingMode's doc comment in types.ts. Each additional
+  // site combined onto this invoice has its own, independent toggle inside its own
+  // InvoiceSiteSection. Switching this recomputes every existing row's amount immediately (see
+  // handleBillingModeChange below) rather than leaving stale amounts until each row is re-edited.
+  const [billingMode, setBillingMode] = useState<InvoiceBillingMode>('headcount');
   // Equipment/add-on rows (e-bikes, drones, etc.) — a separate flat list from lineGroups, see
   // InvoiceEquipmentRow's doc comment in types.ts.
   const [equipmentRows, setEquipmentRows] = useState<InvoiceEquipmentRow[]>([]);
@@ -365,6 +372,7 @@ export default function InvoiceGenerator() {
                   category: firstRate?.category || '',
                   headcount: 0,
                   days: 0,
+                  manHours: 0,
                   rate: firstRate?.hourlyRate || 0,
                   amount: 0,
                 },
@@ -377,7 +385,7 @@ export default function InvoiceGenerator() {
   function removeRow(gi: number, ri: number) {
     setLineGroups((prev) => prev.map((g, i) => (i === gi ? { ...g, rows: g.rows.filter((_, j) => j !== ri) } : g)));
   }
-  function updateRow(gi: number, ri: number, patch: Partial<{ category: string; headcount: number; days: number; rate: number }>) {
+  function updateRow(gi: number, ri: number, patch: Partial<{ category: string; headcount: number; days: number; manHours: number; rate: number }>) {
     setLineGroups((prev) =>
       prev.map((g, i) => {
         if (i !== gi) return g;
@@ -386,7 +394,10 @@ export default function InvoiceGenerator() {
           rows: g.rows.map((r, j) => {
             if (j !== ri) return r;
             const next = { ...r, ...patch };
-            next.amount = computeLineAmount(next.headcount, next.days, next.rate);
+            next.amount =
+              billingMode === 'manhour'
+                ? computeManHourLineAmount(next.manHours || 0, next.rate)
+                : computeLineAmount(next.headcount, next.days, next.rate);
             return next;
           }),
         };
@@ -396,6 +407,25 @@ export default function InvoiceGenerator() {
   function handleCategoryChange(gi: number, ri: number, category: string) {
     const match = rateDraft.find((r) => r.category === category);
     updateRow(gi, ri, { category, rate: match ? match.hourlyRate : 0 });
+  }
+
+  /** Switches this site's billing mode AND immediately recomputes every already-typed row's
+   *  amount under the new formula — without this, a row entered under one mode would keep
+   *  showing its old (now-wrong) amount until it happened to be edited again. */
+  function handleBillingModeChange(mode: InvoiceBillingMode) {
+    setBillingMode(mode);
+    setLineGroups((prev) =>
+      prev.map((g) => ({
+        ...g,
+        rows: g.rows.map((r) => ({
+          ...r,
+          amount:
+            mode === 'manhour'
+              ? computeManHourLineAmount(r.manHours || 0, r.rate)
+              : computeLineAmount(r.headcount, r.days, r.rate),
+        })),
+      }))
+    );
   }
 
   function addEquipmentRow() {
@@ -472,7 +502,12 @@ export default function InvoiceGenerator() {
   // before generating the invoice. Purely a discrepancy check: neither figure overrides the
   // other, and the invoice itself only ever saves what's in lineGroups.
   const lineManHours = lineGroups.reduce(
-    (sum, g) => sum + g.rows.reduce((s, r) => s + r.headcount * r.days * INVOICE_HOURS_PER_SHIFT, 0),
+    (sum, g) =>
+      sum +
+      g.rows.reduce(
+        (s, r) => s + (billingMode === 'manhour' ? r.manHours || 0 : r.headcount * r.days * INVOICE_HOURS_PER_SHIFT),
+        0
+      ),
     0
   );
   const remainingManHours = confirmedSummary ? confirmedSummary.manHours - lineManHours : null;
@@ -499,7 +534,7 @@ export default function InvoiceGenerator() {
     0
   );
   const siteGuardCount = site?.guardCount ?? null;
-  const headcountExceedsSite = siteGuardCount != null && totalHeadcount > siteGuardCount;
+  const headcountExceedsSite = billingMode === 'headcount' && siteGuardCount != null && totalHeadcount > siteGuardCount;
 
   // Every additional site that's been added must itself be ready to bill (has content, and no
   // blocking discrepancy/headcount issue of its own — see InvoiceSiteSection's own canSave) —
@@ -558,6 +593,7 @@ export default function InvoiceGenerator() {
         clientAlias: clientAlias.trim() || clientName.trim(),
         invoiceDate,
         billingMonth,
+        billingMode,
         billingMonthKey: billingMonthValue,
         contractRef: contractRef.trim(),
         quotationNo: quotationNo.trim(),
@@ -577,6 +613,7 @@ export default function InvoiceGenerator() {
         siteName: b.siteName,
         lineGroups: b.lineGroups,
         equipmentRows: b.equipmentRows,
+        billingMode: b.billingMode,
       }));
 
       // Only actually splits when there's something on both sides to split — a lone guard-hours
@@ -667,6 +704,7 @@ export default function InvoiceGenerator() {
               paymentTermsDays,
               billingMonth,
               siteName: site?.name || '',
+              billingMode,
               lineGroups,
               equipmentRows,
               additionalSiteBills: additionalBills,
@@ -1041,16 +1079,39 @@ export default function InvoiceGenerator() {
           <div>
             <h3 className="text-sm font-semibold text-slate-800">Line items</h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Add a location group per post/building, then a row per guard category — check the
-              Summary Report (Duty Roster) for actual headcount and days worked.
+              {billingMode === 'manhour'
+                ? "Add a location group per post/building, then a row per guard category — check the Summary Report (Duty Roster) for actual man-hours worked."
+                : "Add a location group per post/building, then a row per guard category — check the Summary Report (Duty Roster) for actual headcount and days worked."}
             </p>
           </div>
-          <button
-            onClick={addLineGroup}
-            className="shrink-0 text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
-          >
-            + Add location
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1 rounded-md border border-slate-200 p-0.5">
+              <button
+                type="button"
+                onClick={() => handleBillingModeChange('headcount')}
+                className={`text-xs font-medium rounded px-2 py-1 ${
+                  billingMode === 'headcount' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                Headcount &amp; days
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBillingModeChange('manhour')}
+                className={`text-xs font-medium rounded px-2 py-1 ${
+                  billingMode === 'manhour' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                Man-hour
+              </button>
+            </div>
+            <button
+              onClick={addLineGroup}
+              className="text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
+            >
+              + Add location
+            </button>
+          </div>
         </div>
 
         {/* Hard cap, not a soft warning like the Duty Roster reconciliation above — a headcount
@@ -1059,7 +1120,7 @@ export default function InvoiceGenerator() {
             canSave). Only shown once the site's requirement is known (see BillingSite.guardCount)
             — a site with no Client Site Requirement configured yet behaves exactly as before this
             feature existed. */}
-        {siteGuardCount != null && (
+        {billingMode === 'headcount' && siteGuardCount != null && (
           <div
             className={`rounded-lg px-3 py-2 text-sm mb-3 ${
               headcountExceedsSite ? 'bg-rose-50 text-rose-800' : 'bg-slate-50 text-slate-600'
@@ -1097,8 +1158,14 @@ export default function InvoiceGenerator() {
               <thead>
                 <tr className="text-left text-xs text-slate-400">
                   <th className="font-medium pb-1">Category</th>
-                  <th className="font-medium pb-1 w-24">Headcount</th>
-                  <th className="font-medium pb-1 w-24">Days</th>
+                  {billingMode === 'manhour' ? (
+                    <th className="font-medium pb-1 w-28">Man-hours</th>
+                  ) : (
+                    <>
+                      <th className="font-medium pb-1 w-24">Headcount</th>
+                      <th className="font-medium pb-1 w-24">Days</th>
+                    </>
+                  )}
                   <th className="font-medium pb-1 w-24">Rate</th>
                   <th className="font-medium pb-1 w-28 text-right">Amount</th>
                   <th className="w-16" />
@@ -1121,35 +1188,53 @@ export default function InvoiceGenerator() {
                         ))}
                       </select>
                     </td>
-                    <td className="pr-2 py-1">
-                      <input
-                        type="number"
-                        value={row.headcount === 0 ? '' : row.headcount}
-                        onFocus={(e) => e.target.select()}
-                        onChange={(e) => {
-                          const raw = e.target.value.replace(/^0+(?=\d)/, '');
-                          let parsed = raw === '' ? 0 : Number(raw) || 0;
-                          const remaining = remainingHeadcountFor(gi, ri);
-                          if (remaining != null) parsed = Math.min(parsed, remaining);
-                          updateRow(gi, ri, { headcount: parsed });
-                        }}
-                        max={remainingHeadcountFor(gi, ri) ?? undefined}
-                        className="input w-full"
-                      />
-                    </td>
-                    <td className="pr-2 py-1">
-                      <input
-                        type="number"
-                        step="0.5"
-                        value={row.days === 0 ? '' : row.days}
-                        onFocus={(e) => e.target.select()}
-                        onChange={(e) => {
-                          const raw = e.target.value.replace(/^0+(?=\d)/, '');
-                          updateRow(gi, ri, { days: raw === '' ? 0 : Number(raw) || 0 });
-                        }}
-                        className="input w-full"
-                      />
-                    </td>
+                    {billingMode === 'manhour' ? (
+                      <td className="pr-2 py-1">
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={row.manHours === 0 || row.manHours == null ? '' : row.manHours}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                            updateRow(gi, ri, { manHours: raw === '' ? 0 : Number(raw) || 0 });
+                          }}
+                          className="input w-full"
+                        />
+                      </td>
+                    ) : (
+                      <>
+                        <td className="pr-2 py-1">
+                          <input
+                            type="number"
+                            value={row.headcount === 0 ? '' : row.headcount}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                              let parsed = raw === '' ? 0 : Number(raw) || 0;
+                              const remaining = remainingHeadcountFor(gi, ri);
+                              if (remaining != null) parsed = Math.min(parsed, remaining);
+                              updateRow(gi, ri, { headcount: parsed });
+                            }}
+                            max={remainingHeadcountFor(gi, ri) ?? undefined}
+                            className="input w-full"
+                          />
+                        </td>
+                        <td className="pr-2 py-1">
+                          <input
+                            type="number"
+                            step="0.5"
+                            value={row.days === 0 ? '' : row.days}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(/^0+(?=\d)/, '');
+                              updateRow(gi, ri, { days: raw === '' ? 0 : Number(raw) || 0 });
+                            }}
+                            className="input w-full"
+                          />
+                        </td>
+                      </>
+                    )}
                     <td className="pr-2 py-1">
                       <input
                         type="number"

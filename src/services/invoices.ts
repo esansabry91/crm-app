@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { shouldStampTestData } from './settings';
-import type { Invoice, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceSiteBill, InvoiceStatus, Role, SiteBillingRate } from '../types';
+import type { Invoice, InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceSiteBill, InvoiceStatus, Role, SiteBillingRate } from '../types';
 
 function invoicesCollection() {
   return collection(db, 'invoices');
@@ -60,6 +60,13 @@ export function roundMoney(n: number): number {
  *  flow compute a saved invoice's line amount identically. */
 export function computeLineAmount(headcount: number, days: number, rate: number): number {
   return headcount * days * INVOICE_HOURS_PER_SHIFT * rate;
+}
+
+/** manHours * rate directly — the 'manhour' InvoiceBillingMode's formula (see its doc comment
+ *  in types.ts), used instead of computeLineAmount() above for a site whose line items are
+ *  billed by actual man-hours rather than headcount * days * a fixed 12-hour shift. */
+export function computeManHourLineAmount(manHours: number, rate: number): number {
+  return manHours * rate;
 }
 
 export function sumLineGroups(lineGroups: InvoiceLineGroup[]): number {
@@ -213,6 +220,9 @@ export interface NewInvoiceInput {
   contractRef?: string;
   quotationNo?: string;
   paymentTermsDays: number;
+  /** This invoice's primary site's billing mode — see InvoiceBillingMode's doc comment in
+   *  types.ts. Defaults to 'headcount' when omitted, the original behavior. */
+  billingMode?: InvoiceBillingMode;
   lineGroups: InvoiceLineGroup[];
   equipmentRows?: InvoiceEquipmentRow[];
   /** Extra sites combined into this same invoice beyond the primary one described by
@@ -220,7 +230,7 @@ export interface NewInvoiceInput {
    *  types.ts. Each entry's subTotal is computed here in createInvoice(), the same way the
    *  invoice's own overall subTotal is, so callers only need to supply lineGroups/equipmentRows
    *  per additional site. Absent/empty for a normal single-site invoice. */
-  additionalSiteBills?: { siteId: string; siteName: string; lineGroups: InvoiceLineGroup[]; equipmentRows: InvoiceEquipmentRow[] }[];
+  additionalSiteBills?: { siteId: string; siteName: string; lineGroups: InvoiceLineGroup[]; equipmentRows: InvoiceEquipmentRow[]; billingMode?: InvoiceBillingMode }[];
   sstRate: number;
   signatoryName?: string;
   signatoryTitle?: string;
@@ -249,6 +259,7 @@ export async function createInvoice(input: NewInvoiceInput, actor: Actor): Promi
     siteName: b.siteName,
     lineGroups: b.lineGroups,
     equipmentRows: b.equipmentRows,
+    billingMode: b.billingMode || 'headcount',
     subTotal: sumLineGroups(b.lineGroups) + sumEquipmentRows(b.equipmentRows),
   }));
   const subTotal =
@@ -300,6 +311,7 @@ export async function createInvoice(input: NewInvoiceInput, actor: Actor): Promi
       contractRef: input.contractRef || '',
       quotationNo: input.quotationNo || '',
       paymentTermsDays: input.paymentTermsDays,
+      billingMode: input.billingMode || 'headcount',
       lineGroups: input.lineGroups,
       equipmentRows: input.equipmentRows || [],
       additionalSiteBills: additionalBills,
@@ -590,6 +602,10 @@ export interface InvoiceEditInput {
   quotationNo?: string;
   paymentTermsDays: number;
   sstRate: number;
+  /** This invoice's primary site's billing mode — see InvoiceBillingMode's doc comment in
+   *  types.ts. Editable here like the line items themselves; additionalSiteBills (combined-
+   *  invoice sites) are excluded from this limited edit entirely, same as lineGroups. */
+  billingMode?: InvoiceBillingMode;
   lineGroups: InvoiceLineGroup[];
   equipmentRows?: InvoiceEquipmentRow[];
 }
@@ -616,6 +632,7 @@ export async function updateInvoiceContent(id: string, input: InvoiceEditInput):
     quotationNo: input.quotationNo?.trim() || '',
     paymentTermsDays: input.paymentTermsDays,
     sstRate: input.sstRate,
+    billingMode: input.billingMode || 'headcount',
     lineGroups: input.lineGroups,
     equipmentRows: input.equipmentRows || [],
     subTotal,
