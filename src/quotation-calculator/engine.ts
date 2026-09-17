@@ -11,6 +11,7 @@
  * shape.
  */
 import { DAYS_PER_MONTH, DAYS_PER_WEEK, WEEKS_PER_MONTH } from './defaults';
+import { COMPLIANCE_MAX_WEEKLY_HOURS } from '../duty-roster/complianceRules';
 import type {
   EngineResult,
   FeeItem,
@@ -282,7 +283,30 @@ export function engine(o: QuotationInputs, touched: boolean, collections: Quotat
   const dayBasis = o.contractUnit === 'D';
   const workDaysWeek = DAYS_PER_WEEK - o.restDays;
   const byRoster = workDaysWeek > 0 ? Math.ceil(slotsWeek / workDaysWeek) : NaN;
-  const suggested = dayBasis ? maxDaySlots : isFinite(byRoster) ? Math.max(byRoster, maxDaySlots) : NaN;
+  const suggestedWithoutCompliance = dayBasis ? maxDaySlots : isFinite(byRoster) ? Math.max(byRoster, maxDaySlots) : NaN;
+
+  // "RBA/SMETA compliance mode" — see complianceRules.ts. Applies on top of the plain roster
+  // suggestion above regardless of dayBasis: which unit the client is billed in doesn't change
+  // that no individual guard may be scheduled past the weekly-hours cap.
+  const weeklyManHours = manhoursWeek;
+  const complianceOn = o.complianceMode === 'Y';
+  const byManHours = complianceOn ? Math.ceil(weeklyManHours / COMPLIANCE_MAX_WEEKLY_HOURS) : 0;
+  // Every pattern except CUSTOM shares one o.shiftHrs across all its shifts (see postsAt/
+  // shiftsPerDay above), so the discrete-shift bound is exact there. CUSTOM's per-block shift
+  // lengths don't have a single "shiftHrs" to divide by, so byShiftCapacity falls back to the
+  // man-hours estimate (same fallback shiftStructure.ts's Duty Roster twin uses for FULLH).
+  let byShiftCapacity = 0;
+  if (complianceOn) {
+    if (o.pattern !== 'CUSTOM' && o.shiftHrs > 0 && workDaysWeek > 0) {
+      const maxShiftsPerGuardWeek = Math.max(1, Math.min(workDaysWeek, Math.floor(COMPLIANCE_MAX_WEEKLY_HOURS / o.shiftHrs)));
+      byShiftCapacity = Math.ceil(slotsWeek / maxShiftsPerGuardWeek);
+    } else {
+      byShiftCapacity = byManHours;
+    }
+  }
+  const suggested = complianceOn
+    ? Math.max(isFinite(suggestedWithoutCompliance) ? suggestedWithoutCompliance : 0, byManHours, byShiftCapacity)
+    : suggestedWithoutCompliance;
   let guards = touched ? o.guards : isFinite(suggested) ? suggested : o.guards;
 
   const basicMonthlyRaw = o.salaryBasis === 'D' ? o.basic * o.workDaysMo : o.basic;
@@ -390,7 +414,8 @@ export function engine(o: QuotationInputs, touched: boolean, collections: Quotat
   const cpmGuard = guardHrs > 0 ? costGuard / guardHrs : NaN;
 
   return {
-    shiftsDay: shiftsPerDay, slotsWeek, maxDaySlots, workDaysWeek, byRoster, suggested, guards, guardsRequired,
+    shiftsDay: shiftsPerDay, slotsWeek, maxDaySlots, workDaysWeek, byRoster,
+    weeklyManHours, byManHours, byShiftCapacity, suggestedWithoutCompliance, suggested, guards, guardsRequired,
     normalHrsMo, hourly, allowPay, otPay, rdPay, rdOtPay, phPay, phOtPay, gross, epfAmt, socsoAmt, eisAmt,
     costGuard, costGuardPP: costGuard, basic: basicMonthly, dailyRate,
     months, periods, dayBasis, pw, pf: 1,

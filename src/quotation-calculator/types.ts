@@ -19,6 +19,13 @@ export type GradesOn = 'Y' | 'N';
 /** 'F' = Fixed OT Rate, 'M' = Multiplier OT Rate, 'B' = Only Basic (no overtime, rest day or
  *  public holiday pay at all — cost is basic salary only). */
 export type OtMode = 'F' | 'M' | 'B';
+/** "RBA/SMETA compliance mode" — same toggle/constant as the Duty Roster (see
+ *  src/duty-roster/complianceRules.ts for what it covers and why one flat weekly-hours number
+ *  satisfies RBA, SMETA/ETI and Malaysia's Employment Act at once). When 'Y', the engine raises
+ *  `suggested` (and therefore `guards`, when guards is untouched) to whatever headcount keeps
+ *  every guard under COMPLIANCE_MAX_WEEKLY_HOURS/week, so the quote itself reflects compliant
+ *  staffing rather than just the bare roster-coverage minimum. */
+export type ComplianceMode = 'Y' | 'N';
 
 export interface QuotationScalarInputs {
   postsU: number;
@@ -78,6 +85,7 @@ export interface QuotationInputs extends QuotationScalarInputs {
   salaryBasis: SalaryBasis;
   gradesOn: GradesOn;
   otMode: OtMode;
+  complianceMode: ComplianceMode;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +157,20 @@ export interface EngineResult {
   maxDaySlots: number;
   workDaysWeek: number;
   byRoster: number;
+  /** Total guard-hours/week the roster requires (sum of posts x shift-hours) — always computed,
+   *  regardless of complianceMode, since it's cheap and useful on its own. */
+  weeklyManHours: number;
+  /** Minimum headcount from COMPLIANCE_MAX_WEEKLY_HOURS/guard/week alone, hours treated as freely
+   *  divisible (a loose bound — real shifts aren't divisible). 0 when complianceMode is 'N'. */
+  byManHours: number;
+  /** Minimum headcount from exact discrete-shift capacity (floor(cap/shiftHrs) whole shifts/guard/
+   *  week, capped by workDaysWeek) — the tight, correct bound for every pattern except CUSTOM,
+   *  whose per-block shift lengths vary, where this falls back to byManHours. 0 when
+   *  complianceMode is 'N'. */
+  byShiftCapacity: number;
+  /** What `suggested` below would be if complianceMode were 'N' — kept so the UI can show "N (was
+   *  M without compliance mode)". */
+  suggestedWithoutCompliance: number;
   suggested: number;
   guards: number;
   guardsRequired: number;

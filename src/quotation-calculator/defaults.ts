@@ -62,6 +62,7 @@ export const DEFAULT_INPUTS: QuotationInputs = {
   salaryBasis: 'M',
   gradesOn: 'N',
   otMode: 'F',
+  complianceMode: 'N',
 };
 
 export function defaultPostItems(): PostItem[] {

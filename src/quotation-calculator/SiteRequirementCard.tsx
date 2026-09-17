@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
 import type { QuotationCalculator } from './useQuotationCalculator';
 import { NEW_POST_ITEM } from './defaults';
-import type { PostDayType, PostPeriod, PostPattern } from './types';
+import type { ComplianceMode, PostDayType, PostPeriod, PostPattern } from './types';
 import { Card, ItemOut, ItemRow, NumField, Note, Row, SelectField, StrongHeaderRow, Btn } from './ui';
 import { fmt } from './format';
+import { COMPLIANCE_MAX_WEEKLY_HOURS } from '../duty-roster/complianceRules';
 
 const PATTERN_OPTIONS: { value: PostPattern; label: string }[] = [
   { value: 'U', label: 'Same posts at all times' },
@@ -28,6 +29,11 @@ const CONTRACT_UNIT_OPTIONS = [
   { value: 'D' as const, label: 'Days' },
   { value: 'M' as const, label: 'Months' },
   { value: 'Y' as const, label: 'Years' },
+];
+
+const COMPLIANCE_MODE_OPTIONS: { value: ComplianceMode; label: string }[] = [
+  { value: 'N', label: 'Off' },
+  { value: 'Y', label: 'On' },
 ];
 
 export default function SiteRequirementCard({ calc }: { calc: QuotationCalculator }) {
@@ -118,6 +124,15 @@ export default function SiteRequirementCard({ calc }: { calc: QuotationCalculato
         <SelectField value={inputs.contractUnit} onChange={(v) => setField('contractUnit', v)} options={CONTRACT_UNIT_OPTIONS} />
       </Row>
 
+      <Row label="RBA/SMETA Compliance Mode" htmlFor="complianceMode">
+        <SelectField value={inputs.complianceMode} onChange={(v) => setField('complianceMode', v)} options={COMPLIANCE_MODE_OPTIONS} width="w-32" />
+      </Row>
+      <Note>
+        Caps every guard at {COMPLIANCE_MAX_WEEKLY_HOURS}h/week (regular + OT combined) when quoting a client site that must comply with the RBA Code of Conduct, SMETA/ETI, or Malaysia&apos;s
+        Employment Act — the strictest of the three, so it satisfies all of them at once. When on, Guards Required - Suggested (Section 3) and every downstream cost/quote figure reflect the
+        headcount actually needed to stay compliant, not just the bare roster-coverage minimum.
+      </Note>
+
       {pattern === 'CUSTOM' && (
         <div>
           <div className="text-[10.5px] font-bold uppercase tracking-wide text-blue-700 border-l-2 border-blue-300 pl-2 mt-4 mb-1.5">Custom post list</div>
@@ -158,6 +173,16 @@ export default function SiteRequirementCard({ calc }: { calc: QuotationCalculato
         A shift counts as day when it starts between 06:00 and 18:00 (derived from Roster Start Hour and Hours per Shift); anything else is night. Weekend means Saturday and Sunday. If Coverage
         Days per Week is 5 or fewer, weekend posts are never used.
       </Note>
+
+      {inputs.complianceMode === 'Y' && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-[12.5px] px-3 py-2 mt-2">
+          RBA/SMETA compliance mode is on: no guard may exceed {COMPLIANCE_MAX_WEEKLY_HOURS}h/week. This site&apos;s ~{fmt(result.weeklyManHours, 0)}h/week of coverage needs at least{' '}
+          <strong>{fmt(result.suggested, 0)}</strong> guard{result.suggested === 1 ? '' : 's'} to keep every guard&apos;s shifts under that cap
+          {result.suggested > result.suggestedWithoutCompliance
+            ? ` — ${fmt(result.suggested - result.suggestedWithoutCompliance, 0)} more than the ${fmt(result.suggestedWithoutCompliance, 0)} the roster math alone would suggest.`
+            : ' (already covered by the roster math alone).'}
+        </div>
+      )}
     </Card>
   );
 }

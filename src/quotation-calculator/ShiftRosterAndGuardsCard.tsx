@@ -29,15 +29,16 @@ export default function ShiftRosterAndGuardsCard({ calc }: { calc: QuotationCalc
         <Row label="Working Days per Guard per Week">
           <Out>{fmt(result.workDaysWeek, 0)}</Out>
         </Row>
-        <Row label="Guards Required - Suggested (from roster math)">
+        <Row label={inputs.complianceMode === 'Y' ? 'Guards Required - Suggested (roster math + compliance cap)' : 'Guards Required - Suggested (from roster math)'}>
           <Out>{fmt(result.suggested, 0)}</Out>
         </Row>
         <KeyRow label="Guards Required - USED IN ALL CALCULATIONS" htmlFor="guards" tag={<Tag>{guardsTouched ? 'manual override' : 'tracking suggested'}</Tag>}>
           <NumField value={guardsDisplay} onChange={setGuards} step={1} min={0} />
         </KeyRow>
         <Note>
-          The suggested figure assumes each guard covers one shift on each working day (rest days rotate across the roster). The editable field is what every downstream calculation uses - it
-          follows the suggestion automatically until you change it. Press Sync to suggested to reconnect it.
+          The suggested figure assumes each guard covers one shift on each working day (rest days rotate across the roster)
+          {inputs.complianceMode === 'Y' ? ', raised as needed to keep every guard under the RBA/SMETA compliance cap set in Section 1' : ''}. The editable field is what every downstream
+          calculation uses - it follows the suggestion automatically until you change it. Press Sync to suggested to reconnect it.
         </Note>
       </Card>
     </>
