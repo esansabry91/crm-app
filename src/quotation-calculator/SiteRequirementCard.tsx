@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import type { QuotationCalculator } from './useQuotationCalculator';
 import { NEW_POST_ITEM } from './defaults';
-import type { ComplianceMode, PostDayType, PostPeriod, PostPattern } from './types';
-import { Card, ItemOut, ItemRow, NumField, Note, Row, SelectField, StrongHeaderRow, Btn } from './ui';
+import type { PostDayType, PostPeriod, PostPattern } from './types';
+import { Card, ItemOut, ItemRow, NumField, Note, Row, SelectField, StrongHeaderRow, Btn, ToggleSwitch } from './ui';
 import { fmt } from './format';
 import { COMPLIANCE_MAX_WEEKLY_HOURS } from '../duty-roster/complianceRules';
 
@@ -29,11 +29,6 @@ const CONTRACT_UNIT_OPTIONS = [
   { value: 'D' as const, label: 'Days' },
   { value: 'M' as const, label: 'Months' },
   { value: 'Y' as const, label: 'Years' },
-];
-
-const COMPLIANCE_MODE_OPTIONS: { value: ComplianceMode; label: string }[] = [
-  { value: 'N', label: 'Off' },
-  { value: 'Y', label: 'On' },
 ];
 
 export default function SiteRequirementCard({ calc }: { calc: QuotationCalculator }) {
@@ -124,14 +119,24 @@ export default function SiteRequirementCard({ calc }: { calc: QuotationCalculato
         <SelectField value={inputs.contractUnit} onChange={(v) => setField('contractUnit', v)} options={CONTRACT_UNIT_OPTIONS} />
       </Row>
 
-      <Row label="RBA/SMETA Compliance Mode" htmlFor="complianceMode">
-        <SelectField value={inputs.complianceMode} onChange={(v) => setField('complianceMode', v)} options={COMPLIANCE_MODE_OPTIONS} width="w-32" />
-      </Row>
-      <Note>
-        Caps every guard at {COMPLIANCE_MAX_WEEKLY_HOURS}h/week (regular + OT combined) when quoting a client site that must comply with the RBA Code of Conduct, SMETA/ETI, or Malaysia&apos;s
-        Employment Act — the strictest of the three, so it satisfies all of them at once. When on, Guards Required - Suggested (Section 3) and every downstream cost/quote figure reflect the
-        headcount actually needed to stay compliant, not just the bare roster-coverage minimum.
-      </Note>
+      <div
+        className={
+          'rounded-lg border px-3 py-2.5 my-2 transition-colors ' +
+          (inputs.complianceMode === 'Y' ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200')
+        }
+      >
+        <div className="flex items-center justify-between gap-3">
+          <label htmlFor="complianceMode" className="text-[13px] font-bold text-slate-900">
+            RBA/SMETA Compliance Mode
+          </label>
+          <ToggleSwitch id="complianceMode" checked={inputs.complianceMode === 'Y'} onChange={(v) => setField('complianceMode', v ? 'Y' : 'N')} />
+        </div>
+        <p className="text-xs text-slate-600 mt-1.5">
+          Caps every guard at {COMPLIANCE_MAX_WEEKLY_HOURS}h/week (regular + OT combined) when quoting a client site that must comply with the RBA Code of Conduct, SMETA/ETI, or Malaysia&apos;s
+          Employment Act — the strictest of the three, so it satisfies all of them at once. When on, Guards Required - Suggested (Section 3) and every downstream cost/quote figure reflect the
+          headcount actually needed to stay compliant, not just the bare roster-coverage minimum.
+        </p>
+      </div>
 
       {pattern === 'CUSTOM' && (
         <div>

@@ -63,6 +63,39 @@ export function KeyRow({ label, htmlFor, tag, children }: { label: ReactNode; ht
   );
 }
 
+/** A color-coded on/off switch — green track + "ON" when checked, gray track + "OFF" when not, so
+ *  the state reads at a glance rather than needing to open a dropdown to see which value is
+ *  selected. Color is never the only signal (the ON/OFF text is always shown alongside it). */
+export function ToggleSwitch({ checked, onChange, id }: { checked: boolean; onChange: (v: boolean) => void; id?: string }) {
+  return (
+    <button
+      type="button"
+      id={id}
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="flex items-center gap-2 focus:outline-none group"
+    >
+      <span
+        className={
+          'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ' +
+          (checked
+            ? 'bg-emerald-500 border-emerald-600 group-focus-visible:ring-2 group-focus-visible:ring-emerald-300'
+            : 'bg-slate-300 border-slate-400 group-focus-visible:ring-2 group-focus-visible:ring-slate-300')
+        }
+      >
+        <span
+          className={
+            'inline-block h-[18px] w-[18px] transform rounded-full bg-white shadow transition-transform ' +
+            (checked ? 'translate-x-[22px]' : 'translate-x-[3px]')
+          }
+        />
+      </span>
+      <span className={'text-[11px] font-bold tracking-wide w-6 ' + (checked ? 'text-emerald-700' : 'text-slate-500')}>{checked ? 'ON' : 'OFF'}</span>
+    </button>
+  );
+}
+
 export function Out({ children, strong }: { children: ReactNode; strong?: boolean }) {
   return <span className={'tabular-nums text-[13px] text-slate-800 text-right min-w-[6.5rem]' + (strong ? ' font-semibold' : '')}>{children}</span>;
 }
