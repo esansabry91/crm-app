@@ -218,8 +218,12 @@ export interface LogEntry {
  * console (line ~4762). */
 export const MAX_LOG_ENTRIES = 200;
 
+/** Combined Hours confirmation snapshot (`ms.confirmed`). No plain `by` field is ever actually
+ * written — the runtime write shape is always `{byUid, byName, at}` (see
+ * renderCombinedConfirmControls()/#confirmCombinedBtn's port). */
 export interface ConfirmedSummary {
-  by: string;
+  byUid?: string | null;
+  byName?: string;
   at: string;
   manHours?: number;
   amount?: number;
@@ -228,12 +232,18 @@ export interface ConfirmedSummary {
 export interface ConfirmedMonthSummary {
   manHours: number;
   amount: number;
+  byUid?: string | null;
   byName?: string;
   at?: string;
   /** Man-hours from "Additional Guard (Temporary)" posts this month — billed separately, not
    * included in manHours/amount above. */
   additionalManHours?: number;
 }
+
+/** One raw {dateStr, hours} worked-day entry, not yet classified normal/rest/holiday — the shape
+ * computeIncomingSupportDates()/currentCombinedHours() produce and consume, keyed by the home
+ * guard's id. */
+export type IncomingSupportMap = Record<string, { dateStr: string; hours: number }[]>;
 
 export interface MonthState {
   month: string; // "YYYY-MM"
@@ -246,7 +256,7 @@ export interface MonthState {
   supportGuards: Record<string, SupportGuardRecord>;
   extraGuards: Record<string, ExtraGuardRecord>;
   confirmed: ConfirmedSummary | null; // Combined Hours confirmation
-  confirmedIncoming: unknown | null;
+  confirmedIncoming: IncomingSupportMap | null;
   invoiceConfirmed?: ConfirmedMonthSummary | null; // plain Summary Report "Confirm for invoicing"
   rosterLocked: boolean | undefined; // tri-state: `!== false` means locked (undefined/true = locked)
   draftOverrides: Record<string, string | null>;
