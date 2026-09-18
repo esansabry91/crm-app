@@ -1,3 +1,17 @@
+/**
+ * Shrinks the value's font size as it gets longer, so a big RM figure ("RM 6,846,569") sizes down
+ * to fit a narrow tile instead of wrapping mid-number ("RM 6,846" / ",569") — which reads as
+ * broken data, not a big number. Short values (plain counts like "12") stay at full size. Tuned
+ * against this component's own px-4 tile width, not any one page's grid.
+ */
+function valueSizeClass(value: string): string {
+  if (value.length <= 6) return 'text-2xl';
+  if (value.length <= 9) return 'text-xl';
+  if (value.length <= 13) return 'text-lg';
+  if (value.length <= 17) return 'text-base';
+  return 'text-sm';
+}
+
 export default function StatCard({
   label,
   value,
@@ -16,7 +30,7 @@ export default function StatCard({
     <div className="bg-white rounded-xl border border-slate-200 px-4 py-3.5">
       <p className="text-xs font-medium text-slate-500 leading-4 min-h-[2rem]">{label}</p>
       <p
-        className="text-2xl font-semibold mt-1 tabular-nums break-words"
+        className={`${valueSizeClass(value)} font-semibold mt-1 tabular-nums leading-tight`}
         style={{ color: accent || '#0b0b0b' }}
       >
         {value}

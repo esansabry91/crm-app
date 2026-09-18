@@ -445,7 +445,11 @@ export default function ActiveProjectsPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+          {/* Stays at 4 columns through xl (1280px) rather than jumping to all 7 there — packing
+              7 tiles that tight is what was squeezing the RM-value tiles into wrapping mid-number
+              (see valueSizeClass()'s doc comment in StatCard.tsx for the other half of that fix).
+              Only widens to the full 7-across row at 2xl (1536px+), where there's room for it. */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7 gap-4">
             <StatCard
               label="Active Project Value"
               value={formatRM(totalValue)}
