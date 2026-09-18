@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import type { Role, Tender } from '../../types';
@@ -67,6 +68,7 @@ interface Props {
  * finalized separately from the rest of a project's details.
  */
 export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCount, actor }: Props) {
+  const { t } = useTranslation();
   const [siteName, setSiteName] = useState('');
   const [location, setLocation] = useState('');
   const [stateName, setStateName] = useState('');
@@ -202,10 +204,10 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     const name = addSiteEqDraftItem.trim();
     const rate = Number(addSiteEqDraftRate);
     const qty = Number(addSiteEqDraftQty);
-    if (!name) { setAddSiteEqDraftError('Enter the equipment name.'); return; }
-    if (!Number.isFinite(rate) || rate < 0) { setAddSiteEqDraftError('Enter a valid monthly rate.'); return; }
-    if (!Number.isFinite(qty) || qty <= 0) { setAddSiteEqDraftError('Enter a valid quantity.'); return; }
-    if (!addSiteEqDraftStart) { setAddSiteEqDraftError('Pick a start date.'); return; }
+    if (!name) { setAddSiteEqDraftError(t('projectDetails.errorEquipmentNameRequired')); return; }
+    if (!Number.isFinite(rate) || rate < 0) { setAddSiteEqDraftError(t('projectDetails.errorInvalidMonthlyRate')); return; }
+    if (!Number.isFinite(qty) || qty <= 0) { setAddSiteEqDraftError(t('projectDetails.errorInvalidQuantity')); return; }
+    if (!addSiteEqDraftStart) { setAddSiteEqDraftError(t('projectDetails.errorPickStartDate')); return; }
     setAddSiteEquipmentQueue((q) => [
       ...q,
       { queueId: crypto.randomUUID(), item: name, monthlyRate: addSiteEqDraftRate, quantity: addSiteEqDraftQty, startDate: addSiteEqDraftStart },
@@ -292,7 +294,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
       const info = await uploadTenderDocument(tender.id, file);
       setDocInfo(info);
     } catch (err) {
-      setDocError(err instanceof Error ? err.message : 'Could not upload the document.');
+      setDocError(err instanceof Error ? err.message : t('projectDetails.errorUploadDoc'));
     } finally {
       setDocBusy('idle');
     }
@@ -305,7 +307,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     try {
       await openTenderDocument(tender.id);
     } catch (err) {
-      setDocError(err instanceof Error ? err.message : 'Could not open the document.');
+      setDocError(err instanceof Error ? err.message : t('projectDetails.errorOpenDoc'));
     } finally {
       setDocBusy('idle');
     }
@@ -313,14 +315,14 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
 
   const handleDeleteDocument = async () => {
     if (!tender) return;
-    if (!window.confirm('Remove the uploaded tender document? This cannot be undone.')) return;
+    if (!window.confirm(t('projectDetails.confirmRemoveDoc'))) return;
     setDocError(null);
     setDocBusy('deleting');
     try {
       await deleteTenderDocument(tender.id);
       setDocInfo(null);
     } catch (err) {
-      setDocError(err instanceof Error ? err.message : 'Could not delete the document.');
+      setDocError(err instanceof Error ? err.message : t('projectDetails.errorDeleteDoc'));
     } finally {
       setDocBusy('idle');
     }
@@ -342,10 +344,10 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     const name = eqItem.trim();
     const rate = Number(eqRate);
     const qty = Number(eqQty);
-    if (!name) { setEqError('Enter the equipment name.'); return; }
-    if (!Number.isFinite(rate) || rate < 0) { setEqError('Enter a valid monthly rate.'); return; }
-    if (!Number.isFinite(qty) || qty <= 0) { setEqError('Enter a valid quantity.'); return; }
-    if (!eqStartDate) { setEqError('Pick a start date.'); return; }
+    if (!name) { setEqError(t('projectDetails.errorEquipmentNameRequired')); return; }
+    if (!Number.isFinite(rate) || rate < 0) { setEqError(t('projectDetails.errorInvalidMonthlyRate')); return; }
+    if (!Number.isFinite(qty) || qty <= 0) { setEqError(t('projectDetails.errorInvalidQuantity')); return; }
+    if (!eqStartDate) { setEqError(t('projectDetails.errorPickStartDate')); return; }
     setEqBusy('add');
     try {
       await addTenderEquipment(
@@ -359,7 +361,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
       setEqQty('');
       setEqStartDate(new Date().toISOString().slice(0, 10));
     } catch (err) {
-      setEqError(err instanceof Error ? err.message : 'Could not add this equipment item.');
+      setEqError(err instanceof Error ? err.message : t('projectDetails.errorAddEquipment'));
     } finally {
       setEqBusy(null);
     }
@@ -368,11 +370,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   const handleRemoveEquipment = async (itemId: string, label: string) => {
     const activeTender = workingTender || tender;
     if (!activeTender) return;
-    if (
-      !window.confirm(
-        `Remove "${label}" from this project's Additional Equipment? This reverses the value it added to this project's tracked contract value.`
-      )
-    ) {
+    if (!window.confirm(t('projectDetails.confirmRemoveEquipment', { label }))) {
       return;
     }
     setEqError(null);
@@ -381,7 +379,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
       await removeTenderEquipmentItem(activeTender, itemId, actor);
       await refreshWorkingTender();
     } catch (err) {
-      setEqError(err instanceof Error ? err.message : 'Could not remove this equipment item.');
+      setEqError(err instanceof Error ? err.message : t('projectDetails.errorRemoveEquipment'));
     } finally {
       setEqBusy(null);
     }
@@ -403,7 +401,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   const handleConfirmStop = async (itemId: string) => {
     const activeTender = workingTender || tender;
     if (!activeTender) return;
-    if (!stopDateDraft) { setEqError('Pick a stop date.'); return; }
+    if (!stopDateDraft) { setEqError(t('projectDetails.errorPickStopDate')); return; }
     setEqError(null);
     setEqBusy(`stop-${itemId}`);
     try {
@@ -411,7 +409,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
       await refreshWorkingTender();
       setStoppingItemId(null);
     } catch (err) {
-      setEqError(err instanceof Error ? err.message : 'Could not stop this equipment item.');
+      setEqError(err instanceof Error ? err.message : t('projectDetails.errorStopEquipment'));
     } finally {
       setEqBusy(null);
     }
@@ -423,12 +421,12 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
 
     // Every field on this form is required before it can be saved, except Tender Document No.
     // (often not issued yet) and the Guard Rate section below.
-    if (!siteName.trim()) { setError('Site Name is required.'); return; }
-    if (!location.trim()) { setError('Location is required.'); return; }
-    if (!stateName.trim()) { setError('State is required.'); return; }
-    if (!city.trim()) { setError('City is required.'); return; }
-    if (!postcode.trim()) { setError('Postcode is required.'); return; }
-    if (!contactPerson.trim()) { setError('Contact Person is required.'); return; }
+    if (!siteName.trim()) { setError(t('projectDetails.errorSiteNameRequired')); return; }
+    if (!location.trim()) { setError(t('projectDetails.errorLocationRequired')); return; }
+    if (!stateName.trim()) { setError(t('projectDetails.errorStateRequired')); return; }
+    if (!city.trim()) { setError(t('projectDetails.errorCityRequired')); return; }
+    if (!postcode.trim()) { setError(t('projectDetails.errorPostcodeRequired')); return; }
+    if (!contactPerson.trim()) { setError(t('projectDetails.errorContactPersonRequired')); return; }
 
     // Never overwrite a roster-driven count from this manual field — see the liveGuardCount
     // prop doc comment above. When there's no live site, this is a plain required field like
@@ -436,12 +434,12 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     let guards: number | undefined;
     if (liveGuardCount == null) {
       if (guardsDeployed.trim() === '') {
-        setError('Security Guards Deployed is required.');
+        setError(t('projectDetails.errorGuardsRequired'));
         return;
       }
       guards = Number(guardsDeployed);
       if (!Number.isFinite(guards) || guards < 0) {
-        setError('Enter a valid number of guards.');
+        setError(t('projectDetails.errorInvalidGuards'));
         return;
       }
     }
@@ -458,7 +456,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
       if (flatRate.trim() !== '') {
         const rateNum = Number(flatRate);
         if (!Number.isFinite(rateNum) || rateNum < 0) {
-          setError('Enter a valid rate (RM per man-hour), or leave it blank.');
+          setError(t('projectDetails.errorInvalidRate'));
           return;
         }
         rateFields = { guardRateMode: 'same', guardRate: rateNum, guardRatePositions: [] };
@@ -468,10 +466,10 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
       if (filledRows.length > 0) {
         const parsedPositions: { name: string; rate: number }[] = [];
         for (const p of filledRows) {
-          if (!p.name.trim()) { setError('Each position needs a name.'); return; }
+          if (!p.name.trim()) { setError(t('projectDetails.errorPositionNameRequired')); return; }
           const rateNum = Number(p.rate);
           if (!Number.isFinite(rateNum) || rateNum < 0) {
-            setError(`Enter a valid rate for "${p.name.trim()}".`);
+            setError(t('projectDetails.errorInvalidPositionRate', { name: p.name.trim() }));
             return;
           }
           parsedPositions.push({ name: p.name.trim(), rate: rateNum });
@@ -515,7 +513,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
       onClose();
     } catch (err) {
       console.error(err);
-      setError('Could not save these details. Please try again.');
+      setError(t('projectDetails.errorGenericSave'));
     } finally {
       setSaving(false);
     }
@@ -534,7 +532,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
       await setTenderSiteMode(activeTenderNow.id, mode);
       await refreshWorkingTender();
     } catch (err) {
-      setSiteModeError(err instanceof Error ? err.message : 'Failed to save this choice.');
+      setSiteModeError(err instanceof Error ? err.message : t('projectDetails.errorSaveChoice'));
     } finally {
       setSiteModeBusy(null);
     }
@@ -564,7 +562,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Project Details</h2>
+            <h2 className="text-base font-semibold text-slate-900">{t('projectDetails.title')}</h2>
             <p className="text-xs text-slate-400 mt-0.5">{tender.clientName}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">
@@ -573,12 +571,11 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
         </div>
 
         {linkedSitesLoading ? (
-          <div className="px-6 py-10 text-center text-sm text-slate-400">Loading…</div>
+          <div className="px-6 py-10 text-center text-sm text-slate-400">{t('projectDetails.loading')}</div>
         ) : needsSiteModeChoice ? (
           <div className="px-6 py-5 space-y-4">
             <p className="text-sm text-slate-600">
-              Does this project run out of a single worksite, or does it have more than one
-              site/roster under this same contract?
+              {t('projectDetails.siteModeQuestion')}
             </p>
             {siteModeError && <p className="text-xs text-rose-600">{siteModeError}</p>}
             <div className="grid grid-cols-2 gap-3">
@@ -588,7 +585,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                 onClick={() => handleChooseSiteMode('single')}
                 className="px-3 py-3 text-sm font-medium rounded-lg border bg-white text-slate-700 border-slate-200 hover:bg-slate-50 disabled:opacity-60"
               >
-                {siteModeBusy === 'single' ? 'Saving…' : 'Single Site'}
+                {siteModeBusy === 'single' ? t('projectDetails.savingEllipsis') : t('projectDetails.singleSite')}
               </button>
               <button
                 type="button"
@@ -596,13 +593,11 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                 onClick={() => handleChooseSiteMode('multiple')}
                 className="px-3 py-3 text-sm font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 disabled:opacity-60"
               >
-                {siteModeBusy === 'multiple' ? 'Saving…' : 'Multiple Sites'}
+                {siteModeBusy === 'multiple' ? t('projectDetails.savingEllipsis') : t('projectDetails.multipleSites')}
               </button>
             </div>
             <p className="text-[11px] text-slate-400">
-              This is asked once — Multiple Sites adds a "+ Add Site" option below for linking
-              more than one Duty Roster site to this same contract; Single Site keeps this form
-              to just the one site's details.
+              {t('projectDetails.siteModeHint')}
             </p>
           </div>
         ) : (
@@ -610,7 +605,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
           {activeTenderNow.siteMode && (
             <div className="flex items-center justify-between -mb-1">
               <span className="text-[11px] text-slate-400">
-                {activeTenderNow.siteMode === 'single' ? 'Single Site' : 'Multiple Sites'}
+                {activeTenderNow.siteMode === 'single' ? t('projectDetails.singleSite') : t('projectDetails.multipleSites')}
               </span>
               <button
                 type="button"
@@ -620,77 +615,77 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                     await resetTenderSiteMode(activeTenderNow.id);
                     await refreshWorkingTender();
                   } catch (err) {
-                    setError(err instanceof Error ? err.message : 'Failed to reset this choice.');
+                    setError(err instanceof Error ? err.message : t('projectDetails.errorResetChoice'));
                   }
                 }}
                 className="text-[11px] font-medium text-blue-600 hover:text-blue-700"
               >
-                Change
+                {t('projectDetails.change')}
               </button>
             </div>
           )}
 
-          <Field label="Site Name">
+          <Field label={t('projectDetails.siteName')}>
             <input
               value={siteName}
               onChange={(e) => setSiteName(e.target.value)}
               className="input"
-              placeholder="e.g. Menara ABC"
+              placeholder={t('projectDetails.siteNamePlaceholder')}
             />
           </Field>
 
-          <Field label="Location">
+          <Field label={t('projectDetails.location')}>
             <input
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               className="input"
-              placeholder="e.g. Menara ABC, Jalan Ampang, KL"
+              placeholder={t('projectDetails.locationPlaceholder')}
             />
           </Field>
 
-          <Field label="State">
+          <Field label={t('projectDetails.state')}>
             <input
               value={stateName}
               onChange={(e) => setStateName(e.target.value)}
               className="input"
-              placeholder="e.g. Selangor"
+              placeholder={t('projectDetails.statePlaceholder')}
             />
           </Field>
 
-          <Field label="City">
+          <Field label={t('projectDetails.city')}>
             <input
               value={city}
               onChange={(e) => setCity(e.target.value)}
               className="input"
-              placeholder="e.g. Petaling Jaya"
+              placeholder={t('projectDetails.cityPlaceholder')}
             />
           </Field>
 
-          <Field label="Postcode">
+          <Field label={t('projectDetails.postcode')}>
             <input
               value={postcode}
               onChange={(e) => setPostcode(e.target.value)}
               className="input"
-              placeholder="e.g. 50450"
+              placeholder={t('projectDetails.postcodePlaceholder')}
             />
           </Field>
 
-          <Field label="Contact Person">
+          <Field label={t('projectDetails.contactPerson')}>
             <input
               value={contactPerson}
               onChange={(e) => setContactPerson(e.target.value)}
               className="input"
-              placeholder="Name, phone or email"
+              placeholder={t('projectDetails.contactPersonPlaceholder')}
             />
           </Field>
 
-          <Field label="Security Guards Deployed">
+          <Field label={t('projectDetails.guardsDeployed')}>
             {liveGuardCount != null ? (
               <div className="input bg-slate-50 text-slate-600 flex items-center justify-between gap-2">
                 <span className="font-medium">
-                  {liveGuardCount} guard{liveGuardCount === 1 ? '' : 's'}
+                  {t('projectDetails.guardsUnit', { count: liveGuardCount })}
                 </span>
-                <span className="text-[11px] text-slate-400 whitespace-nowrap">Synced from Duty Roster</span>
+                <span className="text-[11px] text-slate-400 whitespace-nowrap">{t('projectDetails.syncedFromRoster')}</span>
               </div>
             ) : (
               <input
@@ -704,26 +699,26 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
             )}
           </Field>
 
-          <Field label="Tender Document No.">
+          <Field label={t('projectDetails.tenderDocNo')}>
             <input
               value={tenderDocNumber}
               onChange={(e) => setTenderDocNumber(e.target.value)}
               className="input"
-              placeholder="e.g. IPSB/T-2026/014"
+              placeholder={t('projectDetails.tenderDocNoPlaceholder')}
             />
           </Field>
 
-          <Field label="Scope of Work">
+          <Field label={t('projectDetails.scopeOfWork')}>
             <textarea
               value={scopeOfWork}
               onChange={(e) => setScopeOfWork(e.target.value)}
               className="input"
               rows={3}
-              placeholder="Summarize what the contract covers — posts, shifts, duties, etc."
+              placeholder={t('projectDetails.scopeOfWorkPlaceholder')}
             />
           </Field>
 
-          <Field label="Tender Document (PDF)">
+          <Field label={t('projectDetails.tenderDocumentPdf')}>
             <input
               ref={fileInputRef}
               type="file"
@@ -751,7 +746,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                   disabled={docBusy !== 'idle'}
                   className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-60"
                 >
-                  {docBusy === 'uploading' ? 'Replacing…' : 'Replace'}
+                  {docBusy === 'uploading' ? t('projectDetails.replacing') : t('projectDetails.replace')}
                 </button>
                 <button
                   type="button"
@@ -759,7 +754,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                   disabled={docBusy !== 'idle'}
                   className="text-xs font-medium text-rose-500 hover:text-rose-600 disabled:opacity-60"
                 >
-                  {docBusy === 'deleting' ? 'Removing…' : 'Remove'}
+                  {docBusy === 'deleting' ? t('projectDetails.removingEllipsis') : t('projectDetails.remove')}
                 </button>
               </div>
             ) : (
@@ -769,37 +764,36 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                 disabled={docBusy !== 'idle'}
                 className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-slate-600 border-slate-200 hover:bg-slate-50 disabled:opacity-60"
               >
-                {docBusy === 'uploading' ? 'Uploading…' : '+ Upload PDF'}
+                {docBusy === 'uploading' ? t('projectDetails.uploading') : t('projectDetails.uploadPdf')}
               </button>
             )}
             {docError && <p className="text-xs text-rose-600 mt-1">{docError}</p>}
           </Field>
 
-          <Field label="Client Alias / Short Code (for invoice numbers)">
+          <Field label={t('projectDetails.clientAlias')}>
             <input
               value={clientAlias}
               onChange={(e) => setClientAlias(e.target.value)}
               className="input"
-              placeholder="e.g. MDEC"
+              placeholder={t('projectDetails.clientAliasPlaceholder')}
             />
           </Field>
 
-          <Field label="Client Billing Address">
+          <Field label={t('projectDetails.clientAddress')}>
             <textarea
               value={clientAddress}
               onChange={(e) => setClientAddress(e.target.value)}
               className="input"
               rows={2}
-              placeholder="Printed on invoices, if different from the worksite location above"
+              placeholder={t('projectDetails.clientAddressPlaceholder')}
             />
           </Field>
 
           <div className="pt-2 border-t border-slate-100">
             <p className="block text-xs font-medium text-slate-500 mb-2">
-              Guard Rate{' '}
+              {t('projectDetails.guardRate')}{' '}
               <span className="text-slate-400 font-normal">
-                (optional — bills the client per man-hour worked, read live by the Duty Roster's
-                Summary Report)
+                {t('projectDetails.guardRateHint')}
               </span>
             </p>
 
@@ -813,7 +807,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                     : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                Same rate for all
+                {t('projectDetails.sameRateForAll')}
               </button>
               <button
                 type="button"
@@ -824,12 +818,12 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                     : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                Multiple rates by position
+                {t('projectDetails.multipleRatesByPosition')}
               </button>
             </div>
 
             {rateMode === 'same' ? (
-              <Field label="Rate (RM per man-hour)">
+              <Field label={t('projectDetails.ratePerManHour')}>
                 <input
                   type="number"
                   min={0}
@@ -837,7 +831,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                   value={flatRate}
                   onChange={(e) => setFlatRate(e.target.value)}
                   className="input"
-                  placeholder="e.g. 8.50"
+                  placeholder={t('projectDetails.rateExample')}
                 />
               </Field>
             ) : (
@@ -852,7 +846,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                         setPositions(next);
                       }}
                       className="input flex-1"
-                      placeholder="e.g. Leader"
+                      placeholder={t('projectDetails.positionNamePlaceholder')}
                     />
                     <input
                       type="number"
@@ -865,13 +859,13 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                         setPositions(next);
                       }}
                       className="input w-24"
-                      placeholder="RM/hr"
+                      placeholder={t('projectDetails.rmPerHour')}
                     />
                     <button
                       type="button"
                       onClick={() => setPositions(positions.filter((_, i) => i !== idx))}
                       className="text-slate-400 hover:text-rose-600 text-lg leading-none px-1 pt-1.5"
-                      aria-label={`Remove ${p.name || 'position'}`}
+                      aria-label={t('projectDetails.removePositionAriaLabel', { name: p.name || t('projectDetails.positionFallback') })}
                     >
                       ×
                     </button>
@@ -882,16 +876,19 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                   onClick={() => setPositions([...positions, { name: '', rate: '' }])}
                   className="text-xs font-medium text-blue-600 hover:text-blue-700"
                 >
-                  + Add position
+                  {t('projectDetails.addPosition')}
                 </button>
               </div>
             )}
 
             {tender.lastGuardRateChange && (
               <p className="text-[11px] text-slate-400 mt-2">
-                Rate last changed from RM {tender.lastGuardRateChange.fromRate.toFixed(2)} to RM{' '}
-                {tender.lastGuardRateChange.toRate.toFixed(2)} on {formatDateTime(tender.lastGuardRateChange.changedAt)} by{' '}
-                {tender.lastGuardRateChange.changedByName}.
+                {t('projectDetails.rateLastChanged', {
+                  from: tender.lastGuardRateChange.fromRate.toFixed(2),
+                  to: tender.lastGuardRateChange.toRate.toFixed(2),
+                  date: formatDateTime(tender.lastGuardRateChange.changedAt),
+                  name: tender.lastGuardRateChange.changedByName,
+                })}
               </p>
             )}
 
@@ -919,10 +916,12 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
               if (delta === 0) return null;
               return (
                 <p className="text-[11px] text-slate-400 mt-2">
-                  {delta > 0 ? 'Adds an estimated' : 'Removes an estimated'} RM {Math.abs(delta).toFixed(2)} from
-                  this project's tracked contract value (assumes {STANDARD_MONTHLY_HOURS_PER_GUARD} hrs/guard/month
-                  × {guardsForPreview} guard{guardsForPreview === 1 ? '' : 's'} × {monthsForPreview} month
-                  {monthsForPreview === 1 ? '' : 's'} remaining).
+                  {t(delta > 0 ? 'projectDetails.rateChangeAdds' : 'projectDetails.rateChangeRemoves', {
+                    amount: Math.abs(delta).toFixed(2),
+                    hours: STANDARD_MONTHLY_HOURS_PER_GUARD,
+                    guardsText: t('projectDetails.guardsUnit', { count: guardsForPreview }),
+                    monthsText: t('projectDetails.monthsUnit', { count: monthsForPreview }),
+                  })}
                 </p>
               );
             })()}
@@ -930,10 +929,9 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
 
           <div className="pt-2 border-t border-slate-100">
             <p className="block text-xs font-medium text-slate-500 mb-2">
-              Additional Equipment{' '}
+              {t('projectDetails.additionalEquipment')}{' '}
               <span className="text-slate-400 font-normal">
-                (optional — e-bikes, drones and similar, billed alongside guard headcount; add an
-                item from day one of the contract or mid-way through it)
+                {t('projectDetails.additionalEquipmentHint')}
               </span>
             </p>
 
@@ -963,10 +961,14 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                             <div className="flex-1 min-w-0">
                               <span className="text-slate-700 font-medium">{eq.item}</span>{' '}
                               <span className="text-slate-500">
-                                RM {eq.monthlyRate.toFixed(2)} × {eq.quantity} / month, from {formatDate(eq.startDate)}
+                                {t('projectDetails.equipmentRowDetail', {
+                                  rate: eq.monthlyRate.toFixed(2),
+                                  qty: eq.quantity,
+                                  date: formatDate(eq.startDate),
+                                })}
                               </span>
                               {eq.stoppedDate && (
-                                <span className="text-amber-600"> · stopped {formatDate(eq.stoppedDate)}</span>
+                                <span className="text-amber-600">{t('projectDetails.stoppedOn', { date: formatDate(eq.stoppedDate) })}</span>
                               )}
                             </div>
                             <span className="text-xs text-slate-400 whitespace-nowrap">
@@ -980,7 +982,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                                 disabled={eqBusy !== null}
                                 className="text-xs font-medium text-amber-600 hover:text-amber-700 disabled:opacity-60 shrink-0"
                               >
-                                Stop
+                                {t('projectDetails.stop')}
                               </button>
                             )}
                             <button
@@ -989,7 +991,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                               disabled={eqBusy !== null}
                               className="text-xs font-medium text-rose-500 hover:text-rose-600 disabled:opacity-60 shrink-0"
                             >
-                              {eqBusy === eq.id ? 'Removing…' : 'Remove'}
+                              {eqBusy === eq.id ? t('projectDetails.removingEllipsis') : t('projectDetails.remove')}
                             </button>
                           </div>
                           {stoppingItemId === eq.id && (
@@ -1008,14 +1010,14 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                                 disabled={eqBusy !== null}
                                 className="px-2 py-1 text-xs font-medium rounded-lg border bg-white text-amber-700 border-amber-200 hover:bg-amber-50 disabled:opacity-60 whitespace-nowrap"
                               >
-                                {eqBusy === `stop-${eq.id}` ? 'Stopping…' : 'Confirm stop'}
+                                {eqBusy === `stop-${eq.id}` ? t('projectDetails.stoppingEllipsis') : t('projectDetails.confirmStop')}
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setStoppingItemId(null)}
                                 className="text-xs text-slate-400 hover:text-slate-600"
                               >
-                                Cancel
+                                {t('projectDetails.cancel')}
                               </button>
                             </div>
                           )}
@@ -1029,7 +1031,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                       <input
                         value={eqItem}
                         onChange={(e) => setEqItem(e.target.value)}
-                        placeholder="e.g. E-bike"
+                        placeholder={t('projectDetails.equipmentNamePlaceholder')}
                         className="input flex-1"
                       />
                       <input
@@ -1038,7 +1040,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                         step="0.01"
                         value={eqRate}
                         onChange={(e) => setEqRate(e.target.value)}
-                        placeholder="RM/month"
+                        placeholder={t('projectDetails.rmPerMonth')}
                         className="input w-24"
                       />
                       <input
@@ -1047,7 +1049,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                         step="1"
                         value={eqQty}
                         onChange={(e) => setEqQty(e.target.value)}
-                        placeholder="Qty"
+                        placeholder={t('projectDetails.qty')}
                         className="input w-16"
                       />
                     </div>
@@ -1066,14 +1068,16 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                         disabled={eqBusy !== null}
                         className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 disabled:opacity-60 whitespace-nowrap"
                       >
-                        {eqBusy === 'add' ? 'Adding…' : '+ Add equipment'}
+                        {eqBusy === 'add' ? t('projectDetails.addingEllipsis') : t('projectDetails.addEquipment')}
                       </button>
                     </div>
                     {eqItem.trim() && eqRate.trim() && eqQty.trim() && eqStartDate && (
                       <p className="text-[11px] text-slate-400">
-                        Adds an estimated RM {previewValue.toFixed(2)} to this project's tracked contract
-                        value ({previewMonths} month{previewMonths === 1 ? '' : 's'} remaining from{' '}
-                        {formatDate(previewStart)} to contract end).
+                        {t('projectDetails.equipmentAddPreview', {
+                          value: previewValue.toFixed(2),
+                          monthsText: t('projectDetails.monthsUnit', { count: previewMonths }),
+                          start: formatDate(previewStart),
+                        })}
                       </p>
                     )}
                     {eqError && <p className="text-xs text-rose-600">{eqError}</p>}
@@ -1086,37 +1090,34 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
           {effectiveSiteMode === 'multiple' && (
           <div className="pt-2 border-t border-slate-100">
             <p className="block text-xs font-medium text-slate-500 mb-2">
-              Linked Sites{' '}
+              {t('projectDetails.linkedSites')}{' '}
               <span className="text-slate-400 font-normal">
-                (for a client with more than one worksite/roster under this same contract; each
-                linked site gets its own Location, Guard Rate and Additional Equipment below,
-                while the contract value above stays combined)
+                {t('projectDetails.linkedSitesHint')}
               </span>
             </p>
 
             {linkedSites.length > 1 && (
               <div className="mb-3 rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-2">
                 <p className="text-[11px] font-medium text-slate-500">
-                  Estimated monthly value by site{' '}
+                  {t('projectDetails.estMonthlyValueBySite')}{' '}
                   <span className="text-slate-400 font-normal">
-                    (guard rate + active equipment, right now — a snapshot for reporting, not a
-                    split of the combined contract value above)
+                    {t('projectDetails.estMonthlyValueHint')}
                   </span>
                 </p>
                 {valueBreakdown.map((row) => (
                   <div key={row.key} className="text-xs">
                     <div className="flex items-center justify-between text-slate-700">
                       <span className="truncate font-medium">{row.label}</span>
-                      <span className="font-medium shrink-0 ml-2">RM {row.total.toFixed(2)}/mo</span>
+                      <span className="font-medium shrink-0 ml-2">{t('projectDetails.rmPerMonthValue', { value: row.total.toFixed(2) })}</span>
                     </div>
                     <div className="text-[11px] text-slate-400">
-                      RM {row.guardRateValue.toFixed(2)} guard rate + RM {row.equipmentValue.toFixed(2)} equipment
+                      {t('projectDetails.rateBreakdown', { guardRate: row.guardRateValue.toFixed(2), equipment: row.equipmentValue.toFixed(2) })}
                     </div>
                   </div>
                 ))}
                 <div className="flex items-center justify-between text-xs font-semibold text-slate-800 pt-2 border-t border-slate-200">
-                  <span>Combined</span>
-                  <span>RM {combinedMonthlyValue.toFixed(2)}/mo</span>
+                  <span>{t('projectDetails.combined')}</span>
+                  <span>{t('projectDetails.rmPerMonthValue', { value: combinedMonthlyValue.toFixed(2) })}</span>
                 </div>
               </div>
             )}
@@ -1131,21 +1132,20 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
 
             {linkedSites.length === 0 ? (
               <p className="text-xs text-slate-400">
-                This project doesn't have a Duty Roster site yet — open "Duty Roster" from Active
-                Projects first to create its first site before linking a second one here.
+                {t('projectDetails.noSiteYet')}
               </p>
             ) : addSiteOpen ? (
               <div className="border border-slate-200 rounded-lg p-3 space-y-3">
-                <Field label="Site Name">
+                <Field label={t('projectDetails.siteName')}>
                   <input
                     value={addSiteName}
                     onChange={(e) => setAddSiteName(e.target.value)}
-                    placeholder="e.g. Menara KL"
+                    placeholder={t('projectDetails.siteNamePlaceholder')}
                     className="input"
                     disabled={addSiteBusy}
                   />
                 </Field>
-                <Field label="Managing Branch">
+                <Field label={t('projectDetails.managingBranch')}>
                   <select
                     value={addSiteBranch}
                     onChange={(e) => setAddSiteBranch(e.target.value)}
@@ -1156,7 +1156,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                         branch isn't a real pickable one — see the "+ Add Site" button's own
                         default-selection guard above) — an explicit, visible prompt instead of
                         silently landing on whichever branch happens to be listed first. */}
-                    {addSiteBranch === '' && <option value="">Select a branch…</option>}
+                    {addSiteBranch === '' && <option value="">{t('projectDetails.selectBranchEllipsis')}</option>}
                     {branches.map((b) => (
                       <option key={b.id} value={b.name}>
                         {b.name}
@@ -1164,23 +1164,20 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                     ))}
                   </select>
                   <p className="text-[11px] text-slate-400 mt-1">
-                    Defaults to this project's own branch. Pick a different branch if this site
-                    will run under a different one — that branch will then manage this site's own
-                    Duty Roster, Guard Rate, and invoicing, without needing access to the rest of
-                    this project.
+                    {t('projectDetails.managingBranchHint')}
                   </p>
                 </Field>
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Location">
+                  <Field label={t('projectDetails.location')}>
                     <input
                       value={addSiteLocation}
                       onChange={(e) => setAddSiteLocation(e.target.value)}
-                      placeholder="Worksite address"
+                      placeholder={t('projectDetails.locationPlaceholder')}
                       className="input"
                       disabled={addSiteBusy}
                     />
                   </Field>
-                  <Field label="Contact Person">
+                  <Field label={t('projectDetails.contactPerson')}>
                     <input
                       value={addSiteContact}
                       onChange={(e) => setAddSiteContact(e.target.value)}
@@ -1188,7 +1185,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                       disabled={addSiteBusy}
                     />
                   </Field>
-                  <Field label="State">
+                  <Field label={t('projectDetails.state')}>
                     <input
                       value={addSiteState}
                       onChange={(e) => setAddSiteState(e.target.value)}
@@ -1196,7 +1193,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                       disabled={addSiteBusy}
                     />
                   </Field>
-                  <Field label="City">
+                  <Field label={t('projectDetails.city')}>
                     <input
                       value={addSiteCity}
                       onChange={(e) => setAddSiteCity(e.target.value)}
@@ -1204,7 +1201,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                       disabled={addSiteBusy}
                     />
                   </Field>
-                  <Field label="Postcode">
+                  <Field label={t('projectDetails.postcode')}>
                     <input
                       value={addSitePostcode}
                       onChange={(e) => setAddSitePostcode(e.target.value)}
@@ -1215,7 +1212,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                 </div>
                 <div className="pt-2 border-t border-slate-100">
                   <p className="text-xs font-medium text-slate-500 mb-2">
-                    Guard Rate <span className="text-slate-400 font-normal">(optional)</span>
+                    {t('projectDetails.guardRate')} <span className="text-slate-400 font-normal">({t('common.optional')})</span>
                   </p>
                   <div className="flex gap-2 mb-2">
                     <button
@@ -1224,7 +1221,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                       onClick={() => setAddSiteRateMode('same')}
                       className={`px-2 py-1 text-xs rounded-lg border ${addSiteRateMode === 'same' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-500'}`}
                     >
-                      Same rate for all
+                      {t('projectDetails.sameRateForAll')}
                     </button>
                     <button
                       type="button"
@@ -1232,7 +1229,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                       onClick={() => setAddSiteRateMode('multiple')}
                       className={`px-2 py-1 text-xs rounded-lg border ${addSiteRateMode === 'multiple' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-500'}`}
                     >
-                      By position
+                      {t('projectDetails.byPosition')}
                     </button>
                   </div>
                   {addSiteRateMode === 'same' ? (
@@ -1243,7 +1240,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                       value={addSiteFlatRate}
                       onChange={(e) => setAddSiteFlatRate(e.target.value)}
                       className="input"
-                      placeholder="RM per man-hour"
+                      placeholder={t('projectDetails.ratePerManHour')}
                       disabled={addSiteBusy}
                     />
                   ) : (
@@ -1258,7 +1255,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                               setAddSitePositions(next);
                             }}
                             className="input flex-1"
-                            placeholder="e.g. Leader"
+                            placeholder={t('projectDetails.positionNamePlaceholder')}
                             disabled={addSiteBusy}
                           />
                           <input
@@ -1272,7 +1269,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                               setAddSitePositions(next);
                             }}
                             className="input w-24"
-                            placeholder="RM/hr"
+                            placeholder={t('projectDetails.rmPerHour')}
                             disabled={addSiteBusy}
                           />
                           <button
@@ -1291,7 +1288,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                         onClick={() => setAddSitePositions([...addSitePositions, { name: '', rate: '' }])}
                         className="text-xs font-medium text-blue-600 hover:text-blue-700"
                       >
-                        + Add position
+                        {t('projectDetails.addPosition')}
                       </button>
                     </div>
                   )}
@@ -1299,7 +1296,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
 
                 <div className="pt-2 border-t border-slate-100">
                   <p className="text-xs font-medium text-slate-500 mb-2">
-                    Additional Equipment <span className="text-slate-400 font-normal">(optional)</span>
+                    {t('projectDetails.additionalEquipment')} <span className="text-slate-400 font-normal">({t('common.optional')})</span>
                   </p>
                   {addSiteEquipmentQueue.length > 0 && (
                     <div className="space-y-1.5 mb-2">
@@ -1308,7 +1305,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                           <div className="flex-1 min-w-0">
                             <span className="text-slate-700 font-medium">{eq.item}</span>{' '}
                             <span className="text-slate-500">
-                              RM {eq.monthlyRate} × {eq.quantity} / month, from {eq.startDate}
+                              {t('projectDetails.equipmentRowDetail', { rate: eq.monthlyRate, qty: eq.quantity, date: eq.startDate })}
                             </span>
                           </div>
                           <button
@@ -1317,7 +1314,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                             onClick={() => setAddSiteEquipmentQueue((q) => q.filter((x) => x.queueId !== eq.queueId))}
                             className="text-xs font-medium text-rose-500 hover:text-rose-600 disabled:opacity-60 shrink-0"
                           >
-                            Remove
+                            {t('projectDetails.remove')}
                           </button>
                         </div>
                       ))}
@@ -1328,7 +1325,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                       <input
                         value={addSiteEqDraftItem}
                         onChange={(e) => setAddSiteEqDraftItem(e.target.value)}
-                        placeholder="e.g. E-bike"
+                        placeholder={t('projectDetails.equipmentNamePlaceholder')}
                         className="input flex-1"
                         disabled={addSiteBusy}
                       />
@@ -1338,7 +1335,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                         step="0.01"
                         value={addSiteEqDraftRate}
                         onChange={(e) => setAddSiteEqDraftRate(e.target.value)}
-                        placeholder="RM/month"
+                        placeholder={t('projectDetails.rmPerMonth')}
                         className="input w-24"
                         disabled={addSiteBusy}
                       />
@@ -1348,7 +1345,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                         step="1"
                         value={addSiteEqDraftQty}
                         onChange={(e) => setAddSiteEqDraftQty(e.target.value)}
-                        placeholder="Qty"
+                        placeholder={t('projectDetails.qty')}
                         className="input w-16"
                         disabled={addSiteBusy}
                       />
@@ -1369,7 +1366,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                         disabled={addSiteBusy}
                         className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 disabled:opacity-60 whitespace-nowrap"
                       >
-                        + Add equipment
+                        {t('projectDetails.addEquipment')}
                       </button>
                     </div>
                     {addSiteEqDraftError && <p className="text-[11px] text-rose-600">{addSiteEqDraftError}</p>}
@@ -1377,10 +1374,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                 </div>
 
                 <p className="text-[11px] text-slate-400">
-                  Site Name, Location, Contact Person, State, City and Postcode are required to
-                  add the site. Guard Rate and Additional Equipment are optional here and can
-                  also be changed later from the site's own card — set up its guards and roster
-                  from the Duty Roster tab whenever you're ready.
+                  {t('projectDetails.addSiteRequirementsHint')}
                 </p>
                 {addSiteError && <p className="text-xs text-rose-600">{addSiteError}</p>}
                 <div className="flex items-center gap-2">
@@ -1465,14 +1459,14 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                         await refreshWorkingTender();
                         resetAddSiteForm();
                       } catch (err) {
-                        setAddSiteError(err instanceof Error ? err.message : 'Failed to add site.');
+                        setAddSiteError(err instanceof Error ? err.message : t('projectDetails.errorAddSite'));
                       } finally {
                         setAddSiteBusy(false);
                       }
                     }}
                     className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 disabled:opacity-60 whitespace-nowrap"
                   >
-                    {addSiteBusy ? 'Adding…' : 'Add Site'}
+                    {addSiteBusy ? t('projectDetails.addingEllipsis') : t('projectDetails.addSite')}
                   </button>
                   <button
                     type="button"
@@ -1480,7 +1474,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                     disabled={addSiteBusy}
                     className="text-xs text-slate-400 hover:text-slate-600 disabled:opacity-60"
                   >
-                    Cancel
+                    {t('projectDetails.cancel')}
                   </button>
                 </div>
               </div>
@@ -1507,7 +1501,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
                 }}
                 className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 whitespace-nowrap"
               >
-                + Add Site
+                {t('projectDetails.addSiteButton')}
               </button>
             )}
           </div>
@@ -1521,14 +1515,14 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
               onClick={onClose}
               className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg"
             >
-              Cancel
+              {t('projectDetails.cancel')}
             </button>
             <button
               type="submit"
               disabled={saving}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-60"
             >
-              {saving ? 'Saving…' : 'Save Details'}
+              {saving ? t('projectDetails.savingEllipsis') : t('projectDetails.saveDetails')}
             </button>
           </div>
         </form>

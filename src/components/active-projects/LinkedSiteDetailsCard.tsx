@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import type { Role, Tender } from '../../types';
 import {
   addTenderSiteEquipment,
@@ -36,6 +37,7 @@ interface Props {
  * Equipment saves immediately on Add/Stop/Remove, matching the parent's own equipment list.
  */
 export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const details = site.details;
   const { branches } = useBranches();
@@ -96,18 +98,14 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
     try {
       await archiveTenderSite(site.id, !site.archived);
     } catch (err) {
-      setLifecycleError(err instanceof Error ? err.message : 'Failed to update this site.');
+      setLifecycleError(err instanceof Error ? err.message : t('linkedSiteCard.errorUpdateSite'));
     } finally {
       setLifecycleBusy(null);
     }
   };
 
   const handleRemove = async () => {
-    if (
-      !window.confirm(
-        `Remove "${site.name}" from this project? Its Duty Roster schedule and history stay intact for records, any guard still deployed there is released back to the Guard Pool, and there's currently no way to re-link it from here.`
-      )
-    ) {
+    if (!window.confirm(t('linkedSiteCard.confirmRemoveSite', { name: site.name }))) {
       return;
     }
     setLifecycleBusy('remove');
@@ -119,7 +117,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
       // before it would ever re-render with lifecycleBusy still set — resetting it here would
       // just be a setState-after-unmount warning waiting to happen.
     } catch (err) {
-      setLifecycleError(err instanceof Error ? err.message : 'Failed to remove this site.');
+      setLifecycleError(err instanceof Error ? err.message : t('linkedSiteCard.errorRemoveSite'));
       setLifecycleBusy(null);
     }
   };
@@ -168,7 +166,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
         );
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save site details.');
+      setError(err instanceof Error ? err.message : t('linkedSiteCard.errorSaveSiteDetails'));
     } finally {
       setSaving(false);
     }
@@ -177,7 +175,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
   const handleAddEquipment = async () => {
     setEqError(null);
     if (!eqItem.trim() || !eqRate.trim() || !eqQty.trim() || !eqStartDate) {
-      setEqError('Fill in item, rate, quantity and start date.');
+      setEqError(t('linkedSiteCard.errorFillEquipmentFields'));
       return;
     }
     setEqBusy('add');
@@ -196,7 +194,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
       setEqQty('');
       setEqStartDate('');
     } catch (err) {
-      setEqError(err instanceof Error ? err.message : 'Failed to add equipment.');
+      setEqError(err instanceof Error ? err.message : t('linkedSiteCard.errorAddEquipment'));
     } finally {
       setEqBusy(null);
     }
@@ -211,7 +209,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
       setStoppingItemId(null);
       setStopDateDraft('');
     } catch (err) {
-      setEqError(err instanceof Error ? err.message : 'Failed to stop equipment item.');
+      setEqError(err instanceof Error ? err.message : t('linkedSiteCard.errorStopEquipment'));
     } finally {
       setEqBusy(null);
     }
@@ -219,7 +217,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
 
   const handleRemoveEquipment = async (itemId: string, label: string) => {
     if (!details) return;
-    if (!window.confirm(`Remove "${label}" from ${site.name}'s Additional Equipment? This reverses the value it added to this project's tracked contract value.`)) {
+    if (!window.confirm(t('linkedSiteCard.confirmRemoveEquipment', { label, site: site.name }))) {
       return;
     }
     setEqBusy(itemId);
@@ -227,7 +225,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
     try {
       await removeTenderSiteEquipmentItem(tender, site.id, details, itemId, actor);
     } catch (err) {
-      setEqError(err instanceof Error ? err.message : 'Failed to remove equipment item.');
+      setEqError(err instanceof Error ? err.message : t('linkedSiteCard.errorRemoveEquipment'));
     } finally {
       setEqBusy(null);
     }
@@ -244,7 +242,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
           <span className="text-sm font-medium text-slate-700">
             {site.name}
             {site.branch && <span className="text-slate-400 font-normal"> · {site.branch}</span>}
-            {site.archived && <span className="text-amber-600 font-normal text-xs ml-1.5">(Archived)</span>}
+            {site.archived && <span className="text-amber-600 font-normal text-xs ml-1.5">{t('linkedSiteCard.archivedLabel')}</span>}
           </span>
         </button>
         <div className="flex items-center gap-3">
@@ -257,29 +255,29 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
             to={`/duty-roster?tenderId=${encodeURIComponent(tender.id)}&siteId=${encodeURIComponent(site.id)}&clientName=${encodeURIComponent(tender.clientName)}&branch=${encodeURIComponent(site.branch || tender.activeBranch || tender.department || '')}`}
             className="text-xs font-medium text-blue-600 hover:text-blue-700"
           >
-            Duty Roster
+            {t('linkedSiteCard.dutyRosterLink')}
           </Link>
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
             className="text-xs text-slate-400"
           >
-            {site.activeGuardCount} guard{site.activeGuardCount === 1 ? '' : 's'} {expanded ? '▲' : '▼'}
+            {t('projectDetails.guardsUnit', { count: site.activeGuardCount })} {expanded ? '▲' : '▼'}
           </button>
         </div>
       </div>
 
       {expanded && (
         <div className="p-3 space-y-4">
-          <Field label="Managing Branch">
+          <Field label={t('projectDetails.managingBranch')}>
             <select value={branch} onChange={(e) => setBranch(e.target.value)} className="input">
-              <option value="">Unassigned (visible to every branch)</option>
+              <option value="">{t('linkedSiteCard.unassignedVisibleToAll')}</option>
               {/* Shows the site's actual current value even if it's since been renamed/removed
                   from the branches list — so it displays accurately (rather than silently
                   falling back to "Unassigned" in the dropdown) and isn't accidentally cleared
                   the next time someone saves this form without touching this field. */}
               {branch && !branches.some((b) => b.name === branch) && (
-                <option value={branch}>{branch} (not in current branch list)</option>
+                <option value={branch}>{t('linkedSiteCard.notInBranchList', { branch })}</option>
               )}
               {branches.map((b) => (
                 <option key={b.id} value={b.name}>
@@ -288,45 +286,43 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
               ))}
             </select>
             <p className="text-[11px] text-slate-400 mt-1">
-              Which branch runs this site's own Duty Roster, Guard Rate, and invoicing — change
-              it to re-delegate this site to a different branch, or reclaim it, without needing
-              to remove and re-add it.
+              {t('linkedSiteCard.managingBranchHint')}
             </p>
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Location">
-              <input value={location} onChange={(e) => setLocation(e.target.value)} className="input" placeholder="Worksite address" />
+            <Field label={t('projectDetails.location')}>
+              <input value={location} onChange={(e) => setLocation(e.target.value)} className="input" placeholder={t('projectDetails.locationPlaceholder')} />
             </Field>
-            <Field label="Contact Person">
+            <Field label={t('projectDetails.contactPerson')}>
               <input value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} className="input" />
             </Field>
-            <Field label="State">
+            <Field label={t('projectDetails.state')}>
               <input value={stateName} onChange={(e) => setStateName(e.target.value)} className="input" />
             </Field>
-            <Field label="City">
+            <Field label={t('projectDetails.city')}>
               <input value={city} onChange={(e) => setCity(e.target.value)} className="input" />
             </Field>
-            <Field label="Postcode">
+            <Field label={t('projectDetails.postcode')}>
               <input value={postcode} onChange={(e) => setPostcode(e.target.value)} className="input" />
             </Field>
           </div>
 
           <div>
-            <p className="text-xs font-medium text-slate-500 mb-2">Guard Rate</p>
+            <p className="text-xs font-medium text-slate-500 mb-2">{t('projectDetails.guardRate')}</p>
             <div className="flex gap-2 mb-2">
               <button
                 type="button"
                 onClick={() => setRateMode('same')}
                 className={`px-2 py-1 text-xs rounded-lg border ${rateMode === 'same' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-500'}`}
               >
-                Same rate for all
+                {t('projectDetails.sameRateForAll')}
               </button>
               <button
                 type="button"
                 onClick={() => setRateMode('multiple')}
                 className={`px-2 py-1 text-xs rounded-lg border ${rateMode === 'multiple' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-500'}`}
               >
-                By position
+                {t('projectDetails.byPosition')}
               </button>
             </div>
             {rateMode === 'same' ? (
@@ -337,7 +333,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
                 value={flatRate}
                 onChange={(e) => setFlatRate(e.target.value)}
                 className="input"
-                placeholder="RM per man-hour"
+                placeholder={t('projectDetails.ratePerManHour')}
               />
             ) : (
               <div className="space-y-2">
@@ -351,7 +347,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
                         setPositions(next);
                       }}
                       className="input flex-1"
-                      placeholder="e.g. Leader"
+                      placeholder={t('projectDetails.positionNamePlaceholder')}
                     />
                     <input
                       type="number"
@@ -364,7 +360,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
                         setPositions(next);
                       }}
                       className="input w-24"
-                      placeholder="RM/hr"
+                      placeholder={t('projectDetails.rmPerHour')}
                     />
                     <button
                       type="button"
@@ -380,15 +376,18 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
                   onClick={() => setPositions([...positions, { name: '', rate: '' }])}
                   className="text-xs font-medium text-blue-600 hover:text-blue-700"
                 >
-                  + Add position
+                  {t('projectDetails.addPosition')}
                 </button>
               </div>
             )}
             {details?.lastGuardRateChange && (
               <p className="text-[11px] text-slate-400 mt-2">
-                Rate last changed from RM {details.lastGuardRateChange.fromRate.toFixed(2)} to RM{' '}
-                {details.lastGuardRateChange.toRate.toFixed(2)} on {formatDateTime(details.lastGuardRateChange.changedAt)} by{' '}
-                {details.lastGuardRateChange.changedByName}.
+                {t('projectDetails.rateLastChanged', {
+                  from: details.lastGuardRateChange.fromRate.toFixed(2),
+                  to: details.lastGuardRateChange.toRate.toFixed(2),
+                  date: formatDateTime(details.lastGuardRateChange.changedAt),
+                  name: details.lastGuardRateChange.changedByName,
+                })}
               </p>
             )}
             {(() => {
@@ -411,9 +410,12 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
               if (delta === 0) return null;
               return (
                 <p className="text-[11px] text-slate-400 mt-2">
-                  {delta > 0 ? 'Adds an estimated' : 'Removes an estimated'} RM {Math.abs(delta).toFixed(2)} to this
-                  project's tracked contract value (assumes {STANDARD_MONTHLY_HOURS_PER_GUARD} hrs/guard/month ×{' '}
-                  {site.activeGuardCount} guard{site.activeGuardCount === 1 ? '' : 's'} × {months} month{months === 1 ? '' : 's'} remaining).
+                  {t(delta > 0 ? 'projectDetails.rateChangeAdds' : 'projectDetails.rateChangeRemoves', {
+                    amount: Math.abs(delta).toFixed(2),
+                    hours: STANDARD_MONTHLY_HOURS_PER_GUARD,
+                    guardsText: t('projectDetails.guardsUnit', { count: site.activeGuardCount }),
+                    monthsText: t('projectDetails.monthsUnit', { count: months }),
+                  })}
                 </p>
               );
             })()}
@@ -421,7 +423,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
 
           <div className="pt-2 border-t border-slate-100">
             <p className="text-xs font-medium text-slate-500 mb-2">
-              Additional Equipment <span className="text-slate-400 font-normal">(optional)</span>
+              {t('projectDetails.additionalEquipment')} <span className="text-slate-400 font-normal">({t('common.optional')})</span>
             </p>
             {items.length > 0 && (
               <div className="space-y-1.5 mb-3">
@@ -431,9 +433,9 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
                       <div className="flex-1 min-w-0">
                         <span className="text-slate-700 font-medium">{eq.item}</span>{' '}
                         <span className="text-slate-500">
-                          RM {eq.monthlyRate.toFixed(2)} × {eq.quantity} / month, from {formatDate(eq.startDate)}
+                          {t('projectDetails.equipmentRowDetail', { rate: eq.monthlyRate.toFixed(2), qty: eq.quantity, date: formatDate(eq.startDate) })}
                         </span>
-                        {eq.stoppedDate && <span className="text-amber-600"> · stopped {formatDate(eq.stoppedDate)}</span>}
+                        {eq.stoppedDate && <span className="text-amber-600">{t('projectDetails.stoppedOn', { date: formatDate(eq.stoppedDate) })}</span>}
                       </div>
                       <span className="text-xs text-slate-400 whitespace-nowrap">
                         +RM {eq.valueContribution.toFixed(2)}
@@ -449,7 +451,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
                           disabled={eqBusy !== null}
                           className="text-xs font-medium text-amber-600 hover:text-amber-700 disabled:opacity-60 shrink-0"
                         >
-                          Stop
+                          {t('projectDetails.stop')}
                         </button>
                       )}
                       <button
@@ -458,7 +460,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
                         disabled={eqBusy !== null}
                         className="text-xs font-medium text-rose-500 hover:text-rose-600 disabled:opacity-60 shrink-0"
                       >
-                        {eqBusy === eq.id ? 'Removing…' : 'Remove'}
+                        {eqBusy === eq.id ? t('projectDetails.removingEllipsis') : t('projectDetails.remove')}
                       </button>
                     </div>
                     {stoppingItemId === eq.id && (
@@ -477,10 +479,10 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
                           disabled={eqBusy !== null}
                           className="px-2 py-1 text-xs font-medium rounded-lg border bg-white text-amber-700 border-amber-200 hover:bg-amber-50 disabled:opacity-60 whitespace-nowrap"
                         >
-                          {eqBusy === `stop-${eq.id}` ? 'Stopping…' : 'Confirm stop'}
+                          {eqBusy === `stop-${eq.id}` ? t('projectDetails.stoppingEllipsis') : t('projectDetails.confirmStop')}
                         </button>
                         <button type="button" onClick={() => setStoppingItemId(null)} className="text-xs text-slate-400 hover:text-slate-600">
-                          Cancel
+                          {t('projectDetails.cancel')}
                         </button>
                       </div>
                     )}
@@ -490,14 +492,14 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
             )}
             <div className="space-y-2">
               <div className="flex gap-2">
-                <input value={eqItem} onChange={(e) => setEqItem(e.target.value)} placeholder="e.g. E-bike" className="input flex-1" />
+                <input value={eqItem} onChange={(e) => setEqItem(e.target.value)} placeholder={t('projectDetails.equipmentNamePlaceholder')} className="input flex-1" />
                 <input
                   type="number"
                   min={0}
                   step="0.01"
                   value={eqRate}
                   onChange={(e) => setEqRate(e.target.value)}
-                  placeholder="RM/month"
+                  placeholder={t('projectDetails.rmPerMonth')}
                   className="input w-24"
                 />
                 <input
@@ -506,7 +508,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
                   step="1"
                   value={eqQty}
                   onChange={(e) => setEqQty(e.target.value)}
-                  placeholder="Qty"
+                  placeholder={t('projectDetails.qty')}
                   className="input w-16"
                 />
               </div>
@@ -525,7 +527,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
                   disabled={eqBusy !== null}
                   className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 disabled:opacity-60 whitespace-nowrap"
                 >
-                  {eqBusy === 'add' ? 'Adding…' : '+ Add equipment'}
+                  {eqBusy === 'add' ? t('projectDetails.addingEllipsis') : t('projectDetails.addEquipment')}
                 </button>
               </div>
               {eqError && <p className="text-xs text-rose-600">{eqError}</p>}
@@ -540,15 +542,13 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
               disabled={saving}
               className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-60"
             >
-              {saving ? 'Saving…' : 'Save site details'}
+              {saving ? t('projectDetails.savingEllipsis') : t('linkedSiteCard.saveSiteDetails')}
             </button>
           </div>
 
           <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3 flex-wrap">
             <p className="text-xs text-slate-400 max-w-[60%]">
-              {site.archived
-                ? "Archived — hidden from Duty Roster's active site picker, but its data stays intact."
-                : "Archiving hides this site from Duty Roster's active site picker without losing its data."}
+              {site.archived ? t('linkedSiteCard.archivedHint') : t('linkedSiteCard.archivingHint')}
             </p>
             <div className="flex items-center gap-2 shrink-0">
               <button
@@ -557,7 +557,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
                 onClick={handleToggleArchive}
                 className="text-xs font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-60 rounded px-2.5 py-1 border border-slate-200"
               >
-                {lifecycleBusy === 'archive' ? 'Saving…' : site.archived ? 'Unarchive site' : 'Archive site'}
+                {lifecycleBusy === 'archive' ? t('projectDetails.savingEllipsis') : site.archived ? t('linkedSiteCard.unarchiveSite') : t('linkedSiteCard.archiveSite')}
               </button>
               <button
                 type="button"
@@ -565,7 +565,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
                 onClick={handleRemove}
                 className="text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-60 rounded px-2.5 py-1 border border-rose-200"
               >
-                {lifecycleBusy === 'remove' ? 'Removing…' : 'Remove from project'}
+                {lifecycleBusy === 'remove' ? t('projectDetails.removingEllipsis') : t('linkedSiteCard.removeFromProject')}
               </button>
             </div>
           </div>
