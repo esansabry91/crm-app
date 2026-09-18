@@ -155,8 +155,23 @@ export async function updateTender(
   actor: Actor,
   current: Tender
 ) {
+  // Same Firestore restriction createTender() already works around for its own optional fields
+  // (see its comment above) — updateDoc() throws a client-side "invalid-argument" FirebaseError
+  // on ANY field explicitly set to the JS value `undefined`, rejecting the whole write before it
+  // ever reaches the server. TenderFormModal sends `currentContractEndDate: currentContractEndDate
+  // || undefined` on every single edit — not just ones that touch that field — so this was
+  // crashing every save of every tender with no currentContractEndDate set, surfaced to the user
+  // as nothing more than "Something went wrong saving this tender. Please try again."
+  // createTender's fix (omit the key entirely when falsy) isn't quite right here though: omitting
+  // a key from updateDoc() means "leave whatever's already stored," not "clear it," so a value
+  // the user actually cleared in the form would silently stick around. Swapping in deleteField()
+  // for any `undefined` gets both right: the write no longer throws, and a cleared field is
+  // actually cleared.
+  const cleanPatch = Object.fromEntries(
+    Object.entries(patch).map(([k, v]) => [k, v === undefined ? deleteField() : v])
+  );
   await updateDoc(doc(db, 'tenders', tenderId), {
-    ...patch,
+    ...cleanPatch,
     updatedAt: Date.now(),
   });
   const valueChanged = patch.tenderValue !== undefined && patch.tenderValue !== current.tenderValue;
