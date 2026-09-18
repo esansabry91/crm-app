@@ -11,6 +11,7 @@
  * one of these actions logs to the CURRENTLY VIEWED month's change log even though what changed
  * is the site-level config doc, not the month doc — ported faithfully, not "fixed").
  */
+import type { TFunction } from "i18next";
 import type { SiteConfig, SiteRequirement, MonthState, ShiftPattern } from "./types";
 import { deepClone } from "./rosterModel";
 import { markSiteSetupDirty, markSiteSetupSaved, siteSetupSaved } from "./rosterModel";
@@ -44,11 +45,11 @@ export interface ConfigActionOutcome {
 export { MALAYSIA_STATES };
 
 /** #siteStateSub help text (renderSiteStateSelect(), lines 3568-3575). */
-export function siteStateSubText(cfg: Pick<SiteConfig, "state">): string {
+export function siteStateSubText(cfg: Pick<SiteConfig, "state">, t: TFunction): string {
   if (cfg.state) {
-    return `Auto-filled from the ${cfg.state} calendar (federal + state holidays, 2026–2027) — add or remove dates below any time.`;
+    return t("dutyRoster.siteSetup.stateSubWithState", { state: cfg.state });
   }
-  return "Assigning a state auto-fills federal + that state's own gazetted public holidays below — you can still add or remove dates by hand any time.";
+  return t("dutyRoster.siteSetup.stateSubNoState");
 }
 
 /** Whether picking `nextState` needs a confirm modal first (only when a DIFFERENT state was
@@ -59,15 +60,15 @@ export function stateChangeNeedsConfirm(cfg: Pick<SiteConfig, "state">, nextStat
 }
 
 /** Exact confirm-modal copy for a state reassignment — title is always "Change assigned state?". */
-export function stateChangeConfirmMessage(cfg: Pick<SiteConfig, "state">, nextState: string | null): string {
+export function stateChangeConfirmMessage(cfg: Pick<SiteConfig, "state">, nextState: string | null, t: TFunction): string {
   if (nextState) {
-    return `Switch this site from ${cfg.state} to ${nextState}? ${cfg.state}'s auto-filled public holidays will be replaced with ${nextState}'s — any dates you added by hand are kept.`;
+    return t("dutyRoster.siteSetup.confirmSwitchState", { from: cfg.state, to: nextState });
   }
-  return `Remove this site's ${cfg.state} state assignment? Its auto-filled public holidays will be removed — any dates you added by hand are kept.`;
+  return t("dutyRoster.siteSetup.confirmRemoveStateAssignment", { state: cfg.state });
 }
 
 /** Applies a (possibly-just-confirmed) state assignment/clear. */
-export function applyStateAssignment(config: SiteConfig, ms: MonthState, nextState: string | null): ConfigActionOutcome {
+export function applyStateAssignment(config: SiteConfig, ms: MonthState, nextState: string | null, t: TFunction): ConfigActionOutcome {
   const nextConfig = deepClone(config);
   const count = applyStateHolidays(nextConfig, nextState);
   markSiteSetupDirty(nextConfig, "holidays");
@@ -75,7 +76,7 @@ export function applyStateAssignment(config: SiteConfig, ms: MonthState, nextSta
     ? `Assigned this site to ${nextState} — auto-filled ${count} public holiday date${count === 1 ? "" : "s"} from the state calendar.`
     : "Cleared this site's assigned state and its auto-filled public holidays.";
   const nextMs = appendLog(ms, logText);
-  const toast = nextState ? `Applied ${nextState}'s public holidays.` : "Cleared the state assignment.";
+  const toast = nextState ? t("dutyRoster.siteSetup.toastAppliedStateHolidays", { state: nextState }) : t("dutyRoster.siteSetup.toastClearedStateAssignment");
   return { config: nextConfig, ms: nextMs, toast };
 }
 
@@ -99,29 +100,30 @@ export function applyAddHoliday(
   config: SiteConfig,
   ms: MonthState,
   dateStr: string,
-  nameRaw: string
+  nameRaw: string,
+  t: TFunction
 ): ConfigActionOutcome | { error: string } {
-  if (!dateStr) return { error: "Pick a date first." };
-  if (configHolidays(config).includes(dateStr)) return { error: "That date is already marked as a public holiday." };
+  if (!dateStr) return { error: t("dutyRoster.siteSetup.errorPickDate") };
+  if (configHolidays(config).includes(dateStr)) return { error: t("dutyRoster.siteSetup.errorDateAlreadyHoliday") };
   const name = nameRaw.trim();
   const nextConfig = deepClone(config);
   nextConfig.publicHolidays = [...configHolidays(nextConfig), dateStr];
   if (name) nextConfig.holidayNames = { ...(nextConfig.holidayNames || {}), [dateStr]: name };
   markSiteSetupDirty(nextConfig, "holidays");
   const nextMs = appendLog(ms, `Added public holiday ${dateStr}${name ? ` (${name})` : ""}.`);
-  return { config: nextConfig, ms: nextMs, toast: `Added ${dateStr} as a public holiday.` };
+  return { config: nextConfig, ms: nextMs, toast: t("dutyRoster.siteSetup.toastAddedHoliday", { date: dateStr }) };
 }
 
 /** Remove-holiday confirm message (label = "name (date)" or bare date). */
-export function removeHolidayConfirmMessage(date: string, name: string | null): string {
+export function removeHolidayConfirmMessage(date: string, name: string | null, t: TFunction): string {
   const label = name ? `${name} (${date})` : date;
-  return `Remove ${label} from this site's public holidays? Any shifts already worked on this date will no longer count as holiday work in the Summary Report.`;
+  return t("dutyRoster.siteSetup.confirmRemoveHoliday", { label });
 }
 
 /** Note: deliberately does NOT distinguish auto (state-calendar) vs hand-added dates, and does
  * NOT touch `stateHolidayDates` — matches the original exactly (see the module doc comment on
  * this pre-existing nuance: a later state re-apply can re-add a removed auto date). */
-export function applyRemoveHoliday(config: SiteConfig, ms: MonthState, date: string): ConfigActionOutcome {
+export function applyRemoveHoliday(config: SiteConfig, ms: MonthState, date: string, t: TFunction): ConfigActionOutcome {
   const names = configHolidayNames(config);
   const removedName = names[date] || null;
   const nextConfig = deepClone(config);
@@ -132,22 +134,23 @@ export function applyRemoveHoliday(config: SiteConfig, ms: MonthState, date: str
   }
   markSiteSetupDirty(nextConfig, "holidays");
   const nextMs = appendLog(ms, `Removed public holiday ${date}${removedName ? ` (${removedName})` : ""}.`);
-  return { config: nextConfig, ms: nextMs, toast: `Removed ${date} from public holidays.` };
+  return { config: nextConfig, ms: nextMs, toast: t("dutyRoster.siteSetup.toastRemovedHoliday", { date }) };
 }
 
 /** #saveHolidaysBtn — writes nothing new (every add/remove already applied above), just clears
  * the "dirty" save-gate flag. */
-export function applySaveHolidays(config: SiteConfig, ms: MonthState): ConfigActionOutcome {
+export function applySaveHolidays(config: SiteConfig, ms: MonthState, t: TFunction): ConfigActionOutcome {
   const nextConfig = deepClone(config);
   markSiteSetupSaved(nextConfig, "holidays");
   const nextMs = appendLog(ms, "Confirmed public holidays for this site.");
-  return { config: nextConfig, ms: nextMs, toast: "Public holidays saved." };
+  return { config: nextConfig, ms: nextMs, toast: t("dutyRoster.siteSetup.toastHolidaysSaved") };
 }
 
 // ---------------------------------------------------------------------------
 // Client site requirement
 // ---------------------------------------------------------------------------
 
+/** Static (untranslated) keys — callers translate via t(`dutyRoster.siteSetup.fullhFieldLabels.${key}`). */
 export const FULLH_FIELD_LABELS: Record<(typeof FULLH_CATEGORIES)[number]["key"], string> = {
   shiftsWdDay: "Weekday — day shift guard posts",
   shiftsWdNight: "Weekday — night shift guard posts",
@@ -166,7 +169,9 @@ type FlatPostsField =
   | "postsWeDay"
   | "postsWeNight";
 
-/** PATTERN_FIELD_GROUPS — which flat posts fields each non-FULLH pattern edits, in display order. */
+/** PATTERN_FIELD_GROUPS — which flat posts fields each non-FULLH pattern edits, in display order.
+ * `label` here is the English fallback; callers translate via
+ * t(`dutyRoster.siteSetup.patternFieldLabels.${key}`). */
 export const PATTERN_FIELD_GROUPS: Record<Exclude<ShiftPattern, "FULLH">, { key: FlatPostsField; label: string }[]> = {
   U: [{ key: "postsU", label: "Guard posts (all shifts, all days)" }],
   DN: [
@@ -209,7 +214,7 @@ export interface SiteRequirementFormValues {
 }
 
 /** #saveSiteBtn handler (line 5112). */
-export function applySaveSiteRequirement(config: SiteConfig, ms: MonthState, form: SiteRequirementFormValues): ConfigActionOutcome {
+export function applySaveSiteRequirement(config: SiteConfig, ms: MonthState, form: SiteRequirementFormValues, t: TFunction): ConfigActionOutcome {
   const nextConfig = deepClone(config);
   const site: SiteRequirement = { ...nextConfig.site, pattern: form.pattern };
 
@@ -238,7 +243,7 @@ export function applySaveSiteRequirement(config: SiteConfig, ms: MonthState, for
     ms,
     `Updated client site requirement (pattern: ${site.pattern}, ${site.hoursDay}h/day coverage, ${site.daysWeek} days/week).`
   );
-  return { config: nextConfig, ms: nextMs, toast: "Site requirement saved." };
+  return { config: nextConfig, ms: nextMs, toast: t("dutyRoster.siteSetup.toastSiteRequirementSaved") };
 }
 
 export interface SiteSummary {
@@ -256,13 +261,13 @@ export interface SiteSummary {
 /** #siteSummary computed text (renderSiteRequirement(), lines ~3760-3783). Structured (rather
  * than a single string with embedded `<strong>`) the same way conflictsData.ts's ConflictItem
  * is, so the bold styling stays a component concern. */
-export function siteSummary(config: Pick<SiteConfig, "site" | "restRule">): SiteSummary {
+export function siteSummary(config: Pick<SiteConfig, "site" | "restRule">, t: TFunction): SiteSummary {
   const site = config.site;
   const cov = coverageDaysPerWeek(site);
   const sug = suggestedGuardCount(config);
 
   const describe = (defs: { label: string; startHour: number; hours: number }[]): string => {
-    if (!defs.length) return "none — check coverage hours and hours per shift";
+    if (!defs.length) return t("dutyRoster.siteSetup.describeNone");
     return defs.map((d) => `${d.label} ${String(d.startHour).padStart(2, "0")}:00 (${d.hours}h)`).join(", ");
   };
 
@@ -270,19 +275,27 @@ export function siteSummary(config: Pick<SiteConfig, "site" | "restRule">): Site
   if (site.pattern === "FULLH") {
     const wd = computeFullHDayDefs(site, false);
     const we = computeFullHDayDefs(site, true);
-    shiftLine = `Weekday: ${describe(wd)}. Weekend: ${describe(we)}.`;
+    shiftLine = t("dutyRoster.siteSetup.weekdayWeekendShiftLine", { wd: describe(wd), we: describe(we) });
   } else {
     const defs = computeShiftDefs(site);
-    shiftLine = `${defs.length} shift${defs.length === 1 ? "" : "s"}/day — ${describe(defs)}.`;
+    shiftLine = t("dutyRoster.siteSetup.shiftsPerDay", { count: defs.length, desc: describe(defs) });
   }
 
   const complianceNote =
     config.restRule.complianceMode && sug.weeklyManHours != null
-      ? `RBA/SMETA compliance mode is on: no guard may exceed ${COMPLIANCE_MAX_WEEKLY_HOURS}h/week. This site's ~${Math.round(sug.weeklyManHours)}h/week of coverage needs at least ${sug.suggested} guard${sug.suggested === 1 ? "" : "s"} to keep every guard's shifts under that cap${sug.suggested > sug.suggestedWithoutCompliance ? ` — ${sug.suggested - sug.suggestedWithoutCompliance} more than the ${sug.suggestedWithoutCompliance} the roster/rest-day math alone would suggest` : " (already covered by the roster/rest-day math alone)"}.`
+      ? t("dutyRoster.siteSetup.complianceNote", {
+          cap: COMPLIANCE_MAX_WEEKLY_HOURS,
+          weeklyHours: Math.round(sug.weeklyManHours),
+          suggested: sug.suggested,
+          extra:
+            sug.suggested > sug.suggestedWithoutCompliance
+              ? t("dutyRoster.siteSetup.complianceNoteExtra", { extra: sug.suggested - sug.suggestedWithoutCompliance, base: sug.suggestedWithoutCompliance })
+              : t("dutyRoster.siteSetup.complianceNoteNoExtra"),
+        })
       : undefined;
 
   return {
-    before: `${shiftLine} Site needs coverage ${cov} day${cov === 1 ? "" : "s"}/week. Suggested headcount from this scenario: `,
+    before: t("dutyRoster.siteSetup.summaryBefore", { shiftLine, cov }),
     suggested: sug.suggested,
     after: ".",
     complianceNote,
@@ -304,7 +317,8 @@ export function applySaveRestRules(
   ms: MonthState,
   restDaysPerWeekRaw: number,
   minRestHoursRaw: number,
-  complianceMode = false
+  complianceMode: boolean,
+  t: TFunction
 ): ConfigActionOutcome {
   const nextConfig = deepClone(config);
   const restDaysPerWeek = Math.max(0, Math.min(6, Number(restDaysPerWeekRaw) || 0));
@@ -316,13 +330,14 @@ export function applySaveRestRules(
     ms,
     `Updated rest rules: ${restDaysPerWeek} rest day(s)/week, min ${minRestHours}h rest between shifts${complianceNote}.`
   );
-  return { config: nextConfig, ms: nextMs, toast: "Rest rules saved." };
+  return { config: nextConfig, ms: nextMs, toast: t("dutyRoster.siteSetup.toastRestRulesSaved") };
 }
 
 // ---------------------------------------------------------------------------
 // Add-guard setup gate
 // ---------------------------------------------------------------------------
 
+/** Static (untranslated) keys — callers translate via t(`dutyRoster.siteSetup.setupGateLabels.${key}`). */
 const SETUP_GATE_LABELS = {
   site: "Client Site Requirement",
   rest: "Rest Rules",
@@ -336,11 +351,13 @@ export interface SetupGateState {
 
 /** renderSetupGate() (lines 3796-3813) — whether "+ Add guard" should be disabled and the
  * warning note under it. */
-export function computeSetupGate(cfg: Pick<SiteConfig, "setupSaved" | "guards">): SetupGateState {
+export function computeSetupGate(cfg: Pick<SiteConfig, "setupSaved" | "guards">, t: TFunction): SetupGateState {
   const saved = siteSetupSaved(cfg);
   const missing = (Object.keys(SETUP_GATE_LABELS) as (keyof typeof SETUP_GATE_LABELS)[]).filter((k) => !saved[k]);
   return {
     locked: missing.length > 0,
-    noteText: missing.length ? `Save ${missing.map((k) => SETUP_GATE_LABELS[k]).join(", ")} below first before adding guards.` : "",
+    noteText: missing.length
+      ? t("dutyRoster.siteSetup.setupGateNote", { list: missing.map((k) => t(`dutyRoster.siteSetup.setupGateLabels.${k}`)).join(", ") })
+      : "",
   };
 }

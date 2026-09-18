@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { SiteConfig, MonthState, ShiftPattern } from "../types";
 import {
   PATTERN_FIELD_GROUPS,
@@ -34,6 +35,7 @@ export interface SiteRequirementPanelProps {
 }
 
 export default function SiteRequirementPanel({ config, ms, onSave }: SiteRequirementPanelProps) {
+  const { t } = useTranslation();
   const site = config.site;
   const [pattern, setPattern] = useState<ShiftPattern>(site.pattern);
   const [posts, setPosts] = useState<Partial<Record<string, number>>>({});
@@ -105,29 +107,29 @@ export default function SiteRequirementPanel({ config, ms, onSave }: SiteRequire
       rosterStart,
       normalHoursPerDay,
     };
-    const outcome = applySaveSiteRequirement(config, ms, form);
+    const outcome = applySaveSiteRequirement(config, ms, form, t);
     onSave({ config: outcome.config, ms: outcome.ms }, outcome.toast);
   }
 
-  const summary = siteSummary({ site: { ...site, pattern }, restRule: config.restRule });
+  const summary = siteSummary({ site: { ...site, pattern }, restRule: config.restRule }, t);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-slate-900">Client site requirement</h3>
+      <h3 className="text-sm font-semibold text-slate-900">{t('dutyRoster.siteRequirementPanel.title')}</h3>
 
-      <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">Shift pattern</label>
+      <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">{t('dutyRoster.siteRequirementPanel.shiftPattern')}</label>
       <select className="input" value={pattern} onChange={(e) => handlePatternChange(e.target.value as ShiftPattern)}>
-        <option value="U">Uniform (same posts, all shifts/days)</option>
-        <option value="DN">Day / Night</option>
-        <option value="WW">Weekday / Weekend</option>
-        <option value="FULL">Weekday/Weekend × Day/Night</option>
-        <option value="FULLH">Custom per-day shift hours (FULLH)</option>
+        <option value="U">{t('dutyRoster.siteRequirementPanel.patternUniform')}</option>
+        <option value="DN">{t('dutyRoster.siteRequirementPanel.patternDayNight')}</option>
+        <option value="WW">{t('dutyRoster.siteRequirementPanel.patternWeekdayWeekend')}</option>
+        <option value="FULL">{t('dutyRoster.siteRequirementPanel.patternFull')}</option>
+        <option value="FULLH">{t('dutyRoster.siteRequirementPanel.patternFullh')}</option>
       </select>
 
       {pattern === "FULLH" ? (
         <div className="mt-3 space-y-4">
           <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Night shift start hour</label>
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('dutyRoster.siteRequirementPanel.nightShiftStartHour')}</label>
             <input
               type="number"
               min={0}
@@ -139,7 +141,7 @@ export default function SiteRequirementPanel({ config, ms, onSave }: SiteRequire
           </div>
           {FULLH_CATEGORIES.map(({ key }) => (
             <div key={key}>
-              <label className="text-xs font-medium text-slate-600 block mb-1">{FULLH_FIELD_LABELS[key]}</label>
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t(`dutyRoster.siteSetup.fullhFieldLabels.${key}`)}</label>
               <div className="flex flex-col gap-1.5">
                 {fullH[key].map((hours, i) => (
                   <div key={i} className="flex items-center gap-2">
@@ -156,7 +158,7 @@ export default function SiteRequirementPanel({ config, ms, onSave }: SiteRequire
                         }))
                       }
                     />
-                    <span className="text-xs text-slate-500">hours</span>
+                    <span className="text-xs text-slate-500">{t('dutyRoster.siteRequirementPanel.hoursUnit')}</span>
                     <button type="button" onClick={() => removeFullHRow(key, i)} className="text-slate-400 hover:text-rose-600 text-sm">
                       ×
                     </button>
@@ -167,7 +169,7 @@ export default function SiteRequirementPanel({ config, ms, onSave }: SiteRequire
                   onClick={() => addFullHRow(key)}
                   className="text-xs font-medium text-blue-600 hover:text-blue-700 self-start"
                 >
-                  + Add post
+                  {t('dutyRoster.siteRequirementPanel.addPost')}
                 </button>
               </div>
             </div>
@@ -177,7 +179,7 @@ export default function SiteRequirementPanel({ config, ms, onSave }: SiteRequire
         <div className="mt-3 space-y-3">
           {(PATTERN_FIELD_GROUPS[pattern as Exclude<ShiftPattern, "FULLH">] || []).map((f) => (
             <div key={f.key}>
-              <label className="text-xs font-medium text-slate-600 block mb-1">{f.label}</label>
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t(`dutyRoster.siteSetup.patternFieldLabels.${f.key}`)}</label>
               <input
                 type="number"
                 min={0}
@@ -192,21 +194,21 @@ export default function SiteRequirementPanel({ config, ms, onSave }: SiteRequire
 
       <div className="grid grid-cols-2 gap-3 mt-4">
         <div>
-          <label className="text-xs font-medium text-slate-600 block mb-1">Coverage hours/day</label>
+          <label className="text-xs font-medium text-slate-600 block mb-1">{t('dutyRoster.siteRequirementPanel.coverageHoursDay')}</label>
           <input type="number" min={0} className="input" value={hoursDay} onChange={(e) => setHoursDay(Number(e.target.value))} />
         </div>
         <div>
-          <label className="text-xs font-medium text-slate-600 block mb-1">Coverage days/week</label>
+          <label className="text-xs font-medium text-slate-600 block mb-1">{t('dutyRoster.siteRequirementPanel.coverageDaysWeek')}</label>
           <input type="number" min={0} max={7} className="input" value={daysWeek} onChange={(e) => setDaysWeek(Number(e.target.value))} />
         </div>
         {pattern !== "FULLH" && (
           <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Hours per shift</label>
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('dutyRoster.siteRequirementPanel.hoursPerShift')}</label>
             <input type="number" min={0} className="input" value={shiftHrs} onChange={(e) => setShiftHrs(Number(e.target.value))} />
           </div>
         )}
         <div>
-          <label className="text-xs font-medium text-slate-600 block mb-1">Roster start hour</label>
+          <label className="text-xs font-medium text-slate-600 block mb-1">{t('dutyRoster.siteRequirementPanel.rosterStartHour')}</label>
           <input
             type="number"
             min={0}
@@ -217,7 +219,7 @@ export default function SiteRequirementPanel({ config, ms, onSave }: SiteRequire
           />
         </div>
         <div>
-          <label className="text-xs font-medium text-slate-600 block mb-1">Normal hours/day (OT threshold)</label>
+          <label className="text-xs font-medium text-slate-600 block mb-1">{t('dutyRoster.siteRequirementPanel.normalHoursDay')}</label>
           <input
             type="number"
             min={0}
@@ -241,14 +243,14 @@ export default function SiteRequirementPanel({ config, ms, onSave }: SiteRequire
 
       <div className="flex justify-end mt-4">
         <button type="button" onClick={handleSave} className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
-          Save Site Requirement
+          {t('dutyRoster.siteRequirementPanel.saveSiteRequirement')}
         </button>
       </div>
 
       <AlertModal
         open={cantRemoveAlert}
-        title="Can't remove"
-        message="Each shift category needs at least one guard post — add a replacement before removing the last one."
+        title={t('dutyRoster.siteRequirementPanel.cantRemoveTitle')}
+        message={t('dutyRoster.siteRequirementPanel.cantRemoveMessage')}
         onClose={() => setCantRemoveAlert(false)}
       />
     </div>

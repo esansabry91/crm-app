@@ -487,7 +487,9 @@
     "common": {
       "ok": "OK",
       "cancel": "Cancel",
-      "close": "Close"
+      "close": "Close",
+      "add": "Add",
+      "remove": "Remove"
     },
     "guardDetails": {
       "employeeId": "Employee ID",
@@ -542,6 +544,139 @@
       "errorPermitExpiryRequired": "Permit expiry date is required.",
       "errorInvalidMykad": "Enter a valid 12-digit MyKad number (e.g. 901231-14-5678).",
       "errorInvalidPhone": "Enter a valid phone number (e.g. 012-3456789)."
+    },
+    "siteSetup": {
+      "stateSubWithState": "Auto-filled from the {{state}} calendar (federal + state holidays, 2026–2027) — add or remove dates below any time.",
+      "stateSubNoState": "Assigning a state auto-fills federal + that state's own gazetted public holidays below — you can still add or remove dates by hand any time.",
+      "confirmSwitchState": "Switch this site from {{from}} to {{to}}? {{from}}'s auto-filled public holidays will be replaced with {{to}}'s — any dates you added by hand are kept.",
+      "confirmRemoveStateAssignment": "Remove this site's {{state}} state assignment? Its auto-filled public holidays will be removed — any dates you added by hand are kept.",
+      "toastAppliedStateHolidays": "Applied {{state}}'s public holidays.",
+      "toastClearedStateAssignment": "Cleared the state assignment.",
+      "errorPickDate": "Pick a date first.",
+      "errorDateAlreadyHoliday": "That date is already marked as a public holiday.",
+      "toastAddedHoliday": "Added {{date}} as a public holiday.",
+      "confirmRemoveHoliday": "Remove {{label}} from this site's public holidays? Any shifts already worked on this date will no longer count as holiday work in the Summary Report.",
+      "toastRemovedHoliday": "Removed {{date}} from public holidays.",
+      "toastHolidaysSaved": "Public holidays saved.",
+      "toastSiteRequirementSaved": "Site requirement saved.",
+      "toastRestRulesSaved": "Rest rules saved.",
+      "describeNone": "none — check coverage hours and hours per shift",
+      "weekdayWeekendShiftLine": "Weekday: {{wd}}. Weekend: {{we}}.",
+      "shiftsPerDay_one": "{{count}} shift/day — {{desc}}.",
+      "shiftsPerDay_other": "{{count}} shifts/day — {{desc}}.",
+      "complianceNote": "RBA/SMETA compliance mode is on: no guard may exceed {{cap}}h/week. This site's ~{{weeklyHours}}h/week of coverage needs at least {{guardsText}} to keep every guard's shifts under that cap{{extra}}.",
+      "complianceNoteExtra": " — {{extra}} more than the {{base}} the roster/rest-day math alone would suggest",
+      "complianceNoteNoExtra": " (already covered by the roster/rest-day math alone)",
+      "daysUnit_one": "{{count}} day",
+      "daysUnit_other": "{{count}} days",
+      "summaryBefore": "{{shiftLine}} Site needs coverage {{daysText}}/week. Suggested headcount from this scenario: ",
+      "setupGateNote": "Save {{list}} below first before adding guards.",
+      "setupGateLabels": {
+        "site": "Client Site Requirement",
+        "rest": "Rest Rules",
+        "holidays": "Public Holidays"
+      },
+      "fullhFieldLabels": {
+        "shiftsWdDay": "Weekday — day shift guard posts",
+        "shiftsWdNight": "Weekday — night shift guard posts",
+        "shiftsWeDay": "Weekend — day shift guard posts",
+        "shiftsWeNight": "Weekend — night shift guard posts"
+      },
+      "patternFieldLabels": {
+        "postsU": "Guard posts (all shifts, all days)",
+        "postsDay": "Guard posts — day shift",
+        "postsNight": "Guard posts — night shift",
+        "postsWd": "Guard posts — weekday (Mon–Fri)",
+        "postsWe": "Guard posts — weekend (Sat–Sun)",
+        "postsWdDay": "Guard posts — weekday day shift",
+        "postsWdNight": "Guard posts — weekday night shift",
+        "postsWeDay": "Guard posts — weekend day shift",
+        "postsWeNight": "Guard posts — weekend night shift"
+      }
+    },
+    "siteRequirementPanel": {
+      "title": "Client site requirement",
+      "shiftPattern": "Shift pattern",
+      "patternUniform": "Uniform (same posts, all shifts/days)",
+      "patternDayNight": "Day / Night",
+      "patternWeekdayWeekend": "Weekday / Weekend",
+      "patternFull": "Weekday/Weekend × Day/Night",
+      "patternFullh": "Custom per-day shift hours (FULLH)",
+      "nightShiftStartHour": "Night shift start hour",
+      "hoursUnit": "hours",
+      "addPost": "+ Add post",
+      "coverageHoursDay": "Coverage hours/day",
+      "coverageDaysWeek": "Coverage days/week",
+      "hoursPerShift": "Hours per shift",
+      "rosterStartHour": "Roster start hour",
+      "normalHoursDay": "Normal hours/day (OT threshold)",
+      "saveSiteRequirement": "Save Site Requirement",
+      "cantRemoveTitle": "Can't remove",
+      "cantRemoveMessage": "Each shift category needs at least one guard post — add a replacement before removing the last one."
+    },
+    "restRulesPanel": {
+      "title": "Rest rules",
+      "restDaysPerWeek": "Rest days / week",
+      "minRestHours": "Min rest hours between shifts",
+      "consecutiveDaysNote": "= up to {{count}} consecutive working days before a rest day is due.",
+      "complianceModeTitle": "RBA/SMETA compliance mode",
+      "complianceModeDesc": "Caps every guard at {{cap}}h/week (regular + OT combined) — the roster will leave a shift unfilled and flag it as a conflict rather than schedule a guard past the cap. This single number is set deliberately stricter than RBA (60h/week) and SMETA/ETI (48h regular, 60h combined) so it also satisfies Malaysia's Employment Act 45h/week limit, whichever framework a client site is being audited against.",
+      "saveRestRules": "Save Rest Rules"
+    },
+    "holidaysPanel": {
+      "title": "Public holidays",
+      "stateNotSetOption": "Not set — add holidays manually",
+      "holidayNamePlaceholder": "Holiday name (optional)",
+      "noHolidaysYet": "No public holidays set for this site yet.",
+      "saveHolidays": "Save Holidays",
+      "changeStateTitle": "Change assigned state?",
+      "removeHolidayTitle": "Remove public holiday"
+    },
+    "guardsTable": {
+      "title": "Guard roster",
+      "addGuardButton": "+ Add guard",
+      "noGuardsYet": "No guards yet — add your first one above.",
+      "nameColumn": "Name",
+      "view": "View",
+      "reactivate": "Reactivate",
+      "backToGuardPoolButton": "Back to Guard Pool",
+      "activeUntil": "Active until {{date}}",
+      "toastReactivated": "Reactivated {{name}}.",
+      "toastDismissed": "Dismissed {{name}}.",
+      "confirmBackToPool": "Send {{name}} back to the Guard Pool in Guard Bank? They're removed from this site's guard list so they can be assigned elsewhere -- hours they've already worked here stay recorded and are not affected. Past roster history that references them will show as \"(removed guard)\".",
+      "toastBackToPool": "Sent {{name}} back to Guard Pool."
+    },
+    "guardsShiftsTab": {
+      "toastAdded": "Added {{name}}."
+    },
+    "fairnessPanel": {
+      "title": "Monthly work-day summary",
+      "subtitle": "Normal work days fixed at {{normalWorkDays}}/month ({{month}} has {{days}} days) — any day worked beyond that counts as work on a rest day.",
+      "guardColumn": "Guard",
+      "daysWorkedColumn": "Days worked",
+      "normalDaysColumn": "Normal days",
+      "restDaysColumn": "Rest days",
+      "workedOnRestDayColumn": "Worked on rest day",
+      "emptyMessage": "Add guards to see the work-day summary."
+    },
+    "conflictsPanel": {
+      "title": "Unfilled & flagged shifts",
+      "noConflicts": "No conflicts — the roster is fully staffed and rule-compliant.",
+      "noEligibleGuardFor": "No eligible guard for ",
+      "slotOnDate": " slot {{slot}} on {{date}}.",
+      "guardOn": "{{name}} on ",
+      "slotDateReason": " slot {{slot}}, {{date}}: {{reason}}."
+    },
+    "rosterStats": {
+      "activeGuards": "Active guards",
+      "shiftSlotsThisMonth": "Shift slots this month",
+      "unfilledSlots": "Unfilled slots",
+      "autoAssignedOnRestDay": "Auto-assigned on rest day",
+      "fairnessSpread": "Fairness spread"
+    },
+    "logPanel": {
+      "title": "Change log",
+      "noChangesYet": "No changes logged yet."
     }
   },
   "linkedSiteCard": {

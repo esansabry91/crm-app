@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { Guard } from "../types";
 import { buildGuardRows } from "../guardsTabData";
 import { computeSetupGate } from "../siteSetupData";
@@ -17,33 +18,34 @@ export interface GuardsTableProps {
 }
 
 export default function GuardsTable({ config, onAddGuard, onView, onToggleActive, onReturnToPool }: GuardsTableProps) {
-  const rows = buildGuardRows(config);
-  const gate = computeSetupGate(config);
+  const { t } = useTranslation();
+  const rows = buildGuardRows(config, t);
+  const gate = computeSetupGate(config, t);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-900">Guard roster</h3>
+        <h3 className="text-sm font-semibold text-slate-900">{t('dutyRoster.guardsTable.title')}</h3>
         <button
           type="button"
           disabled={gate.locked}
           onClick={onAddGuard}
           className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg"
         >
-          + Add guard
+          {t('dutyRoster.guardsTable.addGuardButton')}
         </button>
       </div>
       {gate.locked && <p className="text-xs mt-1.5" style={{ color: "#9A6A15" }}>{gate.noteText}</p>}
 
       {rows.length === 0 ? (
-        <p className="text-sm text-slate-400 mt-4">No guards yet — add your first one above.</p>
+        <p className="text-sm text-slate-400 mt-4">{t('dutyRoster.guardsTable.noGuardsYet')}</p>
       ) : (
         <table className="w-full text-sm mt-3 border-collapse">
           <thead>
             <tr className="text-left text-xs text-slate-500">
-              <th className="font-medium py-1.5">Name</th>
-              <th className="font-medium py-1.5">Employee ID</th>
-              <th className="font-medium py-1.5">Status</th>
+              <th className="font-medium py-1.5">{t('dutyRoster.guardsTable.nameColumn')}</th>
+              <th className="font-medium py-1.5">{t('dutyRoster.guardDetails.employeeId')}</th>
+              <th className="font-medium py-1.5">{t('dutyRoster.guardDetails.status')}</th>
               <th className="font-medium py-1.5"></th>
             </tr>
           </thead>
@@ -66,17 +68,17 @@ export default function GuardsTable({ config, onAddGuard, onView, onToggleActive
                 </td>
                 <td className="py-1.5 text-right whitespace-nowrap">
                   <button type="button" onClick={() => onView(guard)} className="text-xs font-medium text-blue-600 hover:text-blue-700 mr-3">
-                    View
+                    {t('dutyRoster.guardsTable.view')}
                   </button>
                   <button
                     type="button"
                     onClick={() => onToggleActive(guard)}
                     className="text-xs font-medium text-blue-600 hover:text-blue-700 mr-3"
                   >
-                    {guard.active === false ? "Reactivate" : "Dismiss"}
+                    {guard.active === false ? t('dutyRoster.guardsTable.reactivate') : t('dutyRoster.dismissGuardModal.dismiss')}
                   </button>
                   <button type="button" onClick={() => onReturnToPool(guard)} className="text-xs font-medium text-slate-500 hover:text-slate-700">
-                    Back to Guard Pool
+                    {t('dutyRoster.guardsTable.backToGuardPoolButton')}
                   </button>
                 </td>
               </tr>

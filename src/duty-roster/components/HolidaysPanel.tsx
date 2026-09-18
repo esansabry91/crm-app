@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { SiteConfig, MonthState } from "../types";
 import {
   MALAYSIA_STATES,
@@ -25,6 +26,7 @@ export interface HolidaysPanelProps {
 }
 
 export default function HolidaysPanel({ config, ms, onSave }: HolidaysPanelProps) {
+  const { t } = useTranslation();
   const [pendingState, setPendingState] = useState<string | null | undefined>(undefined);
   const [newDate, setNewDate] = useState("");
   const [newName, setNewName] = useState("");
@@ -34,7 +36,7 @@ export default function HolidaysPanel({ config, ms, onSave }: HolidaysPanelProps
   const rows = buildHolidayRows(config);
 
   function commitStateChange(nextState: string | null) {
-    const outcome = applyStateAssignment(config, ms, nextState);
+    const outcome = applyStateAssignment(config, ms, nextState, t);
     onSave({ config: outcome.config, ms: outcome.ms }, outcome.toast);
     setPendingState(undefined);
   }
@@ -49,7 +51,7 @@ export default function HolidaysPanel({ config, ms, onSave }: HolidaysPanelProps
   }
 
   function handleAddHoliday() {
-    const result = applyAddHoliday(config, ms, newDate, newName);
+    const result = applyAddHoliday(config, ms, newDate, newName, t);
     if ("error" in result) {
       setAddError(result.error);
       return;
@@ -62,37 +64,37 @@ export default function HolidaysPanel({ config, ms, onSave }: HolidaysPanelProps
 
   function handleConfirmRemove() {
     if (!removeTarget) return;
-    const outcome = applyRemoveHoliday(config, ms, removeTarget.date);
+    const outcome = applyRemoveHoliday(config, ms, removeTarget.date, t);
     onSave({ config: outcome.config, ms: outcome.ms }, outcome.toast);
     setRemoveTarget(null);
   }
 
   function handleSaveHolidays() {
-    const outcome = applySaveHolidays(config, ms);
+    const outcome = applySaveHolidays(config, ms, t);
     onSave({ config: outcome.config, ms: outcome.ms }, outcome.toast);
   }
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-slate-900">Public holidays</h3>
+      <h3 className="text-sm font-semibold text-slate-900">{t('dutyRoster.holidaysPanel.title')}</h3>
 
-      <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">State</label>
+      <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">{t('projectDetails.state')}</label>
       <select className="input" value={config.state || ""} onChange={(e) => handleStateSelect(e.target.value)}>
-        <option value="">Not set — add holidays manually</option>
+        <option value="">{t('dutyRoster.holidaysPanel.stateNotSetOption')}</option>
         {MALAYSIA_STATES.map((s) => (
           <option key={s} value={s}>
             {s}
           </option>
         ))}
       </select>
-      <p className="text-xs text-slate-500 mt-1.5">{siteStateSubText(config)}</p>
+      <p className="text-xs text-slate-500 mt-1.5">{siteStateSubText(config, t)}</p>
 
       <div className="flex gap-2 mt-4">
         <input type="date" className="input" value={newDate} onChange={(e) => setNewDate(e.target.value)} />
         <input
           type="text"
           className="input"
-          placeholder="Holiday name (optional)"
+          placeholder={t('dutyRoster.holidaysPanel.holidayNamePlaceholder')}
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
         />
@@ -101,13 +103,13 @@ export default function HolidaysPanel({ config, ms, onSave }: HolidaysPanelProps
           onClick={handleAddHoliday}
           className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg whitespace-nowrap"
         >
-          Add
+          {t('dutyRoster.common.add')}
         </button>
       </div>
       {addError && <p className="text-sm text-rose-600 mt-1.5">{addError}</p>}
 
       {rows.length === 0 ? (
-        <p className="text-sm text-slate-400 mt-3">No public holidays set for this site yet.</p>
+        <p className="text-sm text-slate-400 mt-3">{t('dutyRoster.holidaysPanel.noHolidaysYet')}</p>
       ) : (
         <table className="w-full text-sm mt-3 border-collapse">
           <tbody>
@@ -121,7 +123,7 @@ export default function HolidaysPanel({ config, ms, onSave }: HolidaysPanelProps
                     onClick={() => setRemoveTarget({ date: r.date, name: r.name })}
                     className="text-xs font-medium text-rose-600 hover:text-rose-700"
                   >
-                    Remove
+                    {t('dutyRoster.common.remove')}
                   </button>
                 </td>
               </tr>
@@ -136,22 +138,22 @@ export default function HolidaysPanel({ config, ms, onSave }: HolidaysPanelProps
           onClick={handleSaveHolidays}
           className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
         >
-          Save Holidays
+          {t('dutyRoster.holidaysPanel.saveHolidays')}
         </button>
       </div>
 
       <ConfirmModal
         open={pendingState !== undefined}
-        title="Change assigned state?"
-        message={pendingState !== undefined ? stateChangeConfirmMessage(config, pendingState) : ""}
+        title={t('dutyRoster.holidaysPanel.changeStateTitle')}
+        message={pendingState !== undefined ? stateChangeConfirmMessage(config, pendingState, t) : ""}
         onConfirm={() => commitStateChange(pendingState ?? null)}
         onCancel={() => setPendingState(undefined)}
       />
       <ConfirmModal
         open={!!removeTarget}
-        title="Remove public holiday"
-        message={removeTarget ? removeHolidayConfirmMessage(removeTarget.date, removeTarget.name) : ""}
-        okLabel="Remove"
+        title={t('dutyRoster.holidaysPanel.removeHolidayTitle')}
+        message={removeTarget ? removeHolidayConfirmMessage(removeTarget.date, removeTarget.name, t) : ""}
+        okLabel={t('dutyRoster.common.remove')}
         danger
         onConfirm={handleConfirmRemove}
         onCancel={() => setRemoveTarget(null)}

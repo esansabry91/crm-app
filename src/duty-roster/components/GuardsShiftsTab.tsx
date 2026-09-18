@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Guard, SiteConfig, MonthState, TenderRateConfig } from "../types";
 import { ratePositionNames } from "../rateResolution";
 import {
@@ -44,6 +45,7 @@ export interface GuardsShiftsTabProps {
 }
 
 export default function GuardsShiftsTab({ config, ms, rateConfig, onPersistConfig, onPersistMonth, onToast }: GuardsShiftsTabProps) {
+  const { t } = useTranslation();
   const [addOpen, setAddOpen] = useState(false);
   const [viewGuard, setViewGuard] = useState<Guard | null>(null);
   const [dismissGuard, setDismissGuard] = useState<Guard | null>(null);
@@ -67,13 +69,13 @@ export default function GuardsShiftsTab({ config, ms, rateConfig, onPersistConfi
     // Matches the original: both persistConfig() AND persistMonth() fire on Add (the latter just
     // flushes the appended log line into the month doc) — save() below does both via
     // onPersistConfig+onPersistMonth.
-    save({ config: nextConfig, ms: nextMs }, `Added ${guard.name}.`);
+    save({ config: nextConfig, ms: nextMs }, t('dutyRoster.guardsShiftsTab.toastAdded', { name: guard.name }));
     syncGuardBankOnAdd(guard, siteMeta, isTestData);
   }
 
   function handleToggleActive(guard: Guard) {
     if (guard.active === false) {
-      const outcome = applyReactivateGuard(config, ms, guard.id);
+      const outcome = applyReactivateGuard(config, ms, guard.id, t);
       if (!outcome) return;
       save({ config: outcome.config, ms: outcome.ms }, outcome.toast);
       const reactivated = outcome.config.guards.find((g) => g.id === guard.id);
@@ -85,7 +87,7 @@ export default function GuardsShiftsTab({ config, ms, rateConfig, onPersistConfi
 
   function handleConfirmDismiss(reason: string) {
     if (!dismissGuard) return;
-    const outcome = applyDismissGuard(config, ms, dismissGuard.id, reason);
+    const outcome = applyDismissGuard(config, ms, dismissGuard.id, reason, t);
     setDismissGuard(null);
     if (!outcome) return;
     save({ config: outcome.config, ms: outcome.ms }, outcome.toast);
@@ -95,7 +97,7 @@ export default function GuardsShiftsTab({ config, ms, rateConfig, onPersistConfi
 
   function handleConfirmReturnToPool() {
     if (!returnTarget) return;
-    const outcome = applyReturnGuardToPool(config, ms, returnTarget.id);
+    const outcome = applyReturnGuardToPool(config, ms, returnTarget.id, t);
     setReturnTarget(null);
     if (!outcome) return;
     save({ config: outcome.config, ms: outcome.ms }, outcome.toast);
@@ -125,9 +127,9 @@ export default function GuardsShiftsTab({ config, ms, rateConfig, onPersistConfi
       <DismissGuardModal guard={dismissGuard} onConfirm={handleConfirmDismiss} onCancel={() => setDismissGuard(null)} />
       <ConfirmModal
         open={!!returnTarget}
-        title="Back to Guard Pool"
-        message={returnTarget ? backToGuardPoolConfirmMessage(returnTarget.name) : ""}
-        okLabel="Back to Guard Pool"
+        title={t('dutyRoster.guardsTable.backToGuardPoolButton')}
+        message={returnTarget ? backToGuardPoolConfirmMessage(returnTarget.name, t) : ""}
+        okLabel={t('dutyRoster.guardsTable.backToGuardPoolButton')}
         onConfirm={handleConfirmReturnToPool}
         onCancel={() => setReturnTarget(null)}
       />

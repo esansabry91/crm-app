@@ -1,6 +1,7 @@
 /**
  * "Monthly work-day summary" panel — ported from renderFairness().
  */
+import { useTranslation } from "react-i18next";
 import type { GenerateMonthResult } from "../types";
 import type { GenerateMonthConfig } from "../schedulingEngine";
 import { buildFairnessData } from "../fairnessData";
@@ -14,29 +15,30 @@ export interface FairnessPanelProps {
 }
 
 export default function FairnessPanel({ y, m, config, result }: FairnessPanelProps) {
-  const data = buildFairnessData(y, m, config, result);
+  const { t } = useTranslation();
+  const data = buildFairnessData(y, m, config, result, t);
 
   return (
     <div className="rounded-xl border p-4" style={{ borderColor: ROSTER_TOKENS.line, background: ROSTER_TOKENS.surface }}>
-      <h3 className="text-sm font-semibold mb-1">Monthly work-day summary</h3>
+      <h3 className="text-sm font-semibold mb-1">{t('dutyRoster.fairnessPanel.title')}</h3>
       <p className="text-xs mb-3" style={{ color: ROSTER_TOKENS.muted }}>
         {data.subtitle}
       </p>
       <table className="w-full text-[12px] border-collapse">
         <thead>
           <tr style={{ color: ROSTER_TOKENS.muted }}>
-            <th className="text-left font-medium py-1">Guard</th>
-            <th className="text-left font-medium py-1">Days worked</th>
-            <th className="text-left font-medium py-1">Normal days</th>
-            <th className="text-left font-medium py-1">Rest days</th>
-            <th className="text-left font-medium py-1">Worked on rest day</th>
+            <th className="text-left font-medium py-1">{t('dutyRoster.fairnessPanel.guardColumn')}</th>
+            <th className="text-left font-medium py-1">{t('dutyRoster.fairnessPanel.daysWorkedColumn')}</th>
+            <th className="text-left font-medium py-1">{t('dutyRoster.fairnessPanel.normalDaysColumn')}</th>
+            <th className="text-left font-medium py-1">{t('dutyRoster.fairnessPanel.restDaysColumn')}</th>
+            <th className="text-left font-medium py-1">{t('dutyRoster.fairnessPanel.workedOnRestDayColumn')}</th>
           </tr>
         </thead>
         <tbody>
           {!data.rows.length ? (
             <tr>
               <td colSpan={5} className="py-2 text-center" style={{ color: ROSTER_TOKENS.muted }}>
-                Add guards to see the work-day summary.
+                {t('dutyRoster.fairnessPanel.emptyMessage')}
               </td>
             </tr>
           ) : (

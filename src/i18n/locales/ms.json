@@ -482,7 +482,9 @@
     "common": {
       "ok": "OK",
       "cancel": "Batal",
-      "close": "Tutup"
+      "close": "Tutup",
+      "add": "Tambah",
+      "remove": "Buang"
     },
     "guardDetails": {
       "employeeId": "ID Pekerja",
@@ -536,6 +538,137 @@
       "errorPermitExpiryRequired": "Tarikh luput permit diperlukan.",
       "errorInvalidMykad": "Masukkan nombor MyKad 12 digit yang sah (cth. 901231-14-5678).",
       "errorInvalidPhone": "Masukkan nombor telefon yang sah (cth. 012-3456789)."
+    },
+    "siteSetup": {
+      "stateSubWithState": "Diisi automatik daripada kalendar {{state}} (cuti persekutuan + negeri, 2026–2027) — tambah atau buang tarikh di bawah pada bila-bila masa.",
+      "stateSubNoState": "Menetapkan negeri akan mengisi automatik cuti persekutuan + cuti umum negeri itu sendiri di bawah — anda masih boleh menambah atau membuang tarikh secara manual pada bila-bila masa.",
+      "confirmSwitchState": "Tukar tapak ini daripada {{from}} kepada {{to}}? Cuti umum {{from}} yang diisi automatik akan digantikan dengan cuti {{to}} — tarikh yang anda tambah secara manual dikekalkan.",
+      "confirmRemoveStateAssignment": "Buang penetapan negeri {{state}} tapak ini? Cuti umum yang diisi automatik akan dibuang — tarikh yang anda tambah secara manual dikekalkan.",
+      "toastAppliedStateHolidays": "Cuti umum {{state}} telah digunakan.",
+      "toastClearedStateAssignment": "Penetapan negeri telah dibuang.",
+      "errorPickDate": "Pilih tarikh dahulu.",
+      "errorDateAlreadyHoliday": "Tarikh itu sudah ditandakan sebagai cuti umum.",
+      "toastAddedHoliday": "{{date}} ditambah sebagai cuti umum.",
+      "confirmRemoveHoliday": "Buang {{label}} daripada cuti umum tapak ini? Sebarang syif yang telah dikerjakan pada tarikh ini tidak lagi dikira sebagai kerja cuti dalam Laporan Ringkasan.",
+      "toastRemovedHoliday": "{{date}} dibuang daripada cuti umum.",
+      "toastHolidaysSaved": "Cuti umum disimpan.",
+      "toastSiteRequirementSaved": "Keperluan tapak disimpan.",
+      "toastRestRulesSaved": "Peraturan rehat disimpan.",
+      "describeNone": "tiada — semak jam liputan dan jam setiap syif",
+      "weekdayWeekendShiftLine": "Hari bekerja: {{wd}}. Hujung minggu: {{we}}.",
+      "shiftsPerDay_other": "{{count}} syif/hari — {{desc}}.",
+      "complianceNote": "Mod pematuhan RBA/SMETA aktif: tiada pengawal boleh melebihi {{cap}}j/minggu. Liputan ~{{weeklyHours}}j/minggu tapak ini memerlukan sekurang-kurangnya {{guardsText}} untuk memastikan syif setiap pengawal kekal di bawah had itu{{extra}}.",
+      "complianceNoteExtra": " — {{extra}} lebih daripada {{base}} yang dicadangkan oleh pengiraan roster/hari rehat sahaja",
+      "complianceNoteNoExtra": " (sudah dilindungi oleh pengiraan roster/hari rehat sahaja)",
+      "daysUnit_other": "{{count}} hari",
+      "summaryBefore": "{{shiftLine}} Tapak memerlukan liputan {{daysText}}/minggu. Bilangan pengawal yang dicadangkan daripada senario ini: ",
+      "setupGateNote": "Simpan {{list}} di bawah dahulu sebelum menambah pengawal.",
+      "setupGateLabels": {
+        "site": "Keperluan Tapak Klien",
+        "rest": "Peraturan Rehat",
+        "holidays": "Cuti Umum"
+      },
+      "fullhFieldLabels": {
+        "shiftsWdDay": "Hari bekerja — jawatan pengawal syif siang",
+        "shiftsWdNight": "Hari bekerja — jawatan pengawal syif malam",
+        "shiftsWeDay": "Hujung minggu — jawatan pengawal syif siang",
+        "shiftsWeNight": "Hujung minggu — jawatan pengawal syif malam"
+      },
+      "patternFieldLabels": {
+        "postsU": "Jawatan pengawal (semua syif, semua hari)",
+        "postsDay": "Jawatan pengawal — syif siang",
+        "postsNight": "Jawatan pengawal — syif malam",
+        "postsWd": "Jawatan pengawal — hari bekerja (Isn–Jum)",
+        "postsWe": "Jawatan pengawal — hujung minggu (Sab–Ahd)",
+        "postsWdDay": "Jawatan pengawal — syif siang hari bekerja",
+        "postsWdNight": "Jawatan pengawal — syif malam hari bekerja",
+        "postsWeDay": "Jawatan pengawal — syif siang hujung minggu",
+        "postsWeNight": "Jawatan pengawal — syif malam hujung minggu"
+      }
+    },
+    "siteRequirementPanel": {
+      "title": "Keperluan tapak klien",
+      "shiftPattern": "Corak syif",
+      "patternUniform": "Seragam (jawatan sama, semua syif/hari)",
+      "patternDayNight": "Siang / Malam",
+      "patternWeekdayWeekend": "Hari bekerja / Hujung minggu",
+      "patternFull": "Hari bekerja/Hujung minggu × Siang/Malam",
+      "patternFullh": "Jam syif tersuai setiap hari (FULLH)",
+      "nightShiftStartHour": "Jam mula syif malam",
+      "hoursUnit": "jam",
+      "addPost": "+ Tambah jawatan",
+      "coverageHoursDay": "Jam liputan/hari",
+      "coverageDaysWeek": "Hari liputan/minggu",
+      "hoursPerShift": "Jam setiap syif",
+      "rosterStartHour": "Jam mula roster",
+      "normalHoursDay": "Jam normal/hari (had OT)",
+      "saveSiteRequirement": "Simpan Keperluan Tapak",
+      "cantRemoveTitle": "Tidak boleh dibuang",
+      "cantRemoveMessage": "Setiap kategori syif memerlukan sekurang-kurangnya satu jawatan pengawal — tambah gantian sebelum membuang yang terakhir."
+    },
+    "restRulesPanel": {
+      "title": "Peraturan rehat",
+      "restDaysPerWeek": "Hari rehat / minggu",
+      "minRestHours": "Jam rehat minimum antara syif",
+      "consecutiveDaysNote": "= sehingga {{count}} hari bekerja berturut-turut sebelum hari rehat diperlukan.",
+      "complianceModeTitle": "Mod pematuhan RBA/SMETA",
+      "complianceModeDesc": "Mengehadkan setiap pengawal kepada {{cap}}j/minggu (biasa + OT digabung) — roster akan membiarkan syif tidak diisi dan menandakannya sebagai konflik dan bukannya menjadualkan pengawal melebihi had itu. Nombor tunggal ini ditetapkan sengaja lebih ketat daripada RBA (60j/minggu) dan SMETA/ETI (48j biasa, 60j gabungan) supaya ia juga memenuhi had 45j/minggu Akta Kerja Malaysia, mengikut mana-mana rangka kerja yang digunakan untuk mengaudit tapak klien.",
+      "saveRestRules": "Simpan Peraturan Rehat"
+    },
+    "holidaysPanel": {
+      "title": "Cuti umum",
+      "stateNotSetOption": "Belum ditetapkan — tambah cuti secara manual",
+      "holidayNamePlaceholder": "Nama cuti (pilihan)",
+      "noHolidaysYet": "Belum ada cuti umum ditetapkan untuk tapak ini.",
+      "saveHolidays": "Simpan Cuti Umum",
+      "changeStateTitle": "Tukar negeri yang ditetapkan?",
+      "removeHolidayTitle": "Buang cuti umum"
+    },
+    "guardsTable": {
+      "title": "Roster pengawal",
+      "addGuardButton": "+ Tambah pengawal",
+      "noGuardsYet": "Belum ada pengawal — tambah yang pertama di atas.",
+      "nameColumn": "Nama",
+      "view": "Lihat",
+      "reactivate": "Aktifkan semula",
+      "backToGuardPoolButton": "Kembali ke Kumpulan Pengawal",
+      "activeUntil": "Aktif sehingga {{date}}",
+      "toastReactivated": "{{name}} diaktifkan semula.",
+      "toastDismissed": "{{name}} diberhentikan.",
+      "confirmBackToPool": "Hantar {{name}} kembali ke Kumpulan Pengawal dalam Bank Pengawal? Mereka dibuang daripada senarai pengawal tapak ini supaya boleh ditugaskan di tempat lain -- jam yang telah mereka kerjakan di sini kekal direkodkan dan tidak terjejas. Sejarah roster lampau yang merujuk mereka akan dipaparkan sebagai \"(pengawal dibuang)\".",
+      "toastBackToPool": "{{name}} dihantar kembali ke Kumpulan Pengawal."
+    },
+    "guardsShiftsTab": {
+      "toastAdded": "{{name}} ditambah."
+    },
+    "fairnessPanel": {
+      "title": "Ringkasan hari bekerja bulanan",
+      "subtitle": "Hari bekerja normal ditetapkan pada {{normalWorkDays}}/bulan ({{month}} mempunyai {{days}} hari) — sebarang hari yang dikerjakan melebihi itu dikira sebagai kerja pada hari rehat.",
+      "guardColumn": "Pengawal",
+      "daysWorkedColumn": "Hari dikerjakan",
+      "normalDaysColumn": "Hari normal",
+      "restDaysColumn": "Hari rehat",
+      "workedOnRestDayColumn": "Dikerjakan pada hari rehat",
+      "emptyMessage": "Tambah pengawal untuk melihat ringkasan hari bekerja."
+    },
+    "conflictsPanel": {
+      "title": "Syif tidak diisi & ditandakan",
+      "noConflicts": "Tiada konflik — roster diisi sepenuhnya dan mematuhi peraturan.",
+      "noEligibleGuardFor": "Tiada pengawal layak untuk ",
+      "slotOnDate": " slot {{slot}} pada {{date}}.",
+      "guardOn": "{{name}} pada ",
+      "slotDateReason": " slot {{slot}}, {{date}}: {{reason}}."
+    },
+    "rosterStats": {
+      "activeGuards": "Pengawal aktif",
+      "shiftSlotsThisMonth": "Slot syif bulan ini",
+      "unfilledSlots": "Slot tidak diisi",
+      "autoAssignedOnRestDay": "Ditugaskan automatik pada hari rehat",
+      "fairnessSpread": "Sebaran keadilan"
+    },
+    "logPanel": {
+      "title": "Log perubahan",
+      "noChangesYet": "Belum ada perubahan dilog."
     }
   },
   "linkedSiteCard": {

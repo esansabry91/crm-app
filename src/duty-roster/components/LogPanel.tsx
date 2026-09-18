@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { MonthState } from "../types";
 import { fmtLogTime } from "../rosterModel";
 
@@ -7,13 +8,14 @@ export interface LogPanelProps {
 }
 
 export default function LogPanel({ ms }: LogPanelProps) {
+  const { t } = useTranslation();
   const entries = [...ms.log].reverse();
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-slate-900">Change log</h3>
+      <h3 className="text-sm font-semibold text-slate-900">{t('dutyRoster.logPanel.title')}</h3>
       {entries.length === 0 ? (
-        <p className="text-sm text-slate-400 mt-2">No changes logged yet.</p>
+        <p className="text-sm text-slate-400 mt-2">{t('dutyRoster.logPanel.noChangesYet')}</p>
       ) : (
         <div className="flex flex-col gap-1 mt-3 max-h-96 overflow-y-auto">
           {entries.map((e, i) => (

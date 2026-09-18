@@ -2,6 +2,7 @@
  * "Monthly work-day summary" panel — ported from public/duty-roster/index.html's
  * renderFairness() (lines ~2888-2908).
  */
+import type { TFunction } from "i18next";
 import type { GenerateMonthResult } from "./types";
 import type { GenerateMonthConfig } from "./schedulingEngine";
 import { NORMAL_WORK_DAYS } from "./payrollMath";
@@ -22,9 +23,9 @@ export interface FairnessData {
   rows: FairnessRow[];
 }
 
-export function buildFairnessData(y: number, m: number, config: GenerateMonthConfig, result: GenerateMonthResult): FairnessData {
+export function buildFairnessData(y: number, m: number, config: GenerateMonthConfig, result: GenerateMonthResult, t: TFunction): FairnessData {
   const nDays = daysInMonth(y, m);
-  const subtitle = `Normal work days fixed at ${NORMAL_WORK_DAYS}/month (${monthLabel(y, m)} has ${nDays} days) — any day worked beyond that counts as work on a rest day.`;
+  const subtitle = t("dutyRoster.fairnessPanel.subtitle", { normalWorkDays: NORMAL_WORK_DAYS, month: monthLabel(y, m), days: nDays });
 
   const guards = config.guards.filter((g) => g.active !== false || (result.totalShifts[g.id] || 0) > 0);
   const rows: FairnessRow[] = guards.map((g) => {
