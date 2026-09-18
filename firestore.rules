@@ -11,21 +11,76 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(uid));
     }
 
-    // True only for a signed-in user whose /users/{uid} profile exists, has role "admin",
-    // and has not been deactivated.
+    // True only for a signed-in user whose /users/{uid} profile exists, has not been deactivated,
+    // and has one of the admin-equivalent roles: "admin" (HQ Admin) itself; "developer" (the
+    // account owner's own dedicated testing role — same access as admin, but its own writes get
+    // auto-tagged isTestData: true client-side; see Role's doc comment in src/types.ts and
+    // shouldStampTestData() in src/services/settings.ts); or "ceo"/"director"/"tenderController",
+    // three roles that are deliberately just full HQ Admin access under a different job title —
+    // see the Role doc comment in src/types.ts. None of the three get isDeveloper()'s test-data
+    // auto-tagging below — only a literal "developer" account does.
     function isAdmin() {
       return isSignedIn()
-        && userDoc(request.auth.uid).data.role == 'admin'
+        && (userDoc(request.auth.uid).data.role == 'admin'
+            || userDoc(request.auth.uid).data.role == 'developer'
+            || userDoc(request.auth.uid).data.role == 'ceo'
+            || userDoc(request.auth.uid).data.role == 'director'
+            || userDoc(request.auth.uid).data.role == 'tenderController')
+        && userDoc(request.auth.uid).data.active != false;
+    }
+
+    // True only for a signed-in, active user with role "developer" specifically — narrower than
+    // isAdmin() above. Used to lock the Testing Mode toggle (settings/app) to the dedicated
+    // testing account only: a real "admin" account should never be able to flip Testing Mode or
+    // (via the Admin Settings > Testing Data tab, which is itself hidden from non-developers —
+    // see AdminPage.tsx) run the test-data cleanup tool against production.
+    function isDeveloper() {
+      return isSignedIn()
+        && userDoc(request.auth.uid).data.role == 'developer'
         && userDoc(request.auth.uid).data.active != false;
     }
 
     // True only for a signed-in, active user with role "payroll" — a strictly view/export-only
     // Duty Roster role (see the /sites block below). Never grant this function's result write
     // access to anything; it exists so read rules can include payroll alongside admin/HQ
-    // without also handing it the write access those roles get.
+    // without also handing it the write access those roles get. Kept separate from isHr()/
+    // isPayrollLike() below (rather than folding "hr" into this check) so /guards and
+    // /bufferGuards — the one place Payroll and HR deliberately differ — can keep checking this
+    // function alone and stay unaffected by HR's Guard Bank access.
     function isPayroll() {
       return isSignedIn()
         && userDoc(request.auth.uid).data.role == 'payroll'
+        && userDoc(request.auth.uid).data.active != false;
+    }
+
+    // True only for a signed-in, active user with role "hr" — same strictly view/export-only,
+    // every-branch Duty Roster reach as isPayroll() above (see isPayrollLike() below), PLUS full
+    // normal access to Guard Bank (/guards, /bufferGuards), which is why those two collections'
+    // rules deliberately check isPayroll() alone rather than isPayrollLike().
+    function isHr() {
+      return isSignedIn()
+        && userDoc(request.auth.uid).data.role == 'hr'
+        && userDoc(request.auth.uid).data.active != false;
+    }
+
+    // Payroll and HR share the exact same Duty-Roster-only, view/export-only, every-branch
+    // access — use this wherever a rule grants or restricts THAT shared behavior. /guards and
+    // /bufferGuards are the one deliberate exception (see isHr()'s doc comment above) and check
+    // isPayroll() alone instead.
+    function isPayrollLike() {
+      return isPayroll() || isHr();
+    }
+
+    // True only for a signed-in, active user with role "finance" — a Branch-Collection-only
+    // role restricted client-side to the Invoices/Debtor List/Revenue tabs (see the Role doc
+    // comment in src/types.ts and the route gating in App.tsx/ProtectedRoute.tsx). Granted
+    // alongside isBranchManager() on /invoices' UPDATE rule only, never its create rule — it
+    // can record payments on an existing invoice the same way a Branch Manager can, but can
+    // never create a new one (Generate Invoice is hidden from it in BranchCollectionPage.tsx,
+    // and this is the rule that actually enforces that rather than just hiding the tab).
+    function isFinance() {
+      return isSignedIn()
+        && userDoc(request.auth.uid).data.role == 'finance'
         && userDoc(request.auth.uid).data.active != false;
     }
 
@@ -35,9 +90,9 @@ service cloud.firestore {
         && userDoc(request.auth.uid).data.active != false;
     }
 
-    // True only for a signed-in, active user with role "branchManager" — used below to scope
-    // the Quotation Calculator to admin + branchManager only (dutyStaff and payroll get none
-    // of this collection).
+    // True only for a signed-in, active user with role "branchManager" — used below (alongside
+    // isAdmin(), which already covers "developer") to scope the Quotation Calculator to
+    // admin + branchManager + developer (dutyStaff and payroll get none of this collection).
     function isBranchManager() {
       return isSignedIn()
         && userDoc(request.auth.uid).data.role == 'branchManager'
@@ -49,22 +104,137 @@ service cloud.firestore {
       return userDoc(request.auth.uid).data.department;
     }
 
+    // The exact set of fields updateInvoiceStatus() ever writes — Finance's /invoices update is
+    // rejected if it touches anything outside this set (in particular, `status` becoming 'void'
+    // is caught here too, since 'status' is only allowed when the new value isn't 'void') — see
+    // the /invoices update rule below, and voidInvoice()/updateInvoiceContent() in
+    // services/invoices.ts for what Admin/Branch Manager are allowed to do instead.
+    function financeUpdateOnlyTouches() {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      return affected.hasOnly(['status', 'amountPaid', 'paidDate', 'paymentLog', 'updatedAt'])
+        && request.resource.data.status != 'void';
+    }
+
     // ---- Team member profiles ----
     // Staff can read only their own profile; admins can read/write everyone's.
     // Nobody but an admin can create or change a profile — this is what stops a staff
     // account from promoting itself to admin or reassigning its own department.
     match /users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow create, delete: if isAdmin();
-      // Admins can change anything on any profile. A signed-in user can additionally change ONLY
-      // their own `language` field on their OWN profile doc — the UI language toggle in
-      // AppLayout's header (src/components/layout/AppLayout.tsx) — nothing else.
-      // affectedKeys().hasOnly(['language']) is what keeps this narrow: any write that also
-      // touches role/department/active/etc. falls through and is rejected unless the caller is
-      // an admin, so this can never be used to self-promote or reactivate a deactivated account.
+      // A Branch Manager can additionally reach the Operation Staff accounts in their OWN
+      // department — never anyone else's account, never a different role, never a different
+      // branch — see UserManager.tsx's scoped "Team" tab for a Branch Manager (Admin Settings >
+      // Team). This mirrors the same "narrow, scoped delegation" shape as
+      // canAssignSiteBranchViaTender() above: broad admin reach stays admin-only, but a Branch
+      // Manager gets just enough rope to run their own branch's Operation Staff roster.
+      function isOwnBranchOperationStaff(data) {
+        return data.role == 'dutyStaff' && data.department == myDepartment();
+      }
+      allow read: if isSignedIn()
+        && (request.auth.uid == uid || isAdmin() || (isBranchManager() && isOwnBranchOperationStaff(resource.data)));
+      allow create: if isAdmin()
+        || (isBranchManager() && isOwnBranchOperationStaff(request.resource.data));
+      // Narrower than create: a Branch Manager can only flip `active` (Deactivate in
+      // UserManager.tsx — see deactivateUser() in services/users.ts) on an Operation Staff
+      // account already in their own department, and can never use this to move it to a
+      // different role/department/branch (both old AND new data must still satisfy
+      // isOwnBranchOperationStaff, and hasOnly pins the write to that one field) — reassigning
+      // someone's role or branch stays admin-only, same as every other role in this app.
       allow update: if isAdmin()
-        || (isSignedIn() && request.auth.uid == uid
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['language']));
+        || (
+          isBranchManager()
+          && isOwnBranchOperationStaff(resource.data)
+          && isOwnBranchOperationStaff(request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active'])
+        );
+      // A signed-in user can additionally change ONLY their own `language` field on their OWN
+      // profile doc — the UI language toggle in AppLayout's header
+      // (src/components/layout/AppLayout.tsx) — nothing else. affectedKeys().hasOnly(['language'])
+      // keeps this narrow: a write that also touches role/department/active/etc. falls through
+      // to the branches above instead, so this can never be used to self-promote or reactivate a
+      // deactivated account.
+      allow update: if isSignedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['language']);
+      // Mirrors update: a Branch Manager can Remove (deleteUserProfile()) only an Operation
+      // Staff account already in their own department.
+      allow delete: if isAdmin()
+        || (isBranchManager() && isOwnBranchOperationStaff(resource.data));
+    }
+
+    // ---- Task Board (Branch Manager -> Operation Staff task assignment) ----
+    // See the StaffTask status flow doc comment in types.ts: 'open' -> 'staffCompleted' (the
+    // assignee says it's done) -> 'closed' (the manager confirms it). Explicit `data` params
+    // throughout, not ambient match-block variables — see canReachTenderSiteDetails() above for
+    // why relying on an out-of-scope match wildcard is a bug here, not just a style choice.
+    match /tasks/{taskId} {
+      function isTaskAssignee(data) {
+        return data.assigneeUid == request.auth.uid;
+      }
+      function isTaskManager(data) {
+        return isBranchManager() && data.department == myDepartment();
+      }
+
+      allow read: if isSignedIn()
+        && (isAdmin() || isTaskManager(resource.data) || isTaskAssignee(resource.data));
+
+      // Only a Branch Manager (own branch) or admin can create a task, and only ever in the
+      // 'open' state with both completion timestamps unset. A Branch Manager is additionally
+      // required to target a real Operation Staff account in their OWN department — checked via
+      // get() against the assignee's own /users doc, not just trusted from the new task's own
+      // fields, so a manager can't point assigneeUid at a stray/fabricated uid or someone else's
+      // branch even if this were called with a hand-crafted payload.
+      allow create: if isSignedIn()
+        && request.resource.data.status == 'open'
+        && request.resource.data.staffCompletedAt == null
+        && request.resource.data.closedAt == null
+        && (
+          isAdmin()
+          || (
+            isBranchManager()
+            && request.resource.data.department == myDepartment()
+            && get(/databases/$(database)/documents/users/$(request.resource.data.assigneeUid)).data.role == 'dutyStaff'
+            && get(/databases/$(database)/documents/users/$(request.resource.data.assigneeUid)).data.department == myDepartment()
+          )
+        );
+
+      // Five narrow, mutually exclusive write shapes — everything else about a task (title,
+      // description, department, assignee) is frozen once created:
+      //   1. Manager/admin: change priority any time before the task is closed.
+      //   2. Manager/admin: confirm a staff-completed task ('staffCompleted' -> 'closed').
+      //   3. Manager/admin: reopen a staff-completed task that wasn't actually done
+      //      ('staffCompleted' -> 'open', clearing staffCompletedAt).
+      //   4. The assignee themselves: mark their own open task done ('open' -> 'staffCompleted').
+      //   5. Manager/admin OR the assignee: append one entry to progressUpdates (arrayUnion, so
+      //      this can never remove/edit an existing entry, only add one) — any time before the
+      //      task is closed, same cutoff as priority above.
+      allow update: if isSignedIn()
+        && (
+          (
+            isAdmin() || isTaskManager(resource.data)
+          ) && (
+            (resource.data.status != 'closed'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['priority']))
+            || (resource.data.status == 'staffCompleted'
+                && request.resource.data.status == 'closed'
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'closedAt', 'closedByName']))
+            || (resource.data.status == 'staffCompleted'
+                && request.resource.data.status == 'open'
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'staffCompletedAt']))
+            || (resource.data.status != 'closed'
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['progressUpdates']))
+          )
+          || (
+            isTaskAssignee(resource.data)
+            && (
+              (resource.data.status == 'open'
+                && request.resource.data.status == 'staffCompleted'
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'staffCompletedAt']))
+              || (resource.data.status != 'closed'
+                  && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['progressUpdates']))
+            )
+          )
+        );
+
+      allow delete: if isAdmin() || isTaskManager(resource.data);
     }
 
     // ---- Branches & brands (admin-editable lookup lists) ----
@@ -75,6 +245,51 @@ service cloud.firestore {
     match /brands/{brandId} {
       allow read: if isActiveUser();
       allow create, update, delete: if isAdmin();
+    }
+
+    // ---- Branch Collection (billing / invoicing) ----
+    // Financial records — readable by any active non-Payroll/HR user (Payroll's and HR's Duty
+    // Roster access is strictly view/export and has nothing to do with billing). Only
+    // Admin/Developer/CEO/Director/Tender Controller or a Branch Manager can create one; Finance
+    // can additionally update an existing one (record payments) but never create — see
+    // isFinance()'s doc comment above. Never Payroll/HR, never dutyStaff/Support-only roles (none
+    // of them already reach this collection anyway — see AppLayout.tsx/ProtectedRoute's
+    // hideFromStaff gating on the Branch Collection tab).
+    match /invoices/{invoiceId} {
+      allow read: if isActiveUser() && !isPayrollLike();
+      // Finance can update (record payments / change status on an existing invoice) but never
+      // create — see isFinance()'s doc comment above for why the two rules deliberately differ.
+      allow create: if isActiveUser() && (isAdmin() || isBranchManager());
+      // Finance is restricted to the fields updateInvoiceStatus() actually writes (recording a
+      // payment): it can never void a wrongly-generated invoice or edit its content (line items,
+      // client details, etc — see updateInvoiceContent()/voidInvoice() in services/invoices.ts),
+      // both of which stay Admin/Developer/Branch Manager only, matching who can create one in
+      // the first place. financeUpdateOnlyTouches() above is what enforces that split.
+      allow update: if isActiveUser()
+        && (isAdmin() || isBranchManager() || (isFinance() && financeUpdateOnlyTouches()));
+      allow delete: if isAdmin();
+    }
+
+    // Per (brand+branch+client) running sequence backing an auto-generated invoice number's
+    // trailing RUNNING segment — see sanitizeInvoiceCode()/createInvoice() in
+    // services/invoices.ts. Same read/write audience as /invoices itself: createInvoice()
+    // increments a counter doc in the same transaction it creates the invoice doc in, so both
+    // need to be writable by whoever can create invoices.
+    match /invoiceCounters/{counterId} {
+      allow read: if isActiveUser() && !isPayrollLike();
+      allow write: if isActiveUser() && (isAdmin() || isBranchManager());
+    }
+
+    // ---- App-wide settings (currently just Testing Mode) ----
+    // A single doc, settings/app, read by every active user (both the CRM and
+    // public/duty-roster/index.html need to know testingModeEnabled at record-creation time so
+    // they can stamp new tenders/sites/guards/bufferGuards with isTestData) but writable only by
+    // an admin — see src/components/admin/TestingDataTool.tsx for the toggle UI and
+    // src/services/settings.ts / index.html's state.testingModeEnabled for how it's read.
+    match /settings/{docId} {
+      allow read: if isActiveUser();
+      // Developer-only (not isAdmin()) — see isDeveloper()'s doc comment above.
+      allow write: if isDeveloper();
     }
 
     // ---- Tenders ----
@@ -101,6 +316,12 @@ service cloud.firestore {
           || (resource.data.stage == 'Won'
               && resource.data.get('pendingReassignment', null) != null
               && resource.data.pendingReassignment.toBranch == myDepartment())
+          // Payroll and HR already read every branch's Duty Roster sites (see canReadSite()
+          // below) — including, now, each site's Summary Report Rate/Amount columns, which
+          // resolve live off this same tender doc's guardRateMode/guardRate/guardRatePositions
+          // (see subscribeTenderRate() in public/duty-roster/index.html). Without this, those
+          // columns would silently come up blank on every site outside their own department.
+          || (resource.data.stage == 'Won' && isPayrollLike())
         );
 
       allow create: if isActiveUser()
@@ -116,11 +337,19 @@ service cloud.firestore {
       }
 
       // Non-owners can additionally update JUST the Active Project detail fields (location,
-      // contact person, guards deployed, tender doc number, close-out status) on a Won tender
+      // state, city, postcode, contact person, guards deployed, tender doc number/PDF, close-out
+      // status) — PLUS contractEnd/tenderValue for a straight renewal (see renewContract() in
+      // services/tenders.ts and RenewContractModal.tsx), PLUS additionalEquipment/tenderValue
+      // together for declaring/removing/stopping an equipment item (see addTenderEquipment()/
+      // removeTenderEquipmentItem()/stopTenderEquipmentItem(), same reasoning), and PLUS
+      // guardRateMode/guardRate/guardRatePositions/lastGuardRateChange/tenderValue together for a
+      // Guard Rate change (see applyGuardRateChange(), same reasoning again) — on a Won tender
       // they can see in Active Projects — branch-mates in its activeBranch, or anyone in HQ —
       // mirroring the read rule above. affectedKeys().hasOnly([...]) is what keeps this narrow:
-      // any write that also touches stage, value, ownerUid, department, etc. falls through and
-      // is rejected unless the caller is the owner or an admin.
+      // any write that also touches stage, ownerUid, department, etc. falls through and is
+      // rejected unless the caller is the owner or an admin. Deliberately does NOT extend
+      // contractStart: a renewal continues the same engagement rather than starting a new one, so
+      // that field stays owner/admin-only like the rest of the sales record.
       allow update: if isActiveUser()
         && (
           isAdmin()
@@ -131,7 +360,7 @@ service cloud.firestore {
             resource.data.stage == 'Won'
             && (resource.data.activeBranch == myDepartment() || myDepartment() == 'HQ')
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['location', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'closedOut', 'closedOutAt', 'updatedAt'])
+                 .hasOnly(['location', 'state', 'city', 'postcode', 'contactPerson', 'guardsDeployed', 'tenderDocNumber', 'scopeOfWork', 'tenderDocumentKey', 'tenderDocumentFileId', 'tenderDocumentName', 'tenderDocumentSize', 'tenderDocumentUploadedAt', 'clientAlias', 'clientAddress', 'guardRateMode', 'guardRate', 'guardRatePositions', 'lastGuardRateChange', 'additionalEquipment', 'siteMode', 'closedOut', 'closedOutAt', 'contractEnd', 'tenderValue', 'updatedAt'])
           )
           // Accepting a pending reassignment (see Tender.pendingReassignment and
           // acceptReassignment() in services/tenders.ts) — only the Branch Manager (not
@@ -150,9 +379,11 @@ service cloud.firestore {
           )
         );
 
-      // Staff can delete a tender they own (matches the create/update scoping above); admins
-      // can delete any tender.
-      allow delete: if isActiveUser() && (isAdmin() || resource.data.ownerUid == request.auth.uid);
+      // Admin-only. Every tender is forced to move through the pipeline (Won/Lost/Disqualified
+      // Lead) instead of being deletable by whoever owns it — keeps the funnel's history and
+      // analytics accurate. Admin keeps this as a deliberate override for genuine data cleanup
+      // (matches the same client-side gating in TenderFormModal.tsx's Delete button).
+      allow delete: if isAdmin();
 
       // ---- Change history (audit trail that powers the pipeline-value trend chart) ----
       // Denormalized `ownerUid` on each entry keeps this rule self-contained (no extra
@@ -162,13 +393,70 @@ service cloud.firestore {
         allow read: if isActiveUser() && (isAdmin() || resource.data.ownerUid == request.auth.uid);
 
         allow create: if isActiveUser()
-          && (isAdmin() || request.resource.data.ownerUid == request.auth.uid);
+          && (
+            isAdmin()
+            || request.resource.data.ownerUid == request.auth.uid
+            // renewContract() and addTenderEquipment()/removeTenderEquipmentItem() (all in
+            // services/tenders.ts) are the non-owner, non-admin paths that write history here — a
+            // Branch Manager renewing, or declaring/removing equipment on, a Won project they run
+            // but didn't personally sell. Unlike ownerUid above (tied to the writer's own
+            // auth.uid, so it can't be spoofed), a branch match has nothing on the new entry
+            // itself binding it to the truth, so this checks the REAL parent tender's
+            // stage/activeBranch via get() rather than trusting anything the caller put on the
+            // entry.
+            || (
+              request.resource.data.type == 'value_change'
+              && get(/databases/$(database)/documents/tenders/$(tenderId)).data.stage == 'Won'
+              && (
+                get(/databases/$(database)/documents/tenders/$(tenderId)).data.activeBranch == myDepartment()
+                || myDepartment() == 'HQ'
+              )
+            )
+          );
 
         // Immutable audit log — nobody can ever edit a history entry once written. Deletion is
         // still admin-only (not staff, not even the entry's own owner), reserved for legitimate
         // data cleanup (e.g. scripts/purge-test-data.mjs) rather than routine use.
         allow update: if false;
         allow delete: if isAdmin();
+      }
+
+      // ---- Multi-site override (see TenderSiteDetails in types.ts) ----
+      // One doc per EXTRA linked Duty Roster site — never for a project's first/original site,
+      // which keeps using this tender document's own top-level fields (guardRateMode,
+      // additionalEquipment, location, etc.) exactly as before this feature existed. Reachable
+      // by the same people who can reach the parent tender itself: its owner, an admin, or (on
+      // a Won project) a branch-mate in its activeBranch or anyone in HQ — mirroring the
+      // widened Active-Project-detail update rule above. Deliberately no hasOnly() field
+      // allowlist here (unlike that rule) — every field on this doc IS a per-site detail field,
+      // so there is nothing narrower to carve out.
+      function canReachTenderSiteDetails(siteId) {
+        return isAdmin()
+          || get(/databases/$(database)/documents/tenders/$(tenderId)).data.ownerUid == request.auth.uid
+          || (
+            get(/databases/$(database)/documents/tenders/$(tenderId)).data.stage == 'Won'
+            && (
+              get(/databases/$(database)/documents/tenders/$(tenderId)).data.activeBranch == myDepartment()
+              || myDepartment() == 'HQ'
+            )
+          )
+          // A branch that doesn't own the parent tender but DOES manage this specific
+          // additional site (its own /sites/{siteId} doc — see createTenderSite() in
+          // services/tenders.ts) can still reach just THAT site's own siteDetails doc, on a
+          // Won project, mirroring canReachSite() below. Scoped narrowly: the site must
+          // actually be linked to THIS tender (tenderId match, so a stray/mismatched siteId
+          // can't be used to probe an unrelated site's branch) and that site's own `branch`
+          // field must name this user's department — the parent tender's activeBranch is
+          // irrelevant here, unlike every other clause above.
+          || (
+            get(/databases/$(database)/documents/tenders/$(tenderId)).data.stage == 'Won'
+            && get(/databases/$(database)/documents/sites/$(siteId)).data.get('tenderId', null) == tenderId
+            && get(/databases/$(database)/documents/sites/$(siteId)).data.get('branch', null) == myDepartment()
+          );
+      }
+      match /siteDetails/{siteId} {
+        allow read: if isActiveUser() && canReachTenderSiteDetails(siteId);
+        allow write: if isActiveUser() && canReachTenderSiteDetails(siteId);
       }
     }
 
@@ -212,9 +500,17 @@ service cloud.firestore {
       }
       // Payroll reads every site regardless of branch (same reach as admin/HQ) but must never
       // write — kept as a separate function from canReachSite so it's easy to see that the
-      // create/update/delete rules below deliberately do NOT call this one.
+      // create/update/delete rules below deliberately do NOT call this one. Also — separately —
+      // lets a tender's owner/owning branch keep reading every one of ITS OWN linked sites, even
+      // ones it has delegated to a different branch (see canAssignSiteBranchViaTender() below):
+      // without this, useTenderSites.ts's `where('tenderId','==',...)` query in Project
+      // Details' "Linked Sites" list would silently drop a delegated site from a non-HQ/admin
+      // owner's own results the moment it stopped matching their own department — read-only,
+      // deliberately not folded into canReachSite() itself, which still gates every WRITE to a
+      // site's own operational fields (guards, roster config) to whichever branch actually runs
+      // it day to day.
       function canReadSite(data) {
-        return canReachSite(data) || isPayroll();
+        return canReachSite(data) || isPayrollLike() || canAssignSiteBranchViaTender(data);
       }
       // True only for a Branch Manager accepting a reassignment actually pending to their own
       // branch (see Tender.pendingReassignment / acceptReassignment()) for THIS site's tender —
@@ -227,33 +523,97 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/tenders/$(oldData.tenderId)).data.pendingReassignment.toBranch == myDepartment();
       }
 
+      // True when the NEW site doc names a tenderId this user owns or manages (mirrors the
+      // tenders update rule's own owner/activeBranch/HQ reach) — lets "+ Add Site" in Project
+      // Details (createTenderSite() in services/tenders.ts) delegate a newly-linked site to
+      // ANY branch, not just the creator's own, so a multi-site project's owning branch can
+      // hand an additional site off to whichever branch will actually run it. Deliberately
+      // create-only (not folded into canReachSite() itself, and not applied to update) — an
+      // already-existing site's branch keeps changing only through the paths that already
+      // handle it (a plain same-branch edit, or the pendingReassignment flow above).
+      function canAssignSiteBranchViaTender(data) {
+        return data.get('tenderId', null) != null
+          && (
+            get(/databases/$(database)/documents/tenders/$(data.tenderId)).data.ownerUid == request.auth.uid
+            || (
+              get(/databases/$(database)/documents/tenders/$(data.tenderId)).data.stage == 'Won'
+              && (
+                get(/databases/$(database)/documents/tenders/$(data.tenderId)).data.activeBranch == myDepartment()
+                || myDepartment() == 'HQ'
+              )
+            )
+          );
+      }
+
       // The second clause matters: acceptReassignment() in services/tenders.ts queries sites by
       // tenderId BEFORE it can update one, and a query silently drops documents the caller can't
       // read rather than erroring — so without this, the receiving Branch Manager's query would
       // just come back empty and their write would never even attempt to run.
       allow read: if isActiveUser() && (canReadSite(resource.data) || isAcceptingPendingReassignment(resource.data));
-      allow create: if isActiveUser() && !isPayroll() && canReachSite(request.resource.data);
+      allow create: if isActiveUser() && !isPayrollLike()
+        && (canReachSite(request.resource.data) || canAssignSiteBranchViaTender(request.resource.data));
       // Both old and new data must be in reach — the first clause keeps a non-privileged
       // user from touching a site outside their branch at all, the second keeps them from
-      // reassigning a reachable site's branch to one they don't belong to. !isPayroll() blocks
-      // the Payroll role from writing at all, even to a site it can read. The second OR branch
-      // is the one narrow exception: a Branch Manager accepting a pending reassignment (see
+      // reassigning a reachable site's branch to one they don't belong to. !isPayrollLike()
+      // blocks Payroll and HR from writing at all, even to a site either can read. The second
+      // OR branch is the one narrow exception: a Branch Manager accepting a pending reassignment (see
       // isAcceptingPendingReassignment() above) touching the OLD, not-yet-theirs site — limited
       // to exactly the fields acceptReassignment() actually writes.
-      allow update: if isActiveUser() && !isPayroll() && (
+      allow update: if isActiveUser() && !isPayrollLike() && (
         (canReachSite(resource.data) && canReachSite(request.resource.data))
         || (
           isAcceptingPendingReassignment(resource.data)
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['branch', 'tenderId', 'archived', 'archivedAt', 'updatedAt'])
         )
+        // The other narrow exception: saveTenderSiteLocationDetails() in services/tenders.ts
+        // re-syncs a linked site's denormalized name/clientName/branch onto this doc right
+        // after "+ Add Site" (createTenderSite()) delegates it to a different branch — without
+        // this, that resync would immediately fail canReachSite() the instant the delegated
+        // branch differs from the caller's own, since the caller is the TENDER's owning branch,
+        // not necessarily this site's new one. Same tenderId-ownership check as create's
+        // canAssignSiteBranchViaTender() above, tenderId itself pinned unchanged, and — unlike
+        // that unrestricted create — limited to exactly these cosmetic/denormalized fields, so
+        // an owning branch that doesn't also run this site still can't touch its guards, roster
+        // config, or anything else about it.
+        || (
+          canAssignSiteBranchViaTender(resource.data)
+          && request.resource.data.tenderId == resource.data.tenderId
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['name', 'clientName', 'branch', 'updatedAt'])
+        )
+        // A third narrow exception, same canAssignSiteBranchViaTender() ownership check as the
+        // one just above but a DIFFERENT field list: archiveTenderSite()/removeTenderSite() in
+        // services/tenders.ts (the "Archive site"/"Remove from project" buttons in
+        // LinkedSiteDetailsCard.tsx) — a project's owner/owning branch pulling one of its OWN
+        // linked sites out of active use, or unlinking it entirely, regardless of which branch
+        // that site has been delegated to run day to day. Deliberately its own clause rather
+        // than folded into the resync one above: removeTenderSite() clears tenderId to null,
+        // which the resync clause's own tenderId-pin exists specifically to forbid, and neither
+        // function ever touches name/clientName/branch.
+        || (
+          canAssignSiteBranchViaTender(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['tenderId', 'archived', 'archivedAt', 'updatedAt'])
+        )
       );
-      allow delete: if isActiveUser() && !isPayroll() && canReachSite(resource.data);
+      // Manual deletion through the console UI has been removed entirely — for every role,
+      // including admin/HQ (see applyRoleUiLockdown()'s comment in public/duty-roster/index.html
+      // for why: a site's lifecycle is already fully automatic, driven by the linked tender). The
+      // button, its click handler, and deleteSite() itself are all gone client-side.
+      //
+      // The one narrow exception: resetTestData() (services/testDataReset.ts, called from
+      // TestingDataTool.tsx's "Delete all test data" button, developer-only per AdminPage.tsx)
+      // batch-deletes sites alongside tenders/guards/history — ALL tagged isTestData:true — as
+      // part of routine sandbox cleanup. A blanket `if false` here broke that tool too (a denied
+      // delete on any one doc fails the whole batch), so this only reopens the door for that
+      // exact case: a developer account deleting a site already tagged as test data.
+      allow delete: if isDeveloper() && resource.data.get('isTestData', false) == true;
 
       match /months/{monthKey} {
         allow read: if isActiveUser()
           && canReadSite(get(/databases/$(database)/documents/sites/$(siteId)).data);
-        allow write: if isActiveUser() && !isPayroll()
+        allow write: if isActiveUser() && !isPayrollLike()
           && canReachSite(get(/databases/$(database)/documents/sites/$(siteId)).data);
       }
     }
@@ -290,6 +650,53 @@ service cloud.firestore {
       // reachable one to a branch they don't belong to.
       allow update: if isActiveUser() && canReachQuote(resource.data) && canReachQuote(request.resource.data);
       allow delete: if isActiveUser() && canReachQuote(resource.data);
+    }
+
+    // ---- Guard Bank (src/pages/GuardBankPage.tsx) ----
+    // A firm-wide guard registry, independent of any one Duty Roster site — a guard here moves
+    // through status "pool" (registered, not yet assigned anywhere) -> "deployed" (assigned to a
+    // siteId/branch) -> "dismissed" (terminated/resigned/runaway). Kept in sync with
+    // public/duty-roster/index.html's own per-site guards[] arrays rather than replacing them:
+    // adding a guard there creates-or-updates the matching doc here as "deployed" (matched by
+    // employeeId), and dismissing a guard there (see the "Dismiss" action, formerly
+    // "Deactivate") is the ONLY thing that ever sets a doc here to "dismissed" — Guard Bank
+    // itself has no dismiss action of its own, only Register (-> pool) and Assign to site
+    // (-> deployed, which also writes into that site's guards[] array).
+    //
+    // Every signed-in, active user except Payroll can read and write — Payroll's Duty Roster
+    // access is already view/export-only (see isPayroll()'s own doc comment above), and this
+    // carries the same intent forward. HR is deliberately NOT excluded here (unlike everywhere
+    // else isPayroll() shows up) — see isHr()'s doc comment for why HR gets full Guard Bank
+    // access even though it's otherwise Payroll-equivalent. No branch-scoping: a pool guard has
+    // no branch yet, and once deployed their branch is already visible/enforced through the
+    // linked /sites doc, so Guard Bank stays a single firm-wide list for anyone who can see it
+    // at all.
+    match /guards/{guardId} {
+      allow read, create: if isActiveUser() && !isPayroll();
+      // Same general access as create/read, except the archivedAt field (set when an admin hides a
+      // Dismissed guard from the Dismissed Guards list without deleting their record — see
+      // archiveDismissedGuard() in services/guards.ts) is admin-only to write, matching
+      // removeGuard()'s Remove button and this same archive action both being admin-gated
+      // client-side in GuardBankPage.tsx. Keeping the underlying record (not deleting it) is
+      // deliberate: computeGuardTurnover()'s trailing-12-month rate still needs their dismissedAt.
+      allow update: if isActiveUser() && !isPayroll()
+        && (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['archivedAt']));
+      // Admin-only, matching removeGuard()'s Remove button (Guard Pool only) being admin-gated
+      // client-side too — same reasoning as /bufferGuards' delete rule below.
+      allow delete: if isAdmin();
+    }
+
+    // ---- Buffer Guards (src/pages/GuardBankPage.tsx's "Buffer Guards" sub-tab) ----
+    // Temporary/one-off guards recorded purely for future contact — synced from Duty Roster's
+    // "temp guard" slot entries (monthTempGuards in index.html: a one-off name+rate typed into a
+    // shift, not tied to any roster guard id). Deliberately has NO linkage to /guards or /sites
+    // — same read/create/update access as /guards (everyone except Payroll), simply a contact
+    // list. Deleting a row is permanent (no "dismissed" state to fall back to, unlike /guards),
+    // so — unlike everything else here — that's admin-only, matching removeBufferGuard()'s
+    // Remove button in GuardBankPage.tsx being admin-gated client-side too.
+    match /bufferGuards/{id} {
+      allow read, create, update: if isActiveUser() && !isPayroll();
+      allow delete: if isAdmin();
     }
   }
 }
