@@ -1,4 +1,6 @@
 import { Droppable } from '@hello-pangea/dnd';
+import { useTranslation } from 'react-i18next';
+import { labelToKey } from '../../i18n';
 import type { Stage, Tender } from '../../types';
 import { STAGE_COLORS } from '../../utils/constants';
 import { formatRM } from '../../utils/format';
@@ -19,6 +21,7 @@ export default function KanbanColumn({
   onRequalify: (t: Tender) => void;
   canDrag: boolean;
 }) {
+  const { t } = useTranslation();
   // Disqualified Lead is only ever reached via the confirmed "Disqualify" button on a New Lead
   // card (see onDisqualify/TenderCard.tsx) — never a drag, from any column, so this column's
   // drop target is disabled unconditionally rather than gated on canDrag like the others.
@@ -37,7 +40,7 @@ export default function KanbanColumn({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: colors.dot }} />
-            <p className={`text-sm font-semibold ${colors.text}`}>{stage}</p>
+            <p className={`text-sm font-semibold ${colors.text}`}>{t(`pipeline.stages.${labelToKey(stage)}`)}</p>
           </div>
           <span className={`text-xs font-medium ${colors.text} bg-white/60 px-1.5 py-0.5 rounded`}>
             {tenders.length}
@@ -69,7 +72,7 @@ export default function KanbanColumn({
             ))}
             {provided.placeholder}
             {tenders.length === 0 && (
-              <p className="text-center text-xs text-slate-300 mt-6">No tenders</p>
+              <p className="text-center text-xs text-slate-300 mt-6">{t('pipeline.noTenders')}</p>
             )}
           </div>
         )}

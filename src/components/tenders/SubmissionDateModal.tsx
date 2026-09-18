@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import type { Tender } from '../../types';
 
 function today(): string {
@@ -34,6 +35,7 @@ export default function SubmissionDateModal({
   onCancel: () => void;
   onConfirm: (submittedDate: string, submissionExpiryDate?: string) => void;
 }) {
+  const { t } = useTranslation();
   const [date, setDate] = useState(today());
   const [expiryDate, setExpiryDate] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -54,15 +56,15 @@ export default function SubmissionDateModal({
 
   const handleConfirm = () => {
     if (!date) {
-      setError('Please enter the submission date.');
+      setError(t('submissionDateModal.errorDateRequired'));
       return;
     }
     if (date > today()) {
-      setError('Submission date cannot be a future date.');
+      setError(t('submissionDateModal.errorFutureDate'));
       return;
     }
     if (expiryRequired && !expiryDate) {
-      setError('Please enter the submission expiry date — required for a Private tender.');
+      setError(t('submissionDateModal.errorExpiryRequired'));
       return;
     }
     onConfirm(date, expiryDate || undefined);
@@ -71,14 +73,17 @@ export default function SubmissionDateModal({
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5">
-        <h2 className="text-base font-semibold text-slate-900">Submission Date Required</h2>
+        <h2 className="text-base font-semibold text-slate-900">{t('submissionDateModal.title')}</h2>
         <p className="text-sm text-slate-500 mt-1.5">
-          "{tender.clientName}" is moving to <span className="font-medium text-slate-700">Submitted</span>. Enter
-          the date it was submitted to the client — once saved, only an Admin can change it.
+          <Trans
+            i18nKey="submissionDateModal.body"
+            values={{ name: tender.clientName }}
+            components={{ bold: <span className="font-medium text-slate-700" /> }}
+          />
         </p>
         <div className="mt-4">
           <label htmlFor="submissionDateInput" className="text-xs font-medium text-slate-600 block mb-1">
-            Submission Date
+            {t('submissionDateModal.submissionDate')}
           </label>
           <input
             id="submissionDateInput"
@@ -95,7 +100,7 @@ export default function SubmissionDateModal({
         </div>
         <div className="mt-3">
           <label htmlFor="submissionExpiryDateInput" className="text-xs font-medium text-slate-600 block mb-1">
-            Submission Expiry Date{expiryRequired ? '' : ' (optional)'}
+            {t('submissionDateModal.submissionExpiryDate')}{expiryRequired ? '' : t('submissionDateModal.optional')}
           </label>
           <input
             id="submissionExpiryDateInput"
@@ -109,8 +114,8 @@ export default function SubmissionDateModal({
           />
           <span className="block text-xs text-slate-400 mt-1">
             {expiryRequired
-              ? 'Required for a Private tender — when the quote/tender validity to this client expires.'
-              : 'Optional for a Government tender — when the quote/tender validity to this client expires, if known.'}
+              ? t('submissionDateModal.expiryRequiredNote')
+              : t('submissionDateModal.expiryOptionalNote')}
           </span>
         </div>
         {error && <p className="text-sm text-rose-600 mt-2">{error}</p>}
@@ -120,14 +125,14 @@ export default function SubmissionDateModal({
             onClick={onCancel}
             className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800"
           >
-            Cancel
+            {t('submissionDateModal.cancel')}
           </button>
           <button
             type="button"
             onClick={handleConfirm}
             className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
           >
-            Confirm
+            {t('submissionDateModal.confirm')}
           </button>
         </div>
       </div>

@@ -1,4 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
+import { labelToKey } from '../../i18n';
 import type { Branch, Brand, Stage, Tender, UserProfile } from '../../types';
 import { STAGES, isAdminRole } from '../../types';
 import {
@@ -32,6 +34,7 @@ export default function TenderFormModal({
   staffOptions,
   editing,
 }: Props) {
+  const { t } = useTranslation();
   const isAdmin = isAdminRole(profile.role);
   const departmentOptions = ['HQ', ...branches.map((b) => b.name)];
 
@@ -146,15 +149,15 @@ export default function TenderFormModal({
     e.preventDefault();
     setError(null);
     const value = Number(tenderValue);
-    if (!clientName.trim()) return setError('Client name is required.');
-    if (!brandId) return setError('Please select a brand.');
-    if (!category) return setError('Please select whether this is a Government or Private tender.');
-    if (!Number.isFinite(value) || value < 0) return setError('Enter a valid tender value.');
+    if (!clientName.trim()) return setError(t('tenderForm.errorClientNameRequired'));
+    if (!brandId) return setError(t('tenderForm.errorSelectBrand'));
+    if (!category) return setError(t('tenderForm.errorSelectCategory'));
+    if (!Number.isFinite(value) || value < 0) return setError(t('tenderForm.errorInvalidValue'));
     if (showSubmittedField) {
-      if (!submittedDate) return setError('Please enter the submission date.');
-      if (submittedDate > today()) return setError('Submission date cannot be a future date.');
+      if (!submittedDate) return setError(t('tenderForm.errorSubmissionDateRequired'));
+      if (submittedDate > today()) return setError(t('tenderForm.errorSubmissionFutureDate'));
       if (expiryRequired && !submissionExpiryDate) {
-        return setError('Please enter the submission expiry date — required for a Private tender.');
+        return setError(t('tenderForm.errorExpiryRequired'));
       }
     }
 
@@ -165,7 +168,10 @@ export default function TenderFormModal({
     // confirmation so it can't be changed by accident.
     if (editing && (editing.stage === 'Won' || editing.stage === 'Lost')) {
       const confirmed = window.confirm(
-        `"${editing.clientName}" is already marked ${editing.stage}. Are you sure you want to save changes to it?`
+        t('tenderForm.confirmSaveClosedTender', {
+          name: editing.clientName,
+          stage: t(`pipeline.stages.${labelToKey(editing.stage)}`),
+        })
       );
       if (!confirmed) return;
     }
@@ -245,7 +251,7 @@ export default function TenderFormModal({
       onClose();
     } catch (err) {
       console.error(err);
-      setError('Something went wrong saving this tender. Please try again.');
+      setError(t('tenderForm.errorGenericSave'));
     } finally {
       setSaving(false);
     }
@@ -253,7 +259,7 @@ export default function TenderFormModal({
 
   const handleDelete = async () => {
     if (!editing) return;
-    if (!confirm(`Delete the tender for "${editing.clientName}"? This cannot be undone.`)) return;
+    if (!confirm(t('tenderForm.confirmDelete', { name: editing.clientName }))) return;
     setSaving(true);
     try {
       await deleteTender(editing, { uid: profile.uid, name: profile.name });
@@ -268,13 +274,13 @@ export default function TenderFormModal({
   // Kanban card at all) still has a way back into the pipeline instead of being stuck forever.
   const handleRequalify = async () => {
     if (!editing) return;
-    if (!confirm(`Re-qualify "${editing.clientName}"? It will move back to New Lead and re-enter the pipeline from the top.`)) return;
+    if (!confirm(t('tenderForm.confirmRequalify', { name: editing.clientName }))) return;
     setSaving(true);
     try {
       await requalifyTender(editing, { uid: profile.uid, name: profile.name, role: profile.role });
       onClose();
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : 'Could not re-qualify this lead.');
+      window.alert(err instanceof Error ? err.message : t('tenderForm.errorRequalify'));
     } finally {
       setSaving(false);
     }
@@ -285,7 +291,7 @@ export default function TenderFormModal({
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-900">
-            {editing ? 'Edit Tender' : 'Register New Tender'}
+            {editing ? t('tenderForm.editTitle') : t('tenderForm.newTitle')}
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">
             ×
@@ -293,38 +299,37 @@ export default function TenderFormModal({
         </div>
 
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-          <Field label="Client Name">
+          <Field label={t('tenderForm.clientName')}>
             <input
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
               className="input"
-              placeholder="e.g. Petronas Chemicals Sdn Bhd"
+              placeholder={t('tenderForm.clientNamePlaceholder')}
             />
           </Field>
 
-          <Field label="Category">
+          <Field label={t('tenderForm.category')}>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value as 'Government' | 'Private')}
               className="input"
             >
               <option value="" disabled>
-                Select Government or Private
+                {t('tenderForm.selectCategory')}
               </option>
-              <option value="Government">Government</option>
-              <option value="Private">Private</option>
+              <option value="Government">{t('tenderForm.government')}</option>
+              <option value="Private">{t('tenderForm.private')}</option>
             </select>
             <span className="block text-xs text-slate-400 mt-1">
-              A Private tender requires a submission expiry date once it reaches Submitted — a
-              Government one leaves that optional.
+              {t('tenderForm.categoryHint')}
             </span>
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Brand">
+            <Field label={t('tenderForm.brand')}>
               <select value={brandId} onChange={(e) => setBrandId(e.target.value)} className="input">
                 <option value="" disabled>
-                  Select brand
+                  {t('tenderForm.selectBrand')}
                 </option>
                 {brands.map((b) => (
                   <option key={b.id} value={b.id}>
@@ -333,7 +338,7 @@ export default function TenderFormModal({
                 ))}
               </select>
             </Field>
-            <Field label="Department">
+            <Field label={t('tenderForm.department')}>
               <select
                 value={department}
                 onChange={() => {}}
@@ -346,12 +351,12 @@ export default function TenderFormModal({
                   </option>
                 ))}
               </select>
-              <span className="block text-xs text-slate-400 mt-1">Set automatically from the tender owner.</span>
+              <span className="block text-xs text-slate-400 mt-1">{t('tenderForm.departmentHint')}</span>
             </Field>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Contract Start">
+            <Field label={t('tenderForm.contractStart')}>
               <input
                 type="date"
                 value={contractStart}
@@ -359,7 +364,7 @@ export default function TenderFormModal({
                 className="input"
               />
             </Field>
-            <Field label="Contract End">
+            <Field label={t('tenderForm.contractEnd')}>
               <input
                 type="date"
                 value={contractEnd}
@@ -370,7 +375,7 @@ export default function TenderFormModal({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Tender Value (RM)">
+            <Field label={t('tenderForm.tenderValue')}>
               <input
                 type="number"
                 min={0}
@@ -381,7 +386,7 @@ export default function TenderFormModal({
                 placeholder="0.00"
               />
             </Field>
-            <Field label="Stage">
+            <Field label={t('tenderForm.stage')}>
               {/* Disqualified Lead is sealed on both sides: never a dropdown target (so it can't
                   be picked casually), and — once a tender IS Disqualified Lead — locked read-only
                   here too, so the only way back out is the confirmed "Re-qualify" button on its
@@ -397,7 +402,7 @@ export default function TenderFormModal({
                   : STAGES.filter((s) => s !== 'Disqualified Lead')
                 ).map((s) => (
                   <option key={s} value={s}>
-                    {s}
+                    {t(`pipeline.stages.${labelToKey(s)}`)}
                   </option>
                 ))}
               </select>
@@ -405,7 +410,7 @@ export default function TenderFormModal({
           </div>
 
           {showCurrentContractEndField && (
-            <Field label="Current Awarded Contract End (optional)">
+            <Field label={t('tenderForm.currentContractEnd')}>
               <input
                 type="date"
                 value={currentContractEndDate}
@@ -413,15 +418,13 @@ export default function TenderFormModal({
                 className="input"
               />
               <span className="block text-xs text-slate-400 mt-1">
-                When this lead's CURRENT awarded contract (with another provider, or an existing
-                one of ours) is due to end — if known. Flagged on the Sales Funnel Pipeline's
-                "Contract ending soon" reminder tile once within 30 days.
+                {t('tenderForm.currentContractEndHint')}
               </span>
             </Field>
           )}
 
           {isClosedStage && (
-            <Field label={`Date ${stage === 'Won' ? 'Won' : 'Lost'}`}>
+            <Field label={stage === 'Won' ? t('tenderForm.dateWon') : t('tenderForm.dateLost')}>
               <input
                 type="date"
                 value={closedDate}
@@ -429,19 +432,16 @@ export default function TenderFormModal({
                 className="input"
               />
               <span className="block text-xs text-slate-400 mt-1">
-                Use the real date this tender was {stage === 'Won' ? 'won' : 'lost'} — this is what
-                the pipeline value trend chart uses, so it's safe to backdate for past deals.
+                {t('tenderForm.closedDateHint', { outcome: stage === 'Won' ? t('tenderForm.won') : t('tenderForm.lost') })}
               </span>
             </Field>
           )}
 
           {stage === 'Disqualified Lead' && editing?.disqualifiedDate && (
-            <Field label="Disqualified on">
+            <Field label={t('tenderForm.disqualifiedOn')}>
               <p className="text-sm text-slate-600">{formatDate(editing.disqualifiedDate)}</p>
               <span className="block text-xs text-slate-400 mt-1">
-                Set automatically when this lead was disqualified. Stage can't be changed from
-                here — use "Re-qualify" below (or its card in the Sales Funnel Pipeline) to send
-                it back to New Lead instead.
+                {t('tenderForm.disqualifiedHint')}
               </span>
               <button
                 type="button"
@@ -449,19 +449,19 @@ export default function TenderFormModal({
                 disabled={saving}
                 className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-60"
               >
-                Re-qualify
+                {t('tenderForm.requalify')}
               </button>
             </Field>
           )}
 
           {showSubmittedField && (
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Submission Date">
+              <Field label={t('tenderForm.submissionDate')}>
                 {submittedDateAlreadySet && !isAdmin ? (
                   <>
                     <input type="text" value={formatDate(editing?.submittedDate)} disabled className="input disabled:bg-slate-50 disabled:text-slate-500" />
                     <span className="block text-xs text-slate-400 mt-1">
-                      Locked after first entry — ask your Admin if this needs to change.
+                      {t('tenderForm.submissionDateLockedHint')}
                     </span>
                   </>
                 ) : (
@@ -475,13 +475,13 @@ export default function TenderFormModal({
                     />
                     <span className="block text-xs text-slate-400 mt-1">
                       {submittedDateAlreadySet
-                        ? 'Already set — as Admin you can correct it if needed.'
-                        : "The date this tender was submitted to the client — can't be a future date, and can only be entered once."}
+                        ? t('tenderForm.submissionDateAdminHint')
+                        : t('tenderForm.submissionDateFirstHint')}
                     </span>
                   </>
                 )}
               </Field>
-              <Field label={`Submission Expiry Date${expiryRequired ? '' : ' (optional)'}`}>
+              <Field label={`${t('tenderForm.submissionExpiryDate')}${expiryRequired ? '' : t('tenderForm.optional')}`}>
                 <input
                   type="date"
                   value={submissionExpiryDate}
@@ -490,14 +490,14 @@ export default function TenderFormModal({
                 />
                 <span className="block text-xs text-slate-400 mt-1">
                   {expiryRequired
-                    ? 'Required for a Private tender — freely correctable any time, unlike Submission Date.'
-                    : 'Optional for a Government tender — freely correctable any time.'}
+                    ? t('tenderForm.expiryRequiredHint2')
+                    : t('tenderForm.expiryOptionalHint2')}
                 </span>
               </Field>
             </div>
           )}
 
-          <Field label="Tender Owner">
+          <Field label={t('tenderForm.tenderOwner')}>
             <select
               value={ownerUid}
               onChange={(e) => {
@@ -513,8 +513,11 @@ export default function TenderFormModal({
                   const currentOwnerName =
                     staffOptions.find((s) => s.uid === ownerUid)?.name || editing.ownerName;
                   const confirmed = window.confirm(
-                    `Reassign "${editing.clientName}" from ${currentOwnerName} to ${newOwnerName}? ` +
-                      `This also moves it to ${newOwnerName}'s department, and they'll be able to see and nurture it through the pipeline from here on.`
+                    t('tenderForm.reassignConfirm', {
+                      client: editing.clientName,
+                      from: currentOwnerName,
+                      to: newOwnerName,
+                    })
                   );
                   if (!confirmed) return;
                 }
@@ -538,12 +541,12 @@ export default function TenderFormModal({
             </select>
           </Field>
 
-          <Field label="Notes (optional)">
+          <Field label={t('tenderForm.notes')}>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="input min-h-[70px] resize-y"
-              placeholder="Any context about this tender…"
+              placeholder={t('tenderForm.notesPlaceholder')}
             />
           </Field>
 
@@ -562,7 +565,7 @@ export default function TenderFormModal({
                   disabled={saving}
                   className="text-xs font-medium text-rose-500 hover:text-rose-700"
                 >
-                  Delete tender
+                  {t('tenderForm.deleteTender')}
                 </button>
               )}
             </div>
@@ -572,14 +575,14 @@ export default function TenderFormModal({
                 onClick={onClose}
                 className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg"
               >
-                Cancel
+                {t('tenderForm.cancel')}
               </button>
               <button
                 type="submit"
                 disabled={saving}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-60"
               >
-                {saving ? 'Saving…' : editing ? 'Save Changes' : 'Create Tender'}
+                {saving ? t('tenderForm.saving') : editing ? t('tenderForm.saveChanges') : t('tenderForm.createTender')}
               </button>
             </div>
           </div>

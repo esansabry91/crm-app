@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenders } from '../hooks/useTenders';
 import { useBranches, useBrands } from '../hooks/useBranches';
@@ -24,6 +25,7 @@ function daysUntil(isoDate: string): number {
 const REMINDER_WINDOW_DAYS = 30;
 
 export default function PipelinePage() {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const { tenders, loading } = useTenders(profile);
   const { brands } = useBrands();
@@ -126,28 +128,24 @@ export default function PipelinePage() {
   const totalValue = filtered.reduce((s, t) => s + (t.tenderValue || 0), 0);
 
   const handleDisqualify = async (tender: Tender) => {
-    const confirmed = window.confirm(
-      `Disqualify "${tender.clientName}"? It will move straight to Disqualified Lead — this can only be undone by using its "Re-qualify" button.`
-    );
+    const confirmed = window.confirm(t('pipeline.disqualifyConfirm', { name: tender.clientName }));
     if (!confirmed) return;
     if (!profile) return;
     try {
       await disqualifyTender(tender, { uid: profile.uid, name: profile.name, role: profile.role });
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : 'Could not disqualify this lead.');
+      window.alert(err instanceof Error ? err.message : t('pipeline.disqualifyError'));
     }
   };
 
   const handleRequalify = async (tender: Tender) => {
-    const confirmed = window.confirm(
-      `Re-qualify "${tender.clientName}"? It will move back to New Lead and re-enter the pipeline from the top.`
-    );
+    const confirmed = window.confirm(t('pipeline.requalifyConfirm', { name: tender.clientName }));
     if (!confirmed) return;
     if (!profile) return;
     try {
       await requalifyTender(tender, { uid: profile.uid, name: profile.name, role: profile.role });
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : 'Could not re-qualify this lead.');
+      window.alert(err instanceof Error ? err.message : t('pipeline.requalifyError'));
     }
   };
 
@@ -157,23 +155,23 @@ export default function PipelinePage() {
     <div className="h-full flex flex-col">
       <header className="px-6 py-5 border-b border-slate-200 bg-white">
         <div className="flex items-center gap-2">
-          <h1 className="text-lg font-semibold text-slate-900">Sales Funnel Pipeline</h1>
+          <h1 className="text-lg font-semibold text-slate-900">{t('pipeline.title')}</h1>
           <HeaderCollapseToggle expanded={headerExpanded} onToggle={() => setHeaderExpanded((v) => !v)} />
         </div>
         {headerExpanded && (
           <div className="flex items-center justify-between gap-4 flex-wrap mt-2">
             <p className="text-sm text-slate-500">
-              {filtered.length} tender{filtered.length === 1 ? '' : 's'} · {formatRM(totalValue)} total value
+              {t('pipeline.tenderCount', { count: filtered.length })} · {t('pipeline.totalValue', { value: formatRM(totalValue) })}
             </p>
             <div className="flex items-center gap-2 flex-wrap">
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search client…"
+                placeholder={t('pipeline.searchPlaceholder')}
                 className="input w-full sm:w-48"
               />
               <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-full sm:w-40">
-                <option value="all">All brands</option>
+                <option value="all">{t('pipeline.allBrands')}</option>
                 {brands.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
@@ -182,7 +180,7 @@ export default function PipelinePage() {
               </select>
               {canFilterByBranch && (
                 <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input w-full sm:w-40">
-                  <option value="all">All branches</option>
+                  <option value="all">{t('pipeline.allBranches')}</option>
                   <option value="HQ">HQ</option>
                   {branches.map((b) => (
                     <option key={b.id} value={b.name}>
@@ -198,7 +196,7 @@ export default function PipelinePage() {
                 }}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
               >
-                + Register Tender
+                {t('pipeline.registerTender')}
               </button>
             </div>
           </div>
@@ -206,43 +204,43 @@ export default function PipelinePage() {
         {headerExpanded && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 max-w-3xl">
             <StatCard
-              label="Contract ending soon"
+              label={t('pipeline.contractEndingSoon')}
               value={String(contractEndingSoon.length)}
-              sub={`Qualified leads' current contract ends within ${REMINDER_WINDOW_DAYS} days`}
+              sub={t('pipeline.contractEndingSoonSub', { days: REMINDER_WINDOW_DAYS })}
               accent="#b45309"
               action={{
-                label: 'Go to list',
+                label: t('pipeline.goToList'),
                 onClick: () => setReminderFilter('contractEnding'),
                 disabled: contractEndingSoon.length === 0,
               }}
             />
             <StatCard
-              label="Submission expiring soon"
+              label={t('pipeline.submissionExpiringSoon')}
               value={String(submissionExpiringSoon.length)}
-              sub={`Submission expiry within ${REMINDER_WINDOW_DAYS} days`}
+              sub={t('pipeline.submissionExpiringSoonSub', { days: REMINDER_WINDOW_DAYS })}
               accent="#be123c"
               action={{
-                label: 'Go to list',
+                label: t('pipeline.goToList'),
                 onClick: () => setReminderFilter('submissionExpiring'),
                 disabled: submissionExpiringSoon.length === 0,
               }}
             />
             <StatCard
-              label="Private tenders"
+              label={t('pipeline.privateTenders')}
               value={String(privateTendersCount)}
               accent="#7c3aed"
               action={{
-                label: 'Go to list',
+                label: t('pipeline.goToList'),
                 onClick: () => setReminderFilter('private'),
                 disabled: privateTendersCount === 0,
               }}
             />
             <StatCard
-              label="Government tenders"
+              label={t('pipeline.governmentTenders')}
               value={String(governmentTendersCount)}
               accent="#0f766e"
               action={{
-                label: 'Go to list',
+                label: t('pipeline.goToList'),
                 onClick: () => setReminderFilter('government'),
                 disabled: governmentTendersCount === 0,
               }}
@@ -255,20 +253,20 @@ export default function PipelinePage() {
         <div className="px-6 pt-3 -mb-1">
           <div className="flex items-center justify-between gap-3 bg-amber-50 text-amber-800 text-sm rounded-lg px-3 py-2">
             <span>
-              Showing only tenders matching{' '}
+              {t('pipeline.showingFilter')}{' '}
               <span className="font-medium">
                 {reminderFilter === 'contractEnding'
-                  ? 'Contract ending soon'
+                  ? t('pipeline.contractEndingSoon')
                   : reminderFilter === 'submissionExpiring'
-                  ? 'Submission expiring soon'
+                  ? t('pipeline.submissionExpiringSoon')
                   : reminderFilter === 'private'
-                  ? 'Private tenders'
-                  : 'Government tenders'}
+                  ? t('pipeline.privateTenders')
+                  : t('pipeline.governmentTenders')}
               </span>{' '}
               ({filtered.length})
             </span>
             <button onClick={() => setReminderFilter('none')} className="font-medium underline underline-offset-2 shrink-0">
-              Clear filter
+              {t('pipeline.clearFilter')}
             </button>
           </div>
         </div>
@@ -276,7 +274,7 @@ export default function PipelinePage() {
 
       <div className="flex-1 min-h-0 px-6 py-4">
         {loading ? (
-          <p className="text-sm text-slate-400">Loading pipeline…</p>
+          <p className="text-sm text-slate-400">{t('pipeline.loading')}</p>
         ) : (
           <KanbanBoard
             tenders={filtered}

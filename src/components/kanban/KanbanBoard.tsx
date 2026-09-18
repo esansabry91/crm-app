@@ -1,4 +1,5 @@
 import { DragDropContext, type DropResult } from '@hello-pangea/dnd';
+import i18n, { labelToKey } from '../../i18n';
 import { STAGES, type Tender } from '../../types';
 import KanbanColumn from './KanbanColumn';
 
@@ -35,7 +36,11 @@ export default function KanbanBoard({
     const wasTerminal = tender.stage === 'Won' || tender.stage === 'Lost';
     if (wasTerminal) {
       const confirmed = window.confirm(
-        `"${tender.clientName}" is already marked ${tender.stage}. Are you sure you want to move it to ${newStage}?`
+        i18n.t('pipeline.confirmMoveTerminal', {
+          name: tender.clientName,
+          stage: i18n.t(`pipeline.stages.${labelToKey(tender.stage)}`),
+          newStage: i18n.t(`pipeline.stages.${labelToKey(newStage)}`),
+        })
       );
       if (!confirmed) return;
     }

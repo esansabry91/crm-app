@@ -1,4 +1,6 @@
 import { Draggable } from '@hello-pangea/dnd';
+import { useTranslation } from 'react-i18next';
+import { labelToKey } from '../../i18n';
 import type { Tender } from '../../types';
 import { formatDate, formatRM } from '../../utils/format';
 
@@ -21,6 +23,7 @@ export default function TenderCard({
   // since a Disqualified Lead card is never draggable but still needs its Re-qualify button.
   canAct: boolean;
 }) {
+  const { t } = useTranslation();
   const content = (
     <div
       onClick={onClick}
@@ -38,16 +41,16 @@ export default function TenderCard({
         <span>{formatDate(tender.contractEnd)}</span>
       </div>
       {tender.submittedDate && (
-        <p className="mt-1 text-[11px] text-slate-500">Submitted {formatDate(tender.submittedDate)}</p>
+        <p className="mt-1 text-[11px] text-slate-500">{t('pipeline.submittedOn', { date: formatDate(tender.submittedDate) })}</p>
       )}
       {(tender.stage === 'Won' || tender.stage === 'Lost') && tender.closedDate && (
         <p className={`mt-1 text-[11px] ${tender.stage === 'Won' ? 'text-emerald-600' : 'text-rose-500'}`}>
-          {tender.stage} on {formatDate(tender.closedDate)}
+          {t('pipeline.closedOn', { stage: t(`pipeline.stages.${labelToKey(tender.stage)}`), date: formatDate(tender.closedDate) })}
         </p>
       )}
       {tender.stage === 'Disqualified Lead' && tender.disqualifiedDate && (
         <p className="mt-1 text-[11px] text-stone-500">
-          Disqualified on {formatDate(tender.disqualifiedDate)}
+          {t('pipeline.disqualifiedOn', { date: formatDate(tender.disqualifiedDate) })}
         </p>
       )}
       <div className="mt-2 pt-2 border-t border-slate-100 text-[11px] text-slate-500 truncate">
@@ -64,7 +67,7 @@ export default function TenderCard({
           }}
           className="mt-2 w-full text-[11px] font-medium text-stone-500 hover:text-stone-700 hover:bg-stone-50 border border-stone-200 rounded-md py-1 transition"
         >
-          Disqualify
+          {t('pipeline.disqualify')}
         </button>
       )}
       {tender.stage === 'Disqualified Lead' && canAct && (
@@ -77,7 +80,7 @@ export default function TenderCard({
           }}
           className="mt-2 w-full text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-md py-1 transition"
         >
-          Re-qualify
+          {t('pipeline.requalify')}
         </button>
       )}
     </div>

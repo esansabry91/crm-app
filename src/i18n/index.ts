@@ -42,4 +42,15 @@ export function setLanguage(lang: AppLanguage) {
   }
 }
 
+/**
+ * Turns a data-model label (a pipeline Stage, e.g. "Prepare Proposal") into the camelCase key
+ * under which its translation lives (`pipeline.stages.prepareProposal`). Firestore always stores
+ * and compares the plain English label (see STAGES in types.ts) — this is display-only, so the
+ * data model itself never has to change for a translation. Works for any "Capitalized Words"
+ * label, so the same helper is reused wherever another such label needs a translated display form.
+ */
+export function labelToKey(label: string): string {
+  return label.charAt(0).toLowerCase() + label.slice(1).replace(/ (.)/g, (_, c: string) => c.toUpperCase());
+}
+
 export default i18n;
