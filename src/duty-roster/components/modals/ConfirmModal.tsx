@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 /**
  * Generic yes/no modal — React equivalent of openConfirmModal() (index.html lines 1806-1822).
  * Used pervasively across both tabs: remove holiday/temp/support/additional guard, "Back to
@@ -17,6 +19,7 @@ export interface ConfirmModalProps {
 }
 
 export default function ConfirmModal({ open, title, message, okLabel, danger, onConfirm, onCancel }: ConfirmModalProps) {
+  const { t } = useTranslation();
   if (!open) return null;
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onCancel}>
@@ -25,7 +28,7 @@ export default function ConfirmModal({ open, title, message, okLabel, danger, on
         <p className="text-sm text-slate-600 mt-2">{message}</p>
         <div className="flex justify-end gap-2 mt-5">
           <button type="button" onClick={onCancel} className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800">
-            Cancel
+            {t('dutyRoster.common.cancel')}
           </button>
           <button
             type="button"
@@ -36,7 +39,7 @@ export default function ConfirmModal({ open, title, message, okLabel, danger, on
                 : "px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
             }
           >
-            {okLabel || "OK"}
+            {okLabel || t('dutyRoster.common.ok')}
           </button>
         </div>
       </div>

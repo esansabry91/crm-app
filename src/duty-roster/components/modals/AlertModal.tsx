@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 /**
  * Generic single-button alert — React equivalent of openAlertModal() (index.html lines
  * 1823-1844). Only one caller in this port's scope so far: the FULLH "remove last post" guard
@@ -12,6 +14,7 @@ export interface AlertModalProps {
 }
 
 export default function AlertModal({ open, title, message, onClose }: AlertModalProps) {
+  const { t } = useTranslation();
   if (!open) return null;
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -20,7 +23,7 @@ export default function AlertModal({ open, title, message, onClose }: AlertModal
         <p className="text-sm text-slate-600 mt-2">{message}</p>
         <div className="flex justify-end mt-5">
           <button type="button" onClick={onClose} className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
-            OK
+            {t('dutyRoster.common.ok')}
           </button>
         </div>
       </div>

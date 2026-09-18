@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 /**
  * Generic single-text-input modal — React equivalent of openPromptModal() (index.html lines
@@ -17,6 +18,7 @@ export interface PromptModalProps {
 }
 
 export default function PromptModal({ open, title, message, initialValue, okLabel, onConfirm, onCancel }: PromptModalProps) {
+  const { t } = useTranslation();
   const [value, setValue] = useState(initialValue || "");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -57,10 +59,10 @@ export default function PromptModal({ open, title, message, initialValue, okLabe
         />
         <div className="flex justify-end gap-2 mt-5">
           <button type="button" onClick={onCancel} className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800">
-            Cancel
+            {t('dutyRoster.common.cancel')}
           </button>
           <button type="button" onClick={submit} className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
-            {okLabel || "OK"}
+            {okLabel || t('dutyRoster.common.ok')}
           </button>
         </div>
       </div>

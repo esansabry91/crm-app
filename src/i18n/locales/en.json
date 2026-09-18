@@ -483,6 +483,67 @@
     "confirmRemoveDoc": "Remove the uploaded tender document? This cannot be undone.",
     "errorDeleteDoc": "Could not delete the document."
   },
+  "dutyRoster": {
+    "common": {
+      "ok": "OK",
+      "cancel": "Cancel",
+      "close": "Close"
+    },
+    "guardDetails": {
+      "employeeId": "Employee ID",
+      "fullName": "Full name",
+      "category": "Category",
+      "nepal": "Nepal",
+      "local": "Local",
+      "notSet": "Not set",
+      "passportNumber": "Passport number",
+      "permitExpiryDate": "Permit expiry date",
+      "mykadNumber": "MyKad number",
+      "phoneNumber": "Phone number",
+      "position": "Position",
+      "rateRmManhour": "Rate (RM/manhour)",
+      "rateRm": "Rate (RM)",
+      "age": "Age",
+      "status": "Status",
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "dismissReasons": {
+      "terminated": "Terminated",
+      "resigned": "Resigned",
+      "runaway": "Runaway"
+    },
+    "dismissGuardModal": {
+      "title": "Dismiss guard",
+      "message": "Dismiss {{name}}? Pick a reason — this also moves them to the Dismissed tab in Guard Bank.",
+      "dismiss": "Dismiss"
+    },
+    "rosterUnlockedWarningModal": {
+      "title": "Roster sheet is unlocked",
+      "message_one": "You have {{count}} pending drag rearrangement that isn't locked in yet. Lock the roster or discard these changes before leaving.",
+      "message_other": "You have {{count}} pending drag rearrangements that aren't locked in yet. Lock the roster or discard these changes before leaving.",
+      "stayHere": "Stay here",
+      "discardChanges": "Discard changes",
+      "lockRoster": "Lock roster"
+    },
+    "addGuard": {
+      "title": "Add guard",
+      "guardCategory": "Guard category",
+      "fullNameMykad": "Full name (as per MyKad)",
+      "selectPositionEllipsis": "Select a position…",
+      "addGuard": "Add guard",
+      "errorEmployeeIdRequired": "Employee ID is required.",
+      "errorFullNameRequired": "Full name is required.",
+      "errorStateRequired": "State is required.",
+      "errorCityRequired": "City is required.",
+      "errorPickPosition": "Pick a position.",
+      "errorInvalidAge": "Enter a valid age.",
+      "errorPassportRequired": "Passport number is required.",
+      "errorPermitExpiryRequired": "Permit expiry date is required.",
+      "errorInvalidMykad": "Enter a valid 12-digit MyKad number (e.g. 901231-14-5678).",
+      "errorInvalidPhone": "Enter a valid phone number (e.g. 012-3456789)."
+    }
+  },
   "linkedSiteCard": {
     "archivedLabel": "(Archived)",
     "dutyRosterLink": "Duty Roster",

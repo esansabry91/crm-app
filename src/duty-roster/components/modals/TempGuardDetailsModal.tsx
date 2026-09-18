@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { TempGuardRecord } from "../../types";
 import { tempGuardDetailRows } from "../../tempGuardPanelData";
 
@@ -8,8 +9,9 @@ export interface TempGuardDetailsModalProps {
 }
 
 export default function TempGuardDetailsModal({ record, onClose }: TempGuardDetailsModalProps) {
+  const { t } = useTranslation();
   if (!record) return null;
-  const rows = tempGuardDetailRows(record);
+  const rows = tempGuardDetailRows(record, t);
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -25,7 +27,7 @@ export default function TempGuardDetailsModal({ record, onClose }: TempGuardDeta
         </dl>
         <div className="flex justify-end mt-5">
           <button type="button" onClick={onClose} className="px-4 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800">
-            Close
+            {t('dutyRoster.common.close')}
           </button>
         </div>
       </div>

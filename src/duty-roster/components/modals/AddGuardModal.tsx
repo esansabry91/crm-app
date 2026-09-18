@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Guard } from "../../types";
 import { formatMykadInput, formatPhoneInput } from "../../guardValidation";
 import { validateAddGuardForm, type AddGuardFormValues, type GuardCategory } from "../../addGuardData";
@@ -33,6 +34,7 @@ const EMPTY_FORM: AddGuardFormValues = {
 };
 
 export default function AddGuardModal({ open, positionNames, onClose, onSubmit }: AddGuardModalProps) {
+  const { t } = useTranslation();
   const [form, setForm] = useState<AddGuardFormValues>(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,7 +52,7 @@ export default function AddGuardModal({ open, positionNames, onClose, onSubmit }
   }
 
   function submit() {
-    const result = validateAddGuardForm(form, positionNames);
+    const result = validateAddGuardForm(form, positionNames, t);
     if ("error" in result) {
       setError(result.error);
       return;
@@ -61,27 +63,27 @@ export default function AddGuardModal({ open, positionNames, onClose, onSubmit }
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-base font-semibold text-slate-900">Add guard</h2>
+        <h2 className="text-base font-semibold text-slate-900">{t('dutyRoster.addGuard.title')}</h2>
 
-        <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">Guard category</label>
+        <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">{t('dutyRoster.addGuard.guardCategory')}</label>
         <select className="input" value={form.category} onChange={(e) => set("category", e.target.value as GuardCategory)}>
-          <option value="local">Local</option>
-          <option value="nepal">Nepal</option>
+          <option value="local">{t('dutyRoster.guardDetails.local')}</option>
+          <option value="nepal">{t('dutyRoster.guardDetails.nepal')}</option>
         </select>
 
-        <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">Employee ID</label>
+        <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">{t('dutyRoster.guardDetails.employeeId')}</label>
         <input className="input" type="text" value={form.employeeId} onChange={(e) => set("employeeId", e.target.value)} />
 
         <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">
-          {form.category === "nepal" ? "Full name" : "Full name (as per MyKad)"}
+          {form.category === "nepal" ? t('dutyRoster.guardDetails.fullName') : t('dutyRoster.addGuard.fullNameMykad')}
         </label>
         <input className="input" type="text" value={form.name} onChange={(e) => set("name", e.target.value)} />
 
         {form.category === "nepal" ? (
           <>
-            <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">Passport number</label>
+            <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">{t('dutyRoster.guardDetails.passportNumber')}</label>
             <input className="input" type="text" value={form.passportNumber} onChange={(e) => set("passportNumber", e.target.value)} />
-            <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">Permit expiry date</label>
+            <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">{t('dutyRoster.guardDetails.permitExpiryDate')}</label>
             <input
               className="input"
               type="date"
@@ -91,7 +93,7 @@ export default function AddGuardModal({ open, positionNames, onClose, onSubmit }
           </>
         ) : (
           <>
-            <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">MyKad number</label>
+            <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">{t('dutyRoster.guardDetails.mykadNumber')}</label>
             <input
               className="input"
               type="text"
@@ -99,7 +101,7 @@ export default function AddGuardModal({ open, positionNames, onClose, onSubmit }
               value={form.mykadNumber}
               onChange={(e) => set("mykadNumber", formatMykadInput(e.target.value))}
             />
-            <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">Phone number</label>
+            <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">{t('dutyRoster.guardDetails.phoneNumber')}</label>
             <input
               className="input"
               type="text"
@@ -109,17 +111,17 @@ export default function AddGuardModal({ open, positionNames, onClose, onSubmit }
           </>
         )}
 
-        <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">State</label>
+        <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">{t('projectDetails.state')}</label>
         <input className="input" type="text" value={form.state} onChange={(e) => set("state", e.target.value)} />
 
-        <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">City</label>
+        <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">{t('projectDetails.city')}</label>
         <input className="input" type="text" value={form.city} onChange={(e) => set("city", e.target.value)} />
 
         {positionNames.length > 0 && (
           <>
-            <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">Position</label>
+            <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">{t('dutyRoster.guardDetails.position')}</label>
             <select className="input" value={form.position} onChange={(e) => set("position", e.target.value)}>
-              <option value="">Select a position…</option>
+              <option value="">{t('dutyRoster.addGuard.selectPositionEllipsis')}</option>
               {positionNames.map((p) => (
                 <option key={p} value={p}>
                   {p}
@@ -129,7 +131,7 @@ export default function AddGuardModal({ open, positionNames, onClose, onSubmit }
           </>
         )}
 
-        <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">Age</label>
+        <label className="text-xs font-medium text-slate-600 block mt-3 mb-1">{t('dutyRoster.guardDetails.age')}</label>
         <input
           className="input"
           type="number"
@@ -144,10 +146,10 @@ export default function AddGuardModal({ open, positionNames, onClose, onSubmit }
 
         <div className="flex justify-end gap-2 mt-5">
           <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800">
-            Cancel
+            {t('dutyRoster.common.cancel')}
           </button>
           <button type="button" onClick={submit} className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
-            Add guard
+            {t('dutyRoster.addGuard.addGuard')}
           </button>
         </div>
       </div>

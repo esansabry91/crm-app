@@ -3,6 +3,7 @@
  * (lines 3972-4035), openTempGuardDetailsModal() (lines 3940-3971), and the #assignTempBtn
  * handler (line 5298).
  */
+import type { TFunction } from "i18next";
 import type { SiteConfig, MonthState, TempGuardRecord, ConflictEntry } from "./types";
 import { newId, nowIso, monthTempGuards } from "./rosterModel";
 import { appendLog } from "./lockMachine";
@@ -158,14 +159,15 @@ export interface TempGuardDetailRow {
 }
 
 /** openTempGuardDetailsModal() (lines 3940-3971) — read-only View. */
-export function tempGuardDetailRows(record: TempGuardRecord): TempGuardDetailRow[] {
+export function tempGuardDetailRows(record: TempGuardRecord, t: TFunction): TempGuardDetailRow[] {
+  const notSet = t("dutyRoster.guardDetails.notSet");
   return [
-    { label: "Full name", value: record.name || "—" },
-    { label: "MyKad number", value: record.mykadNumber || "Not set" },
-    { label: "Age", value: record.age != null ? String(record.age) : "Not set" },
-    { label: "Phone number", value: record.phoneNumber || "Not set" },
-    { label: "State", value: record.state || "Not set" },
-    { label: "City", value: record.city || "Not set" },
-    { label: "Rate (RM)", value: (Number(record.rate) || 0).toFixed(2) },
+    { label: t("dutyRoster.guardDetails.fullName"), value: record.name || "—" },
+    { label: t("dutyRoster.guardDetails.mykadNumber"), value: record.mykadNumber || notSet },
+    { label: t("dutyRoster.guardDetails.age"), value: record.age != null ? String(record.age) : notSet },
+    { label: t("dutyRoster.guardDetails.phoneNumber"), value: record.phoneNumber || notSet },
+    { label: t("projectDetails.state"), value: record.state || notSet },
+    { label: t("projectDetails.city"), value: record.city || notSet },
+    { label: t("dutyRoster.guardDetails.rateRm"), value: (Number(record.rate) || 0).toFixed(2) },
   ];
 }

@@ -478,6 +478,66 @@
     "confirmRemoveDoc": "Buang dokumen tender yang dimuat naik? Ini tidak boleh dibatalkan.",
     "errorDeleteDoc": "Tidak dapat memadam dokumen."
   },
+  "dutyRoster": {
+    "common": {
+      "ok": "OK",
+      "cancel": "Batal",
+      "close": "Tutup"
+    },
+    "guardDetails": {
+      "employeeId": "ID Pekerja",
+      "fullName": "Nama penuh",
+      "category": "Kategori",
+      "nepal": "Nepal",
+      "local": "Tempatan",
+      "notSet": "Belum ditetapkan",
+      "passportNumber": "Nombor pasport",
+      "permitExpiryDate": "Tarikh luput permit",
+      "mykadNumber": "Nombor MyKad",
+      "phoneNumber": "Nombor telefon",
+      "position": "Jawatan",
+      "rateRmManhour": "Kadar (RM/jam-orang)",
+      "rateRm": "Kadar (RM)",
+      "age": "Umur",
+      "status": "Status",
+      "active": "Aktif",
+      "inactive": "Tidak aktif"
+    },
+    "dismissReasons": {
+      "terminated": "Ditamatkan",
+      "resigned": "Meletak jawatan",
+      "runaway": "Lari"
+    },
+    "dismissGuardModal": {
+      "title": "Berhentikan pengawal",
+      "message": "Berhentikan {{name}}? Pilih sebab — ini juga memindahkan mereka ke tab Diberhentikan dalam Bank Pengawal.",
+      "dismiss": "Berhentikan"
+    },
+    "rosterUnlockedWarningModal": {
+      "title": "Jadual roster tidak dikunci",
+      "message_other": "Anda mempunyai {{count}} penyusunan seret tertangguh yang belum dikunci. Kunci roster atau buang perubahan ini sebelum keluar.",
+      "stayHere": "Kekal di sini",
+      "discardChanges": "Buang perubahan",
+      "lockRoster": "Kunci roster"
+    },
+    "addGuard": {
+      "title": "Tambah pengawal",
+      "guardCategory": "Kategori pengawal",
+      "fullNameMykad": "Nama penuh (seperti dalam MyKad)",
+      "selectPositionEllipsis": "Pilih jawatan…",
+      "addGuard": "Tambah pengawal",
+      "errorEmployeeIdRequired": "ID Pekerja diperlukan.",
+      "errorFullNameRequired": "Nama penuh diperlukan.",
+      "errorStateRequired": "Negeri diperlukan.",
+      "errorCityRequired": "Bandar diperlukan.",
+      "errorPickPosition": "Pilih jawatan.",
+      "errorInvalidAge": "Masukkan umur yang sah.",
+      "errorPassportRequired": "Nombor pasport diperlukan.",
+      "errorPermitExpiryRequired": "Tarikh luput permit diperlukan.",
+      "errorInvalidMykad": "Masukkan nombor MyKad 12 digit yang sah (cth. 901231-14-5678).",
+      "errorInvalidPhone": "Masukkan nombor telefon yang sah (cth. 012-3456789)."
+    }
+  },
   "linkedSiteCard": {
     "archivedLabel": "(Diarkibkan)",
     "dutyRosterLink": "Jadual Tugas",
