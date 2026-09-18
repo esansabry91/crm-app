@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLiveGuardCountsByTender, useWonTenders } from '../hooks/useActiveProjects';
-import { useBranches } from '../hooks/useBranches';
+import { useBranches, useBrands } from '../hooks/useBranches';
 import { useTenderHistory } from '../hooks/useTenderHistory';
 import {
   acceptReassignment,
@@ -19,6 +19,7 @@ import {
   activeProjectBridgePeriods,
   activeProjectValueBridge,
   buildActiveProjectRaceFrames,
+  estimatedMonthlyCollectionForYear,
   BRIDGE_TIME_VIEWS,
   type ActiveProjectRaceMetric,
   type BridgeTimeView,
@@ -141,7 +142,9 @@ export default function ActiveProjectsPage() {
     [wonTenders, isBranchManager, profile?.department]
   );
   const { branches } = useBranches();
+  const { brands } = useBrands();
   const [branchFilter, setBranchFilter] = useState('all');
+  const [brandFilter, setBrandFilter] = useState('all');
   const [headerExpanded, setHeaderExpanded] = useState(true);
   const [detailsTender, setDetailsTender] = useState<Tender | null>(null);
   const [renewingTender, setRenewingTender] = useState<Tender | null>(null);
@@ -173,9 +176,15 @@ export default function ActiveProjectsPage() {
   }, [projects, isAdmin]);
 
   const visible = useMemo(() => {
-    if (!seesAllBranches || branchFilter === 'all') return projects;
-    return projects.filter((t) => (t.activeBranch || t.department) === branchFilter);
-  }, [projects, seesAllBranches, branchFilter]);
+    let rows = projects;
+    if (seesAllBranches && branchFilter !== 'all') {
+      rows = rows.filter((t) => (t.activeBranch || t.department) === branchFilter);
+    }
+    if (brandFilter !== 'all') {
+      rows = rows.filter((t) => t.brandId === brandFilter);
+    }
+    return rows;
+  }, [projects, seesAllBranches, branchFilter, brandFilter]);
 
   // The value bridge needs every Won tender in scope — active AND already closed-out — so a
   // project that left this month still shows its exit; `visible` above is active-only. Filtered
@@ -263,6 +272,22 @@ export default function ActiveProjectsPage() {
     return d !== null && d < 0;
   }).length;
   const totalGuards = visible.reduce((sum, t) => sum + (t.guardsDeployed || 0), 0);
+
+  // "Estimated monthly collection" tiles: each visible project's tenderValue spread evenly over
+  // its own contract length, then prorated by how many of that year's 12 months the contract
+  // actually covers (see estimatedMonthlyCollectionForYear's doc comment), summed across every
+  // project whose contract touches this year / next year. Recomputed from `visible` so it
+  // reflects the branch + brand filters currently applied to the list below, same as every other
+  // tile in this row.
+  const thisYear = new Date().getFullYear();
+  const currentYearMonthlyCollection = useMemo(
+    () => estimatedMonthlyCollectionForYear(visible, thisYear),
+    [visible, thisYear]
+  );
+  const nextYearMonthlyCollection = useMemo(
+    () => estimatedMonthlyCollectionForYear(visible, thisYear + 1),
+    [visible, thisYear]
+  );
 
   const brandScopeLabel = !seesAllBranches
     ? profile?.department || ''
@@ -354,16 +379,26 @@ export default function ActiveProjectsPage() {
                 ? 'Won tenders currently running, across every branch'
                 : `Won tenders currently running for ${profile.department}`}
             </p>
-            {seesAllBranches && (
-              <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input w-full sm:w-44">
-                <option value="all">All branches</option>
-                {branchNames.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
+            <div className="flex items-center gap-2">
+              <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-full sm:w-40">
+                <option value="all">All brands</option>
+                {brands.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
                   </option>
                 ))}
               </select>
-            )}
+              {seesAllBranches && (
+                <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input w-full sm:w-44">
+                  <option value="all">All branches</option>
+                  {branchNames.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
         )}
       </header>
@@ -410,12 +445,22 @@ export default function ActiveProjectsPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
             <StatCard
               label="Active Project Value"
               value={formatRM(totalValue)}
               sub={`${visible.length} active project${visible.length === 1 ? '' : 's'}`}
               accent={VIZ.status.good}
+            />
+            <StatCard
+              label={`Est. Monthly Collection (${thisYear})`}
+              value={formatRM(currentYearMonthlyCollection)}
+              sub="avg/mo, prorated by months covered"
+            />
+            <StatCard
+              label={`Est. Monthly Collection (${thisYear + 1})`}
+              value={formatRM(nextYearMonthlyCollection)}
+              sub="avg/mo, prorated by months covered"
             />
             <StatCard
               label="Ending Soon"

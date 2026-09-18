@@ -870,3 +870,56 @@ export function pipelineValueBridge(
   bars.push({ label: endLabel, amount: endValue, kind: 'total' });
   return bars;
 }
+
+/** Whole calendar months from `fromISO` through `toISO`, inclusive of both end months (e.g.
+ *  2026-01 through 2026-03 is 3 months). Mirrors wholeMonthsInclusive() in services/tenders.ts —
+ *  duplicated here as a tiny pure helper so this utils module doesn't need to import the
+ *  services layer for one line of arithmetic. */
+function wholeMonthsInclusiveLocal(fromISO: string, toISO: string): number {
+  const [fy, fm] = fromISO.split('-').map(Number);
+  const [ty, tm] = toISO.split('-').map(Number);
+  return Math.max(0, (ty - fy) * 12 + (tm - fm) + 1);
+}
+
+/**
+ * Estimated monthly collection for a given calendar year: for every tender in `tenders` whose
+ * contract period (contractStart..contractEnd) overlaps `year` at all, works out its flat
+ * monthly rate (`tenderValue` spread evenly across every whole month of the contract, via
+ * wholeMonthsInclusiveLocal), then PRORATES that rate by how many of `year`'s 12 months the
+ * contract actually covers before summing across every such project.
+ *
+ * e.g. a 24-month, RM120,000 contract running 1 Jul 2026 – 30 Jun 2028 has a flat monthly rate
+ * of RM5,000. For 2026 it only covers Jul–Dec (6 of 12 months), so it contributes
+ * RM5,000 × 6/12 = RM2,500 to that year's average-monthly figure; for 2027, which it covers in
+ * full, it contributes the full RM5,000.
+ *
+ * This is an average-monthly-over-the-year estimate, not a month-by-month actual and not a
+ * point-in-time run-rate — a contract that only starts or ends partway through `year` is
+ * deliberately averaged down rather than counted at its full monthly rate. Callers should pass
+ * an already active-only, already-scoped list (e.g. ActiveProjectsPage's `visible`) — this
+ * function applies no stage/closedOut filtering of its own.
+ */
+export function estimatedMonthlyCollectionForYear(tenders: Tender[], year: number): number {
+  let total = 0;
+  for (const t of tenders) {
+    if (!t.contractStart || !t.contractEnd || !t.tenderValue) continue;
+    const [sy, sm] = t.contractStart.split('-').map(Number);
+    const [ey, em] = t.contractEnd.split('-').map(Number);
+    if (![sy, sm, ey, em].every(Number.isFinite)) continue;
+    const totalMonths = wholeMonthsInclusiveLocal(t.contractStart, t.contractEnd);
+    if (totalMonths <= 0) continue; // invalid/reversed contract period
+
+    // Absolute month indices (year*12 + month) let the overlap-with-`year` math below work as
+    // plain integer clamping instead of juggling Date objects/timezones.
+    const startAbs = sy * 12 + sm;
+    const endAbs = ey * 12 + em;
+    const yearStartAbs = year * 12 + 1;
+    const yearEndAbs = year * 12 + 12;
+    const monthsInYear = Math.min(endAbs, yearEndAbs) - Math.max(startAbs, yearStartAbs) + 1;
+    if (monthsInYear <= 0) continue; // contract never touches `year`
+
+    const monthlyRate = t.tenderValue / totalMonths;
+    total += monthlyRate * (monthsInYear / 12);
+  }
+  return total;
+}
