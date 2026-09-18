@@ -44,7 +44,16 @@ export default function ArchivePage() {
   // see isTenderArchived()'s doc comment in services/tenders.ts. Nothing here is ever deleted or
   // mutated; this is purely a different filter over the exact same tenders the Sales Funnel board
   // and Pipeline Analysis already see.
-  const archived = useMemo(() => tenders.filter(isTenderArchived), [tenders]);
+  //
+  // Deliberately wrapped in an arrow function rather than passed bare (`tenders.filter(isTenderArchived)`)
+  // — Array.prototype.filter calls its callback as (element, index, array), so passing the function
+  // directly lets the array INDEX silently flow into isTenderArchived's optional `asOf` parameter in
+  // place of its `Date.now()` default. asOf then ends up as a tiny number (0, 1, 2, ...) being compared
+  // against real millisecond timestamps, so the "over a year old" check can never be true and this
+  // always returned an empty array — every archived tender was invisible on this page, with no error,
+  // regardless of how old it actually was. Wrapping it so isTenderArchived is always called with
+  // exactly one argument is what fixes that.
+  const archived = useMemo(() => tenders.filter((t) => isTenderArchived(t)), [tenders]);
 
   const filtered = useMemo(() => {
     return archived.filter((t) => {
