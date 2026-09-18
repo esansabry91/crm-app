@@ -8,13 +8,15 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useTranslation } from 'react-i18next';
 import type { StaffPerformanceRow } from '../../utils/analytics';
 import { VIZ } from '../../utils/vizColors';
 import { formatRM } from '../../utils/format';
 
 export default function StaffPerformanceSection({ rows }: { rows: StaffPerformanceRow[] }) {
+  const { t } = useTranslation();
   if (rows.length === 0) {
-    return <p className="text-sm text-slate-400 py-8 text-center">No tenders registered yet.</p>;
+    return <p className="text-sm text-slate-400 py-8 text-center">{t('charts.noTendersYet')}</p>;
   }
 
   const chartData = [...rows].sort((a, b) => b.wonValue - a.wonValue);
@@ -41,7 +43,7 @@ export default function StaffPerformanceSection({ rows }: { rows: StaffPerforman
             formatter={(value) => formatRM(Number(value))}
             contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: VIZ.chrome.gridline }}
           />
-          <Bar dataKey="wonValue" name="Won value" fill={VIZ.categorical.blue} radius={[0, 4, 4, 0]} maxBarSize={22}>
+          <Bar dataKey="wonValue" name={t('charts.wonValue')} fill={VIZ.categorical.blue} radius={[0, 4, 4, 0]} maxBarSize={22}>
             <LabelList
               dataKey="wonValue"
               position="right"
@@ -56,13 +58,13 @@ export default function StaffPerformanceSection({ rows }: { rows: StaffPerforman
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
-              <th className="py-2 pr-4 font-medium">Staff</th>
-              <th className="py-2 pr-4 font-medium text-right">Total Tenders</th>
-              <th className="py-2 pr-4 font-medium text-right">Total Value</th>
-              <th className="py-2 pr-4 font-medium text-right">Won</th>
-              <th className="py-2 pr-4 font-medium text-right">Won Value</th>
-              <th className="py-2 pr-4 font-medium text-right">Lost</th>
-              <th className="py-2 font-medium text-right">Win Rate</th>
+              <th className="py-2 pr-4 font-medium">{t('analysis.table.staff')}</th>
+              <th className="py-2 pr-4 font-medium text-right">{t('analysis.table.totalTenders')}</th>
+              <th className="py-2 pr-4 font-medium text-right">{t('analysis.table.totalValue')}</th>
+              <th className="py-2 pr-4 font-medium text-right">{t('analysis.table.won')}</th>
+              <th className="py-2 pr-4 font-medium text-right">{t('analysis.table.wonValue')}</th>
+              <th className="py-2 pr-4 font-medium text-right">{t('analysis.table.lost')}</th>
+              <th className="py-2 font-medium text-right">{t('analysis.table.winRate')}</th>
             </tr>
           </thead>
           <tbody>

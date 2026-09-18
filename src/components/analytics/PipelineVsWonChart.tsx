@@ -1,4 +1,5 @@
 import { Bar, BarChart, Cell, LabelList, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import { useTranslation } from 'react-i18next';
 import { VIZ } from '../../utils/vizColors';
 import { formatRM } from '../../utils/format';
 
@@ -9,9 +10,10 @@ export default function PipelineVsWonChart({
   openValue: number;
   wonValue: number;
 }) {
+  const { t } = useTranslation();
   const data = [
-    { name: 'Open Pipeline Value', value: openValue },
-    { name: 'Won Value', value: wonValue },
+    { name: t('charts.openPipelineValueLabel'), value: openValue },
+    { name: t('charts.wonValueLabel'), value: wonValue },
   ];
 
   return (

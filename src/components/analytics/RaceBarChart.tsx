@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { RaceFrame, RaceMetric, RaceTimeView } from '../../utils/analytics';
 import { VIZ } from '../../utils/vizColors';
 import { formatRM } from '../../utils/format';
@@ -7,22 +8,10 @@ const PALETTE = Object.values(VIZ.categorical);
 const STEP_MS = 900;
 const ROW_HEIGHT = 40;
 
-const TIME_VIEWS: { value: RaceTimeView; label: string }[] = [
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'ytd', label: 'Year-to-Date' },
-  { value: 'alltime', label: 'All-time' },
-  { value: 'yearly', label: 'Yearly' },
-];
-
 interface MetricOption<M extends string> {
   value: M;
   label: string;
 }
-
-const DEFAULT_METRICS: MetricOption<RaceMetric>[] = [
-  { value: 'won', label: 'Won value' },
-  { value: 'submitted', label: 'Total submitted' },
-];
 
 export default function RaceBarChart<M extends string = RaceMetric>({
   frames,
@@ -54,7 +43,18 @@ export default function RaceBarChart<M extends string = RaceMetric>({
   // String) for a chart whose metric isn't a monetary value.
   valueFormatter?: (v: number) => string;
 }) {
-  const metrics = metricOptions ?? (DEFAULT_METRICS as unknown as MetricOption<M>[]);
+  const { t } = useTranslation();
+  const TIME_VIEWS: { value: RaceTimeView; label: string }[] = [
+    { value: 'monthly', label: t('charts.timeViews.monthly') },
+    { value: 'ytd', label: t('charts.timeViews.ytd') },
+    { value: 'alltime', label: t('charts.timeViews.alltime') },
+    { value: 'yearly', label: t('charts.timeViews.yearly') },
+  ];
+  const defaultMetrics: MetricOption<RaceMetric>[] = [
+    { value: 'won', label: t('charts.raceMetrics.won') },
+    { value: 'submitted', label: t('charts.raceMetrics.submitted') },
+  ];
+  const metrics = metricOptions ?? (defaultMetrics as unknown as MetricOption<M>[]);
   const [frameIndex, setFrameIndex] = useState(Math.max(frames.length - 1, 0));
   const [playing, setPlaying] = useState(false);
   const timerRef = useRef<number | null>(null);
@@ -81,7 +81,7 @@ export default function RaceBarChart<M extends string = RaceMetric>({
   const frame: RaceFrame | undefined = frames[frameIndex];
 
   if (!frame) {
-    return <p className="text-sm text-slate-400 py-8 text-center">No data yet for this view.</p>;
+    return <p className="text-sm text-slate-400 py-8 text-center">{t('charts.noDataForView')}</p>;
   }
 
   const departmentOrder = colorDomain ?? frames[frames.length - 1]?.bars.map((b) => b.department) ?? [];
@@ -161,7 +161,7 @@ export default function RaceBarChart<M extends string = RaceMetric>({
         <button
           onClick={playing ? () => setPlaying(false) : handlePlay}
           className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 text-white hover:bg-blue-700 shrink-0 text-xs"
-          title={playing ? 'Pause' : 'Play'}
+          title={playing ? t('charts.pause') : t('charts.play')}
         >
           {playing ? '❚❚' : '▶'}
         </button>
@@ -173,7 +173,7 @@ export default function RaceBarChart<M extends string = RaceMetric>({
           disabled={frameIndex === 0}
           className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-30"
         >
-          ◀ Prev
+          {t('charts.prev')}
         </button>
         <input
           type="range"
@@ -194,7 +194,7 @@ export default function RaceBarChart<M extends string = RaceMetric>({
           disabled={frameIndex === frames.length - 1}
           className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-30"
         >
-          Next ▶
+          {t('charts.next')}
         </button>
         <span className="text-xs font-semibold text-slate-700 w-28 text-right shrink-0">{frame.periodLabel}</span>
       </div>

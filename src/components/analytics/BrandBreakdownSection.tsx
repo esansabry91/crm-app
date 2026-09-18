@@ -8,13 +8,15 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useTranslation } from 'react-i18next';
 import type { BrandBreakdownRow } from '../../utils/analytics';
 import { VIZ } from '../../utils/vizColors';
 import { formatRM } from '../../utils/format';
 
 export default function BrandBreakdownSection({ rows }: { rows: BrandBreakdownRow[] }) {
+  const { t } = useTranslation();
   if (rows.length === 0) {
-    return <p className="text-sm text-slate-400 py-8 text-center">No tenders registered yet.</p>;
+    return <p className="text-sm text-slate-400 py-8 text-center">{t('charts.noTendersYet')}</p>;
   }
 
   return (
@@ -40,9 +42,9 @@ export default function BrandBreakdownSection({ rows }: { rows: BrandBreakdownRo
             contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: VIZ.chrome.gridline }}
           />
           <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Bar dataKey="submittedValue" name="Total submitted" fill={VIZ.categorical.blue} radius={[4, 4, 0, 0]} maxBarSize={38} />
-          <Bar dataKey="wonValue" name="Won" fill={VIZ.status.good} radius={[4, 4, 0, 0]} maxBarSize={38} />
-          <Bar dataKey="lostValue" name="Lost" fill={VIZ.status.critical} radius={[4, 4, 0, 0]} maxBarSize={38} />
+          <Bar dataKey="submittedValue" name={t('charts.totalSubmitted')} fill={VIZ.categorical.blue} radius={[4, 4, 0, 0]} maxBarSize={38} />
+          <Bar dataKey="wonValue" name={t('charts.won')} fill={VIZ.status.good} radius={[4, 4, 0, 0]} maxBarSize={38} />
+          <Bar dataKey="lostValue" name={t('charts.lost')} fill={VIZ.status.critical} radius={[4, 4, 0, 0]} maxBarSize={38} />
         </BarChart>
       </ResponsiveContainer>
 
@@ -50,13 +52,13 @@ export default function BrandBreakdownSection({ rows }: { rows: BrandBreakdownRo
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
-              <th className="py-2 pr-4 font-medium">Brand</th>
-              <th className="py-2 pr-4 font-medium text-right">Total Tenders</th>
-              <th className="py-2 pr-4 font-medium text-right">Total Value</th>
-              <th className="py-2 pr-4 font-medium text-right">Won</th>
-              <th className="py-2 pr-4 font-medium text-right">Won Value</th>
-              <th className="py-2 pr-4 font-medium text-right">Lost</th>
-              <th className="py-2 font-medium text-right">Lost Value</th>
+              <th className="py-2 pr-4 font-medium">{t('analysis.table.brand')}</th>
+              <th className="py-2 pr-4 font-medium text-right">{t('analysis.table.totalTenders')}</th>
+              <th className="py-2 pr-4 font-medium text-right">{t('analysis.table.totalValue')}</th>
+              <th className="py-2 pr-4 font-medium text-right">{t('analysis.table.won')}</th>
+              <th className="py-2 pr-4 font-medium text-right">{t('analysis.table.wonValue')}</th>
+              <th className="py-2 pr-4 font-medium text-right">{t('analysis.table.lost')}</th>
+              <th className="py-2 font-medium text-right">{t('analysis.table.lostValue')}</th>
             </tr>
           </thead>
           <tbody>
@@ -72,7 +74,7 @@ export default function BrandBreakdownSection({ rows }: { rows: BrandBreakdownRo
               </tr>
             ))}
             <tr className="font-semibold text-slate-900">
-              <td className="py-2 pr-4">Total (all brands)</td>
+              <td className="py-2 pr-4">{t('analysis.table.totalAllBrands')}</td>
               <td className="py-2 pr-4 text-right tabular-nums">
                 {rows.reduce((s, r) => s + r.submittedCount, 0)}
               </td>

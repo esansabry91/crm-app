@@ -1,4 +1,6 @@
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import type { WaterfallBar } from '../../utils/analytics';
 import { VIZ } from '../../utils/vizColors';
 import { formatRM } from '../../utils/format';
@@ -83,10 +85,12 @@ function BridgeTooltip({
   active,
   payload,
   formatValue,
+  t,
 }: {
   active?: boolean;
   payload?: { payload: ChartRow }[];
   formatValue: (v: number) => string;
+  t: TFunction;
 }) {
   if (!active || !payload || payload.length === 0) return null;
   const row = payload[0].payload;
@@ -106,7 +110,7 @@ function BridgeTooltip({
         padding: '6px 10px',
       }}
     >
-      <p style={{ color: VIZ.ink.muted, marginBottom: 2 }}>{row.name}</p>
+      <p style={{ color: VIZ.ink.muted, marginBottom: 2 }}>{t(row.name)}</p>
       <p style={{ color: VIZ.ink.primary, fontWeight: 600 }}>{text}</p>
     </div>
   );
@@ -119,10 +123,11 @@ export default function WaterfallChart({
   bars: WaterfallBar[];
   formatValue?: (v: number) => string;
 }) {
+  const { t } = useTranslation();
   const rows = toChartRows(bars);
 
   if (rows.length === 0 || rows.every((r) => r.display === 0)) {
-    return <p className="text-sm text-slate-400 py-8 text-center">No activity yet for this period.</p>;
+    return <p className="text-sm text-slate-400 py-8 text-center">{t('charts.noActivityPeriod')}</p>;
   }
 
   return (
@@ -131,6 +136,7 @@ export default function WaterfallChart({
         <CartesianGrid stroke={VIZ.chrome.gridline} vertical={false} />
         <XAxis
           dataKey="name"
+          tickFormatter={(v: string) => t(v)}
           tick={{ fontSize: 10.5, fill: VIZ.ink.muted }}
           axisLine={{ stroke: VIZ.chrome.baseline }}
           tickLine={false}
@@ -140,7 +146,7 @@ export default function WaterfallChart({
           height={56}
         />
         <YAxis hide />
-        <Tooltip content={<BridgeTooltip formatValue={formatValue} />} cursor={{ fill: VIZ.chrome.gridline, opacity: 0.4 }} />
+        <Tooltip content={<BridgeTooltip formatValue={formatValue} t={t} />} cursor={{ fill: VIZ.chrome.gridline, opacity: 0.4 }} />
         <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
         <Bar dataKey="display" stackId="w" radius={[4, 4, 4, 4]} maxBarSize={64} isAnimationActive={false}>
           {rows.map((row, i) => (

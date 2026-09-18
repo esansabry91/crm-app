@@ -9,6 +9,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useTranslation } from 'react-i18next';
+import { labelToKey } from '../../i18n';
 import type { StageBreakdownRow } from '../../utils/analytics';
 import { VIZ } from '../../utils/vizColors';
 import { formatRM } from '../../utils/format';
@@ -29,12 +31,14 @@ export default function StageBarChart({
   data: StageBreakdownRow[];
   metric: 'count' | 'value';
 }) {
+  const { t } = useTranslation();
   return (
     <ResponsiveContainer width="100%" height={260}>
       <BarChart data={data} margin={{ top: 20, right: 8, bottom: 0, left: 0 }}>
         <CartesianGrid stroke={VIZ.chrome.gridline} vertical={false} />
         <XAxis
           dataKey="stage"
+          tickFormatter={(v: string) => t(`pipeline.stages.${labelToKey(v)}`)}
           tick={{ fontSize: 10.5, fill: VIZ.ink.muted }}
           axisLine={{ stroke: VIZ.chrome.baseline }}
           tickLine={false}

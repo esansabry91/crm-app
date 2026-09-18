@@ -8,15 +8,17 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useTranslation } from 'react-i18next';
 import type { TrendPoint } from '../../utils/analytics';
 import { VIZ } from '../../utils/vizColors';
 import { formatRM } from '../../utils/format';
 
 export default function PipelineTrendChart({ data }: { data: TrendPoint[] }) {
+  const { t } = useTranslation();
   if (data.length === 0) {
     return (
       <div className="h-64 flex items-center justify-center text-sm text-slate-400">
-        No pipeline activity yet — register a tender to start the trend.
+        {t('charts.noPipelineActivity')}
       </div>
     );
   }
@@ -47,7 +49,7 @@ export default function PipelineTrendChart({ data }: { data: TrendPoint[] }) {
         <Area
           type="monotone"
           dataKey="openValue"
-          name="Open pipeline value"
+          name={t('charts.openPipelineValue')}
           stroke={VIZ.categorical.blue}
           strokeWidth={2}
           fill={VIZ.categorical.blue}
@@ -58,7 +60,7 @@ export default function PipelineTrendChart({ data }: { data: TrendPoint[] }) {
         <Area
           type="monotone"
           dataKey="wonValue"
-          name="Won value"
+          name={t('charts.wonValue')}
           stroke={VIZ.status.good}
           strokeWidth={2}
           fill={VIZ.status.good}

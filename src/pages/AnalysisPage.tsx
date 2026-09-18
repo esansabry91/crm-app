@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenders } from '../hooks/useTenders';
 import { useTenderHistory } from '../hooks/useTenderHistory';
@@ -41,6 +42,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 }
 
 export default function AnalysisPage() {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const { tenders, loading } = useTenders(profile);
   // Scoped to exactly the tenders this viewer can already see — see useTenderHistory's own doc
@@ -126,17 +128,17 @@ export default function AnalysisPage() {
     <div className="h-full overflow-y-auto">
       <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
         <div className="flex items-center gap-2">
-          <h1 className="text-lg font-semibold text-slate-900">Pipeline Analysis</h1>
+          <h1 className="text-lg font-semibold text-slate-900">{t('analysis.title')}</h1>
           <HeaderCollapseToggle expanded={headerExpanded} onToggle={() => setHeaderExpanded((v) => !v)} />
         </div>
         {headerExpanded && (
           <div className="flex items-center justify-between gap-4 flex-wrap mt-2">
             <p className="text-sm text-slate-500">
-              {isAdminRole(profile.role) ? 'All branches · all staff' : 'Your tenders'}
+              {isAdminRole(profile.role) ? t('analysis.allBranchesAllStaff') : t('analysis.yourTenders')}
             </p>
             <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
               <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-full sm:w-40">
-                <option value="all">All brands</option>
+                <option value="all">{t('analysis.allBrands')}</option>
                 {brands.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
@@ -144,7 +146,7 @@ export default function AnalysisPage() {
                 ))}
               </select>
               <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="input w-full sm:w-40">
-                <option value="all">All departments</option>
+                <option value="all">{t('analysis.allDepartments')}</option>
                 {deptFilterOptions.map((d) => (
                   <option key={d} value={d}>
                     {d}
@@ -157,42 +159,42 @@ export default function AnalysisPage() {
       </header>
 
       {loading ? (
-        <p className="px-6 py-8 text-sm text-slate-400">Loading analytics…</p>
+        <p className="px-6 py-8 text-sm text-slate-400">{t('analysis.loading')}</p>
       ) : (
         <div className="px-6 py-6 space-y-6 max-w-6xl">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard
-              label="Open Pipeline Value"
+              label={t('analysis.openPipelineValue')}
               value={formatRM(summary.openValue)}
-              sub={`${summary.openCount} active tenders`}
+              sub={t('analysis.activeTenders', { count: summary.openCount })}
               accent={VIZ.categorical.blue}
             />
             <StatCard
-              label="Won Value"
+              label={t('analysis.wonValue')}
               value={formatRM(summary.wonValue)}
-              sub={`${summary.wonCount} tenders won`}
+              sub={t('analysis.tendersWon', { count: summary.wonCount })}
               accent={VIZ.status.good}
             />
             <StatCard
-              label="Lost Value"
+              label={t('analysis.lostValue')}
               value={formatRM(summary.lostValue)}
-              sub={`${summary.lostCount} tenders lost`}
+              sub={t('analysis.tendersLost', { count: summary.lostCount })}
               accent={VIZ.status.critical}
             />
             <StatCard
-              label="Win Rate"
+              label={t('analysis.winRate')}
               value={`${Math.round(summary.winRate * 100)}%`}
-              sub="of closed tenders"
+              sub={t('analysis.ofClosedTenders')}
             />
           </div>
 
-          <Card title="Total Pipeline Value Trend">
+          <Card title={t('analysis.trendTitle')}>
             <PipelineTrendChart data={trend} />
           </Card>
 
           <div className="bg-white rounded-xl border border-slate-200 p-5">
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-              <h3 className="text-sm font-semibold text-slate-800">Open Pipeline Value Bridge</h3>
+              <h3 className="text-sm font-semibold text-slate-800">{t('analysis.bridgeTitle')}</h3>
               {bridgePeriods.length > 0 && (
                 <div className="flex items-center gap-3">
                   <button
@@ -200,7 +202,7 @@ export default function AnalysisPage() {
                     disabled={bridgeIndex === 0}
                     className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-30"
                   >
-                    ◀ Prev
+                    {t('charts.prev')}
                   </button>
                   <span className="text-xs font-semibold text-slate-700 w-28 text-center">
                     {currentBridgePeriod?.label}
@@ -212,7 +214,7 @@ export default function AnalysisPage() {
                     disabled={bridgeIndex >= bridgePeriods.length - 1}
                     className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-30"
                   >
-                    Next ▶
+                    {t('charts.next')}
                   </button>
                 </div>
               )}
@@ -229,7 +231,7 @@ export default function AnalysisPage() {
                     bridgeTimeView === tv.value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  {tv.label}
+                  {t(tv.label)}
                 </button>
               ))}
             </div>
@@ -237,30 +239,30 @@ export default function AnalysisPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card title="Number of Tenders by Stage">
+            <Card title={t('analysis.stageCountTitle')}>
               <StageBarChart data={stages} metric="count" />
             </Card>
-            <Card title="Pipeline Value by Stage (RM)">
+            <Card title={t('analysis.stageValueTitle')}>
               <StageBarChart data={stages} metric="value" />
             </Card>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card title="Won vs Lost Tenders">
+            <Card title={t('analysis.wonVsLostTitle')}>
               <WonLostBar wonCount={summary.wonCount} lostCount={summary.lostCount} />
             </Card>
-            <Card title="Total Pipeline Value vs Won Value">
+            <Card title={t('analysis.valueVsWonTitle')}>
               <PipelineVsWonChart openValue={summary.openValue} wonValue={summary.wonValue} />
             </Card>
           </div>
 
-          <Card title="Performance by Brand">
+          <Card title={t('analysis.brandPerformanceTitle')}>
             <BrandBreakdownSection rows={brandRows} />
           </Card>
 
           {isAdminRole(profile.role) && (
             <>
-              <Card title="Tender Won/Submitted — Value Over Time">
+              <Card title={t('analysis.raceTitle')}>
                 <RaceBarChart
                   frames={raceFrames}
                   metric={raceMetric}
@@ -271,7 +273,7 @@ export default function AnalysisPage() {
                 />
               </Card>
 
-              <Card title="Staff Performance">
+              <Card title={t('analysis.staffPerformanceTitle')}>
                 <StaffPerformanceSection rows={staffRows} />
               </Card>
             </>

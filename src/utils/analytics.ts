@@ -363,12 +363,14 @@ export interface WaterfallBar {
 /** Time granularity for a bridge/waterfall chart's period navigator. */
 export type BridgeTimeView = 'monthly' | 'quarterly' | 'yearly' | 'ytd';
 
-/** Shared toggle options for every bridge/waterfall chart's time-granularity switch. */
+/** Shared toggle options for every bridge/waterfall chart's time-granularity switch. `label` is a
+ *  translation key (under charts.timeViews.*, see i18n/locales) rather than display text — this
+ *  file has no React/i18n dependency of its own, so every caller runs it through t() at render. */
 export const BRIDGE_TIME_VIEWS: { value: BridgeTimeView; label: string }[] = [
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'quarterly', label: 'Quarterly' },
-  { value: 'yearly', label: 'Yearly' },
-  { value: 'ytd', label: 'Year-to-Date' },
+  { value: 'monthly', label: 'charts.timeViews.monthly' },
+  { value: 'quarterly', label: 'charts.timeViews.quarterly' },
+  { value: 'yearly', label: 'charts.timeViews.yearly' },
+  { value: 'ytd', label: 'charts.timeViews.ytd' },
 ];
 
 /**
@@ -460,18 +462,20 @@ function periodBounds(view: BridgeTimeView, key: string): { start: number; end: 
   return { start, end: fullEnd };
 }
 
-/** The Start/End anchor labels for a bridge, phrased to match the selected time granularity. */
+/** The Start/End anchor labels for a bridge, phrased to match the selected time granularity.
+ *  Returns translation keys (under charts.bridge.*), same convention as BRIDGE_TIME_VIEWS above —
+ *  WaterfallChart runs every WaterfallBar.label through t() at render. */
 function periodBoundaryLabels(view: BridgeTimeView): { start: string; end: string } {
   switch (view) {
     case 'monthly':
-      return { start: 'Start of Month', end: 'End of Month' };
+      return { start: 'charts.bridge.startOfMonth', end: 'charts.bridge.endOfMonth' };
     case 'quarterly':
-      return { start: 'Start of Quarter', end: 'End of Quarter' };
+      return { start: 'charts.bridge.startOfQuarter', end: 'charts.bridge.endOfQuarter' };
     case 'ytd':
-      return { start: 'Start of Year', end: 'Today' };
+      return { start: 'charts.bridge.startOfYear', end: 'charts.bridge.today' };
     case 'yearly':
     default:
-      return { start: 'Start of Year', end: 'End of Year' };
+      return { start: 'charts.bridge.startOfYear', end: 'charts.bridge.endOfYear' };
   }
 }
 
@@ -663,19 +667,19 @@ export function activeProjectValueBridge(
   const { start: startLabel, end: endLabel } = periodBoundaryLabels(view);
 
   const bars: WaterfallBar[] = [{ label: startLabel, amount: startValue, kind: 'total' }];
-  if (enteringValue !== 0) bars.push({ label: 'New Contracts', amount: enteringValue, kind: 'delta' });
-  if (reasonTotals.renewal !== 0) bars.push({ label: 'Contract Renewed', amount: reasonTotals.renewal, kind: 'delta' });
+  if (enteringValue !== 0) bars.push({ label: 'charts.bridge.newContracts', amount: enteringValue, kind: 'delta' });
+  if (reasonTotals.renewal !== 0) bars.push({ label: 'charts.bridge.contractRenewed', amount: reasonTotals.renewal, kind: 'delta' });
   if (reasonTotals.equipment_increase !== 0) {
-    bars.push({ label: 'Equipment Added', amount: reasonTotals.equipment_increase, kind: 'delta' });
+    bars.push({ label: 'charts.bridge.equipmentAdded', amount: reasonTotals.equipment_increase, kind: 'delta' });
   }
   if (reasonTotals.guard_rate !== 0) {
-    bars.push({ label: 'Guard Rate Change', amount: reasonTotals.guard_rate, kind: 'delta' });
+    bars.push({ label: 'charts.bridge.guardRateChange', amount: reasonTotals.guard_rate, kind: 'delta' });
   }
   if (reasonTotals.equipment_decrease !== 0) {
-    bars.push({ label: 'Equipment Stopped', amount: reasonTotals.equipment_decrease, kind: 'delta' });
+    bars.push({ label: 'charts.bridge.equipmentStopped', amount: reasonTotals.equipment_decrease, kind: 'delta' });
   }
-  if (reasonTotals.other !== 0) bars.push({ label: 'Value Adjustments', amount: reasonTotals.other, kind: 'delta' });
-  if (exitingValue !== 0) bars.push({ label: 'Closed Out', amount: -exitingValue, kind: 'delta' });
+  if (reasonTotals.other !== 0) bars.push({ label: 'charts.bridge.valueAdjustments', amount: reasonTotals.other, kind: 'delta' });
+  if (exitingValue !== 0) bars.push({ label: 'charts.bridge.closedOut', amount: -exitingValue, kind: 'delta' });
   bars.push({ label: endLabel, amount: endValue, kind: 'total' });
   return bars;
 }
@@ -861,12 +865,12 @@ export function pipelineValueBridge(
   const { start: startLabel, end: endLabel } = periodBoundaryLabels(view);
 
   const bars: WaterfallBar[] = [{ label: startLabel, amount: startValue, kind: 'total' }];
-  if (newValue !== 0) bars.push({ label: 'New Tenders', amount: newValue, kind: 'delta' });
-  if (wonValue !== 0) bars.push({ label: 'Won', amount: wonValue, kind: 'delta' });
-  if (lostValue !== 0) bars.push({ label: 'Lost', amount: lostValue, kind: 'delta' });
-  if (disqualifiedValue !== 0) bars.push({ label: 'Disqualified', amount: disqualifiedValue, kind: 'delta' });
-  if (removedValue !== 0) bars.push({ label: 'Removed', amount: removedValue, kind: 'delta' });
-  if (adjustValue !== 0) bars.push({ label: 'Value Adjustments', amount: adjustValue, kind: 'delta' });
+  if (newValue !== 0) bars.push({ label: 'charts.bridge.newTenders', amount: newValue, kind: 'delta' });
+  if (wonValue !== 0) bars.push({ label: 'charts.bridge.won', amount: wonValue, kind: 'delta' });
+  if (lostValue !== 0) bars.push({ label: 'charts.bridge.lost', amount: lostValue, kind: 'delta' });
+  if (disqualifiedValue !== 0) bars.push({ label: 'charts.bridge.disqualified', amount: disqualifiedValue, kind: 'delta' });
+  if (removedValue !== 0) bars.push({ label: 'charts.bridge.removed', amount: removedValue, kind: 'delta' });
+  if (adjustValue !== 0) bars.push({ label: 'charts.bridge.valueAdjustments', amount: adjustValue, kind: 'delta' });
   bars.push({ label: endLabel, amount: endValue, kind: 'total' });
   return bars;
 }
