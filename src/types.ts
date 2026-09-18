@@ -109,6 +109,12 @@ export interface UserProfile {
   department: string;
   active: boolean;
   createdAt: number;
+  /** Preferred UI language — the header's language toggle (AppLayout.tsx), persisted here so it
+   *  follows this user to any device/browser they sign into. Absent means "en" (the app's
+   *  default before anyone had a saved preference); firestore.rules lets a signed-in user change
+   *  ONLY this one field on their own profile doc, everything else on UserProfile stays
+   *  admin-only. */
+  language?: 'en' | 'ms';
 }
 
 export interface Branch {

@@ -1,8 +1,11 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { isAdminRole } from '../../types';
 import { RosterPendingProvider, useRosterPendingConsumer } from '../../contexts/RosterPendingContext';
+import { setLanguage, type AppLanguage } from '../../i18n';
+import { updateOwnLanguage } from '../../services/users';
 import clsx from 'clsx';
 
 const SIDEBAR_COLLAPSED_KEY = 'ipsb-desktop-sidebar-collapsed';
@@ -23,6 +26,66 @@ const navItemClass = ({ isActive }: { isActive: boolean }) =>
     'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition',
     isActive ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-100'
   );
+
+/** Maps a Role to its nav.roles.* translation key — mirrors the ternary chain the account footer
+ *  below used to hardcode inline, one-to-one (same fallback too: anything not explicitly listed,
+ *  which today is just 'branchManager', reads as "Branch Manager"). */
+function roleLabelKey(role: string | undefined): string {
+  switch (role) {
+    case 'admin':
+    case 'developer':
+    case 'ceo':
+    case 'director':
+    case 'tenderController':
+    case 'dutyStaff':
+    case 'payroll':
+    case 'hr':
+    case 'finance':
+      return role;
+    default:
+      return 'branchManager';
+  }
+}
+
+/**
+ * EN/BM language switch — visible to every signed-in user (any role, not just admins), since
+ * this is a personal display preference, not a permission. Writes through setLanguage() (i18n's
+ * own module — updates the active language immediately plus the per-browser localStorage
+ * fallback) AND, when signed in, updateOwnLanguage() (services/users.ts — persists to this
+ * user's OWN /users/{uid} doc, the one field firestore.rules lets a non-admin write on
+ * themselves) so the choice follows them to their next sign-in on any device. The Firestore
+ * write is fire-and-forget: a failure there (offline, etc.) shouldn't block the language from
+ * changing right now, and AuthContext re-applies profile.language on every future profile load
+ * regardless, so a dropped write just means the local fallback is what's remembered.
+ */
+function LanguageToggle({ uid, className }: { uid: string | undefined; className?: string }) {
+  const { t, i18n } = useTranslation();
+  const current = i18n.language === 'ms' ? 'ms' : 'en';
+
+  function choose(lang: AppLanguage) {
+    if (lang === current) return;
+    setLanguage(lang);
+    if (uid) void updateOwnLanguage(uid, lang);
+  }
+
+  return (
+    <div className={clsx('inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs font-medium', className)} role="group" aria-label={t('common.language')}>
+      {(['en', 'ms'] as const).map((lang) => (
+        <button
+          key={lang}
+          type="button"
+          onClick={() => choose(lang)}
+          className={clsx(
+            'px-2 py-1 rounded-md transition',
+            current === lang ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          )}
+        >
+          {lang === 'en' ? 'EN' : 'BM'}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 const SECTION_COLLAPSED_KEY_PREFIX = 'ipsb-desktop-sidebar-section-collapsed:';
 
@@ -112,6 +175,7 @@ function NavContent({
 }) {
   const { profile, logout } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   return (
     <>
@@ -123,14 +187,14 @@ function NavContent({
             className="h-9 w-9 rounded-lg object-contain border border-slate-200 shrink-0"
           />
           <div className="min-w-0 flex-1">
-            <p className="text-xs text-slate-400 leading-tight">Customer Relationship Management Portal</p>
+            <p className="text-xs text-slate-400 leading-tight">{t('nav.portalSubtitle')}</p>
           </div>
           {onCollapse && (
             <button
               type="button"
               onClick={onCollapse}
-              aria-label="Collapse sidebar"
-              title="Collapse sidebar"
+              aria-label={t('common.collapseSidebar')}
+              title={t('common.collapseSidebar')}
               className="shrink-0 p-1.5 -mr-1.5 rounded-lg text-blue-600 bg-blue-50 hover:bg-blue-100 hover:text-blue-700"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -171,78 +235,78 @@ function NavContent({
           profile?.role !== 'finance' &&
           profile?.role !== 'hr' && (
           <>
-            <NavSection title="Client Acquisition">
+            <NavSection title={t('nav.sections.clientAcquisition')}>
               <NavLink to="/pipeline" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>🗂️</span> Pipeline
+                <span aria-hidden>🗂️</span> {t('nav.links.pipeline')}
               </NavLink>
               <NavLink to="/analysis" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>📊</span> Pipeline Analysis
+                <span aria-hidden>📊</span> {t('nav.links.pipelineAnalysis')}
               </NavLink>
             </NavSection>
 
-            <NavSection title="Branch Operation">
+            <NavSection title={t('nav.sections.branchOperation')}>
               <NavLink to="/active-projects" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>🏗️</span> Active Projects
+                <span aria-hidden>🏗️</span> {t('nav.links.activeProjects')}
               </NavLink>
               <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>🗓️</span> Duty Roster
+                <span aria-hidden>🗓️</span> {t('nav.links.dutyRoster')}
               </NavLink>
               <NavLink to="/task-board" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>📋</span> Task Board
+                <span aria-hidden>📋</span> {t('nav.links.taskBoard')}
               </NavLink>
             </NavSection>
 
             {/* "Branch Collection" is now the SECTION title, not the tab itself — see
                 BranchCollectionPage.tsx's own header, renamed to match. */}
-            <NavSection title="Branch Collection">
+            <NavSection title={t('nav.sections.branchCollection')}>
               <NavLink to="/branch-collection" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>🧾</span> Invoices &amp; Revenue
+                <span aria-hidden>🧾</span> {t('nav.links.invoicesRevenue')}
               </NavLink>
             </NavSection>
 
-            <NavSection title="Human Resource">
+            <NavSection title={t('nav.sections.humanResource')}>
               <NavLink to="/guard-bank" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>🛡️</span> Guard Bank
+                <span aria-hidden>🛡️</span> {t('nav.links.guardBank')}
               </NavLink>
             </NavSection>
 
-            <NavSection title="History">
+            <NavSection title={t('nav.sections.history')}>
               <NavLink to="/past-projects" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>📦</span> Past Projects
+                <span aria-hidden>📦</span> {t('nav.links.pastProjects')}
               </NavLink>
               <NavLink to="/archive" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>🗄️</span> Archive
+                <span aria-hidden>🗄️</span> {t('nav.links.archive')}
               </NavLink>
             </NavSection>
 
-            <NavSection title="Tools">
+            <NavSection title={t('nav.sections.tools')}>
               <NavLink to="/quotation-calculator" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>🧮</span> Quotation Calculator
+                <span aria-hidden>🧮</span> {t('nav.links.quotationCalculator')}
               </NavLink>
             </NavSection>
           </>
         )}
         {profile?.role === 'dutyStaff' && (
           <>
-            <NavSection title="Branch Operation">
+            <NavSection title={t('nav.sections.branchOperation')}>
               <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>🗓️</span> Duty Roster
+                <span aria-hidden>🗓️</span> {t('nav.links.dutyRoster')}
               </NavLink>
               <NavLink to="/task-board" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>📋</span> Task Board
+                <span aria-hidden>📋</span> {t('nav.links.taskBoard')}
               </NavLink>
             </NavSection>
-            <NavSection title="Human Resource">
+            <NavSection title={t('nav.sections.humanResource')}>
               <NavLink to="/guard-bank" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>🛡️</span> Guard Bank
+                <span aria-hidden>🛡️</span> {t('nav.links.guardBank')}
               </NavLink>
             </NavSection>
           </>
         )}
         {profile?.role === 'payroll' && (
-          <NavSection title="Branch Operation">
+          <NavSection title={t('nav.sections.branchOperation')}>
             <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🗓️</span> Duty Roster
+              <span aria-hidden>🗓️</span> {t('nav.links.dutyRoster')}
             </NavLink>
           </NavSection>
         )}
@@ -250,22 +314,22 @@ function NavContent({
             comment in types.ts and isHr()/isPayrollLike() in firestore.rules. */}
         {profile?.role === 'hr' && (
           <>
-            <NavSection title="Branch Operation">
+            <NavSection title={t('nav.sections.branchOperation')}>
               <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>🗓️</span> Duty Roster
+                <span aria-hidden>🗓️</span> {t('nav.links.dutyRoster')}
               </NavLink>
             </NavSection>
-            <NavSection title="Human Resource">
+            <NavSection title={t('nav.sections.humanResource')}>
               <NavLink to="/guard-bank" className={navItemClass} onClick={onNavigate}>
-                <span aria-hidden>🛡️</span> Guard Bank
+                <span aria-hidden>🛡️</span> {t('nav.links.guardBank')}
               </NavLink>
             </NavSection>
           </>
         )}
         {profile?.role === 'finance' && (
-          <NavSection title="Branch Collection">
+          <NavSection title={t('nav.sections.branchCollection')}>
             <NavLink to="/branch-collection" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🧾</span> Invoices &amp; Revenue
+              <span aria-hidden>🧾</span> {t('nav.links.invoicesRevenue')}
             </NavLink>
           </NavSection>
         )}
@@ -277,7 +341,7 @@ function NavContent({
         {(isAdminRole(profile?.role) || profile?.role === 'branchManager') && (
           <div className="mt-3 first:mt-0">
             <NavLink to="/admin" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>⚙️</span> Admin Settings
+              <span aria-hidden>⚙️</span> {t('nav.links.adminSettings')}
             </NavLink>
           </div>
         )}
@@ -286,33 +350,15 @@ function NavContent({
       <div className="px-4 py-4 border-t border-slate-100 shrink-0">
         <p className="text-sm font-medium text-slate-800 truncate">{profile?.name}</p>
         <p className="text-xs text-slate-400 truncate">
-          {profile?.role === 'admin'
-            ? 'HQ Admin'
-            : profile?.role === 'developer'
-              ? 'Developer'
-              : profile?.role === 'ceo'
-                ? 'CEO'
-                : profile?.role === 'director'
-                  ? 'Director'
-                  : profile?.role === 'tenderController'
-                    ? 'Tender Controller'
-                    : profile?.role === 'dutyStaff'
-                      ? 'Operation Staff'
-                      : profile?.role === 'payroll'
-                        ? 'Payroll'
-                        : profile?.role === 'hr'
-                          ? 'HR'
-                          : profile?.role === 'finance'
-                            ? 'Finance'
-                            : 'Branch Manager'}{' '}
-          ·{' '}
+          {t(`nav.roles.${roleLabelKey(profile?.role)}`)} ·{' '}
           {profile?.department}
         </p>
+        <LanguageToggle uid={profile?.uid} className="mt-3 w-full justify-center" />
         <button
           onClick={() => guardAction(() => logout())}
-          className="mt-3 w-full text-xs font-medium text-slate-500 hover:text-rose-600 border border-slate-200 rounded-lg py-1.5 transition"
+          className="mt-2 w-full text-xs font-medium text-slate-500 hover:text-rose-600 border border-slate-200 rounded-lg py-1.5 transition"
         >
-          Sign out
+          {t('common.signOut')}
         </button>
       </div>
     </>
@@ -336,14 +382,12 @@ function DutyRosterLeaveWarningModal({
   onDiscard: () => void;
   onLock: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5">
-        <h2 className="text-base font-semibold text-slate-900">Roster sheet is unlocked</h2>
-        <p className="text-sm text-slate-500 mt-1.5">
-          The Duty Roster has drag rearrangements that aren't locked in yet. Lock the roster or
-          discard these changes before leaving.
-        </p>
+        <h2 className="text-base font-semibold text-slate-900">{t('nav.leaveWarning.title')}</h2>
+        <p className="text-sm text-slate-500 mt-1.5">{t('nav.leaveWarning.body')}</p>
         <div className="flex flex-wrap justify-end gap-2 mt-5">
           <button
             type="button"
@@ -351,7 +395,7 @@ function DutyRosterLeaveWarningModal({
             disabled={!!resolving}
             className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800 disabled:opacity-60"
           >
-            Stay here
+            {t('nav.leaveWarning.stay')}
           </button>
           <button
             type="button"
@@ -359,7 +403,7 @@ function DutyRosterLeaveWarningModal({
             disabled={!!resolving}
             className="px-4 py-1.5 text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-60 rounded-lg"
           >
-            {resolving === 'discard' ? 'Discarding\u2026' : 'Discard changes'}
+            {resolving === 'discard' ? t('nav.leaveWarning.discarding') : t('nav.leaveWarning.discard')}
           </button>
           <button
             type="button"
@@ -367,7 +411,7 @@ function DutyRosterLeaveWarningModal({
             disabled={!!resolving}
             className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg"
           >
-            {resolving === 'lock' ? 'Locking\u2026' : 'Lock roster'}
+            {resolving === 'lock' ? t('nav.leaveWarning.locking') : t('nav.leaveWarning.lock')}
           </button>
         </div>
       </div>
@@ -379,6 +423,8 @@ function AppLayoutInner({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(getStoredSidebarCollapsed);
   const { pending, resolvers } = useRosterPendingConsumer();
+  const { profile } = useAuth();
+  const { t } = useTranslation();
   // The nav/logout action waiting on the warning modal below. Unlike the old iframe/postMessage
   // bridge, resolving is now a direct, synchronous call into the same React tree (see
   // RosterPendingContext.tsx's own doc comment) — no cross-frame race to wait out, so there's no
@@ -422,7 +468,7 @@ function AppLayoutInner({ children }: { children: ReactNode }) {
         <button
           type="button"
           onClick={() => setDrawerOpen(true)}
-          aria-label="Open menu"
+          aria-label={t('common.openMenu')}
           className="p-1.5 -ml-1.5 rounded-lg text-slate-600 hover:bg-slate-100"
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -436,7 +482,8 @@ function AppLayoutInner({ children }: { children: ReactNode }) {
           alt="Inter Prominent"
           className="h-8 w-8 rounded-lg object-contain border border-slate-200 shrink-0"
         />
-        <p className="text-sm font-semibold text-slate-900 truncate">Inter Prominent CRM</p>
+        <p className="text-sm font-semibold text-slate-900 truncate flex-1">{t('nav.appName')}</p>
+        <LanguageToggle uid={profile?.uid} />
       </header>
 
       {/* Mobile slide-over drawer — same NavContent as the desktop sidebar, overlaid on top of
@@ -448,7 +495,7 @@ function AppLayoutInner({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => setDrawerOpen(false)}
-              aria-label="Close menu"
+              aria-label={t('common.closeMenu')}
               className="absolute top-4 right-3 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -479,8 +526,8 @@ function AppLayoutInner({ children }: { children: ReactNode }) {
         <button
           type="button"
           onClick={() => setDesktopCollapsed(false)}
-          aria-label="Open menu"
-          title="Open menu"
+          aria-label={t('common.openMenu')}
+          title={t('common.openMenu')}
           className="hidden lg:flex fixed top-1/2 left-0 -translate-y-1/2 z-40 items-center justify-center w-6 h-16 rounded-r-lg bg-blue-50 border border-l-0 border-blue-200 text-blue-600 hover:bg-blue-100 hover:text-blue-700 shadow-md no-print"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

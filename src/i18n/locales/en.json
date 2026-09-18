@@ -1,0 +1,73 @@
+{
+  "common": {
+    "signOut": "Sign out",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "collapseSidebar": "Collapse sidebar",
+    "language": "Language"
+  },
+  "nav": {
+    "appName": "Inter Prominent CRM",
+    "portalSubtitle": "Customer Relationship Management Portal",
+    "sections": {
+      "clientAcquisition": "Client Acquisition",
+      "branchOperation": "Branch Operation",
+      "branchCollection": "Branch Collection",
+      "humanResource": "Human Resource",
+      "history": "History",
+      "tools": "Tools"
+    },
+    "links": {
+      "pipeline": "Pipeline",
+      "pipelineAnalysis": "Pipeline Analysis",
+      "activeProjects": "Active Projects",
+      "dutyRoster": "Duty Roster",
+      "taskBoard": "Task Board",
+      "invoicesRevenue": "Invoices & Revenue",
+      "guardBank": "Guard Bank",
+      "pastProjects": "Past Projects",
+      "archive": "Archive",
+      "quotationCalculator": "Quotation Calculator",
+      "adminSettings": "Admin Settings"
+    },
+    "roles": {
+      "admin": "HQ Admin",
+      "developer": "Developer",
+      "ceo": "CEO",
+      "director": "Director",
+      "tenderController": "Tender Controller",
+      "dutyStaff": "Operation Staff",
+      "payroll": "Payroll",
+      "hr": "HR",
+      "finance": "Finance",
+      "branchManager": "Branch Manager"
+    },
+    "leaveWarning": {
+      "title": "Roster sheet is unlocked",
+      "body": "The Duty Roster has drag rearrangements that aren't locked in yet. Lock the roster or discard these changes before leaving.",
+      "stay": "Stay here",
+      "discard": "Discard changes",
+      "discarding": "Discarding…",
+      "lock": "Lock roster",
+      "locking": "Locking…"
+    }
+  },
+  "login": {
+    "title": "Customer Relationship Management Portal",
+    "signInSubtitle": "Sign in with your team account",
+    "resetSubtitle": "Reset your password",
+    "email": "Email",
+    "password": "Password",
+    "forgotPassword": "Forgot password?",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
+    "signInError": "Could not sign in. Check your email and password and try again.",
+    "resetSent": "If an account exists for <bold>{{email}}</bold>, a password reset link has been sent. Check your inbox (and spam folder).",
+    "resetSentFallback": "that address",
+    "invalidEmail": "Enter a valid email address first.",
+    "sendResetLink": "Send reset link",
+    "sending": "Sending…",
+    "backToSignIn": "← Back to sign in",
+    "footer": "Accounts are created by your HQ admin. Contact them if you need access."
+  }
+}

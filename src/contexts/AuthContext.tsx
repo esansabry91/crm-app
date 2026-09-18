@@ -10,6 +10,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import type { UserProfile } from '../types';
 import { isAdminRole } from '../types';
+import { setLanguage } from '../i18n';
 
 interface AuthContextValue {
   firebaseUser: User | null;
@@ -49,7 +50,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ref,
       (snap) => {
         if (snap.exists()) {
-          setProfile({ uid: snap.id, ...(snap.data() as Omit<UserProfile, 'uid'>) });
+          const nextProfile = { uid: snap.id, ...(snap.data() as Omit<UserProfile, 'uid'>) };
+          setProfile(nextProfile);
+          // Applies this user's OWN saved language preference the moment their profile loads —
+          // e.g. signing into a fresh browser that still has the "en" default active. A user who
+          // has never touched the toggle has no `language` field yet, so this is a no-op for
+          // them (the per-browser default from i18n/index.ts's own localStorage fallback stands).
+          if (nextProfile.language) setLanguage(nextProfile.language);
         } else {
           setProfile(null);
         }

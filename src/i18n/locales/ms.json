@@ -1,0 +1,73 @@
+{
+  "common": {
+    "signOut": "Log keluar",
+    "openMenu": "Buka menu",
+    "closeMenu": "Tutup menu",
+    "collapseSidebar": "Kuncupkan bar sisi",
+    "language": "Bahasa"
+  },
+  "nav": {
+    "appName": "Inter Prominent CRM",
+    "portalSubtitle": "Portal Pengurusan Perhubungan Pelanggan",
+    "sections": {
+      "clientAcquisition": "Perolehan Pelanggan",
+      "branchOperation": "Operasi Cawangan",
+      "branchCollection": "Kutipan Cawangan",
+      "humanResource": "Sumber Manusia",
+      "history": "Sejarah",
+      "tools": "Alatan"
+    },
+    "links": {
+      "pipeline": "Saluran Tender",
+      "pipelineAnalysis": "Analisis Saluran Tender",
+      "activeProjects": "Projek Aktif",
+      "dutyRoster": "Jadual Tugas",
+      "taskBoard": "Papan Tugasan",
+      "invoicesRevenue": "Invois & Hasil",
+      "guardBank": "Bank Pengawal",
+      "pastProjects": "Projek Lepas",
+      "archive": "Arkib",
+      "quotationCalculator": "Kalkulator Sebut Harga",
+      "adminSettings": "Tetapan Pentadbir"
+    },
+    "roles": {
+      "admin": "Pentadbir Ibu Pejabat",
+      "developer": "Pembangun",
+      "ceo": "Ketua Pegawai Eksekutif",
+      "director": "Pengarah",
+      "tenderController": "Pengawal Tender",
+      "dutyStaff": "Kakitangan Operasi",
+      "payroll": "Gaji",
+      "hr": "Sumber Manusia",
+      "finance": "Kewangan",
+      "branchManager": "Pengurus Cawangan"
+    },
+    "leaveWarning": {
+      "title": "Helaian roster belum dikunci",
+      "body": "Jadual Tugas ini mempunyai susunan seret yang belum dikunci. Kunci roster atau buang perubahan ini sebelum keluar.",
+      "stay": "Kekal di sini",
+      "discard": "Buang perubahan",
+      "discarding": "Membuang…",
+      "lock": "Kunci roster",
+      "locking": "Mengunci…"
+    }
+  },
+  "login": {
+    "title": "Portal Pengurusan Perhubungan Pelanggan",
+    "signInSubtitle": "Log masuk dengan akaun pasukan anda",
+    "resetSubtitle": "Tetapkan semula kata laluan anda",
+    "email": "E-mel",
+    "password": "Kata Laluan",
+    "forgotPassword": "Lupa kata laluan?",
+    "signIn": "Log masuk",
+    "signingIn": "Sedang log masuk…",
+    "signInError": "Tidak dapat log masuk. Sila semak e-mel dan kata laluan anda, kemudian cuba lagi.",
+    "resetSent": "Jika akaun wujud untuk <bold>{{email}}</bold>, pautan tetapan semula kata laluan telah dihantar. Sila semak peti masuk anda (dan folder spam).",
+    "resetSentFallback": "alamat tersebut",
+    "invalidEmail": "Sila masukkan alamat e-mel yang sah terlebih dahulu.",
+    "sendResetLink": "Hantar pautan tetapan semula",
+    "sending": "Menghantar…",
+    "backToSignIn": "← Kembali ke log masuk",
+    "footer": "Akaun dicipta oleh pentadbir Ibu Pejabat anda. Hubungi mereka jika anda memerlukan akses."
+  }
+}

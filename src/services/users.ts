@@ -3,6 +3,17 @@ import { deleteDoc, doc, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db, disposeSecondaryApp, getSecondaryAuth } from '../firebase';
 import type { Role } from '../types';
 
+/**
+ * Self-service: a signed-in user changing THEIR OWN language preference from the header's
+ * toggle (AppLayout.tsx) — distinct from updateUserProfile() below, which is the admin-only
+ * "edit someone else's profile" path. firestore.rules only lets this one field be written by
+ * anyone other than an admin, and only on the caller's own /users/{uid} doc — see its own
+ * comment on the /users/{uid} match block.
+ */
+export async function updateOwnLanguage(uid: string, language: 'en' | 'ms') {
+  await updateDoc(doc(db, 'users', uid), { language });
+}
+
 export interface NewStaffInput {
   name: string;
   email: string;
