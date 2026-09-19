@@ -4,6 +4,7 @@
  * itself (computeFreeGuardsAt/otherBranchSites) lives in supportGuardCrossSite.ts; this module is
  * the panel's own table/validation/write logic, same shape as tempGuardPanelData.ts.
  */
+import type { TFunction } from "i18next";
 import type { SiteConfig, MonthState, SupportGuardRecord, ConflictEntry } from "./types";
 import { newId, monthSupportGuards } from "./rosterModel";
 import { appendLog } from "./lockMachine";
@@ -14,10 +15,10 @@ export interface SupportSlotOption {
   label: string;
 }
 
-export function buildSupportSlotOptions(conflicts: ConflictEntry[]): SupportSlotOption[] {
+export function buildSupportSlotOptions(conflicts: ConflictEntry[], t: TFunction): SupportSlotOption[] {
   return conflicts.map((c) => ({
     key: `${c.date}|${c.shiftId}|${c.slot}`,
-    label: `${c.date} — ${c.shiftLabel}, Slot ${c.slot + 1}`,
+    label: t("dutyRoster.common.dateShiftSlotOption", { date: c.date, shiftLabel: c.shiftLabel, slot: c.slot + 1 }),
   }));
 }
 
@@ -30,7 +31,7 @@ export interface SupportGuardRow {
 }
 
 /** Existing support-guard rows — same orphan-key-lookup pattern as buildTempGuardRows(). */
-export function buildSupportGuardRows(config: Pick<SiteConfig, "site">, ms: MonthState): SupportGuardRow[] {
+export function buildSupportGuardRows(config: Pick<SiteConfig, "site">, ms: MonthState, t: TFunction): SupportGuardRow[] {
   const sg = monthSupportGuards(ms);
   const rows: SupportGuardRow[] = [];
   Object.keys(sg).forEach((supportId) => {
@@ -40,7 +41,7 @@ export function buildSupportGuardRows(config: Pick<SiteConfig, "site">, ms: Mont
     rows.push({
       supportId,
       date,
-      shiftSlotLabel: `${shiftLabelForKey(config.site, date, shiftId)}, Slot ${Number(slot) + 1}`,
+      shiftSlotLabel: t("dutyRoster.common.shiftSlotLabel", { shiftLabel: shiftLabelForKey(config.site, date, shiftId), slot: Number(slot) + 1 }),
       name: sg[supportId].name,
       fromSite: sg[supportId].homeSiteName,
     });
@@ -68,7 +69,8 @@ export function applyAssignSupportGuard(
   originSiteName: string,
   originGuardId: string,
   originGuardName: string,
-  originGuardEmployeeId: string | null | undefined
+  originGuardEmployeeId: string | null | undefined,
+  t: TFunction
 ): AssignSupportGuardOutcome {
   const supportId = newId("sup");
   const record: SupportGuardRecord = {
@@ -81,6 +83,7 @@ export function applyAssignSupportGuard(
   };
   const [date, shiftId, slot] = slotKey.split("|");
   const label = shiftLabelForKey(config.site, date, shiftId);
+  // Log text (appendLog) stays in English forever, per the confirmed scope decision.
   const nextMs = appendLog(
     {
       ...ms,
@@ -91,7 +94,7 @@ export function applyAssignSupportGuard(
   );
   return {
     ms: nextMs,
-    toast: `Assigned ${originGuardName} to cover ${date}. His home site (${originSiteName}) was marked automatically.`,
+    toast: t("dutyRoster.supportGuardPanel.toastAssigned", { name: originGuardName, date, site: originSiteName }),
     supportId,
     record,
   };
@@ -107,7 +110,7 @@ export interface RemoveSupportGuardOutcome {
   leaveDateStr: string;
 }
 
-export function applyRemoveSupportGuard(ms: MonthState, supportId: string): RemoveSupportGuardOutcome | null {
+export function applyRemoveSupportGuard(ms: MonthState, supportId: string, t: TFunction): RemoveSupportGuardOutcome | null {
   const sg = monthSupportGuards(ms);
   const record = sg[supportId];
   if (!record) return null;
@@ -119,7 +122,7 @@ export function applyRemoveSupportGuard(ms: MonthState, supportId: string): Remo
   const nextMs = appendLog({ ...ms, overrides: nextOverrides, supportGuards: nextSg }, `Removed support guard ${record.name}.`);
   return {
     ms: nextMs,
-    toast: `Removed ${record.name}.`,
+    toast: t("dutyRoster.common.toastRemovedName", { name: record.name }),
     homeSiteId: record.homeSiteId,
     homeGuardId: record.homeGuardId,
     leaveDateStr: key ? key.split("|")[0] : "",

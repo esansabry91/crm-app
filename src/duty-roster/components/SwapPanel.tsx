@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import type { SiteConfig, MonthState, GenerateMonthResult } from "../types";
 import { shiftOptionsForDate, swapSlotCount, applySwap, type SwapSlotRef } from "../swapData";
 
@@ -22,6 +24,7 @@ function SideFields({
   onDate,
   onShift,
   onSlot,
+  t,
 }: {
   label: string;
   site: SiteConfig["site"];
@@ -31,6 +34,7 @@ function SideFields({
   onDate: (v: string) => void;
   onShift: (v: string) => void;
   onSlot: (v: number) => void;
+  t: TFunction;
 }) {
   const shiftOptions = shiftOptionsForDate(site, date || null);
   const effectiveShiftId = shiftId || shiftOptions[0]?.id || "";
@@ -49,13 +53,13 @@ function SideFields({
       </select>
       {slotCount === 0 ? (
         <select className="input" disabled value="">
-          <option value="">No slots that day</option>
+          <option value="">{t('dutyRoster.swapPanel.noSlotsThatDay')}</option>
         </select>
       ) : (
         <select className="input" value={slot} onChange={(e) => onSlot(Number(e.target.value))}>
           {Array.from({ length: slotCount }, (_, i) => (
             <option key={i} value={i}>
-              Slot {i + 1}
+              {t('dutyRoster.swapPanel.slotOption', { n: i + 1 })}
             </option>
           ))}
         </select>
@@ -65,6 +69,7 @@ function SideFields({
 }
 
 export default function SwapPanel({ config, ms, result, currentMonthKey, onSave }: SwapPanelProps) {
+  const { t } = useTranslation();
   const [dateA, setDateA] = useState("");
   const [shiftA, setShiftA] = useState("");
   const [slotA, setSlotA] = useState(0);
@@ -75,31 +80,31 @@ export default function SwapPanel({ config, ms, result, currentMonthKey, onSave 
 
   function handleSwap() {
     if (!dateA || !dateB) {
-      setError("Pick both dates.");
+      setError(t("dutyRoster.swapPanel.errorPickBothDates"));
       return;
     }
     if (dateA.slice(0, 7) !== currentMonthKey || dateB.slice(0, 7) !== currentMonthKey) {
-      setError("Swap only within the month currently shown. Navigate to that month first.");
+      setError(t("dutyRoster.swapPanel.errorSwapWithinMonth"));
       return;
     }
     setError(null);
     const a: SwapSlotRef = { date: dateA, shiftId: shiftA || shiftOptionsForDate(config.site, dateA)[0]?.id || "", slot: slotA };
     const b: SwapSlotRef = { date: dateB, shiftId: shiftB || shiftOptionsForDate(config.site, dateB)[0]?.id || "", slot: slotB };
-    const outcome = applySwap(config, ms, result, a, b);
+    const outcome = applySwap(config, ms, result, a, b, t);
     onSave(outcome.ms, outcome.toast);
   }
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-slate-900">Swap two shifts</h3>
+      <h3 className="text-sm font-semibold text-slate-900">{t('dutyRoster.swapPanel.title')}</h3>
       <div className="grid grid-cols-2 gap-4 mt-3">
-        <SideFields label="Shift A" site={config.site} date={dateA} shiftId={shiftA} slot={slotA} onDate={setDateA} onShift={setShiftA} onSlot={setSlotA} />
-        <SideFields label="Shift B" site={config.site} date={dateB} shiftId={shiftB} slot={slotB} onDate={setDateB} onShift={setShiftB} onSlot={setSlotB} />
+        <SideFields label={t('dutyRoster.swapPanel.shiftALabel')} site={config.site} date={dateA} shiftId={shiftA} slot={slotA} onDate={setDateA} onShift={setShiftA} onSlot={setSlotA} t={t} />
+        <SideFields label={t('dutyRoster.swapPanel.shiftBLabel')} site={config.site} date={dateB} shiftId={shiftB} slot={slotB} onDate={setDateB} onShift={setShiftB} onSlot={setSlotB} t={t} />
       </div>
       {error && <p className="text-sm text-rose-600 mt-2">{error}</p>}
       <div className="flex justify-end mt-3">
         <button type="button" onClick={handleSwap} className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
-          Swap
+          {t('dutyRoster.swapPanel.swap')}
         </button>
       </div>
     </div>

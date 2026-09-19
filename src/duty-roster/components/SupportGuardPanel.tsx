@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Guard, SiteConfig, MonthState, GenerateMonthResult } from "../types";
 import type { GenerateMonthConfig } from "../schedulingEngine";
 import { buildSupportSlotOptions, buildSupportGuardRows, applyAssignSupportGuard, applyRemoveSupportGuard } from "../supportGuardPanelData";
@@ -28,6 +29,7 @@ export interface SupportGuardPanelProps {
 }
 
 export default function SupportGuardPanel({ config, ms, result, allSites, siteConfigsCache, onSave }: SupportGuardPanelProps) {
+  const { t } = useTranslation();
   const [slotKey, setSlotKey] = useState("");
   const [originSiteId, setOriginSiteId] = useState("");
   const [originGuardId, setOriginGuardId] = useState("");
@@ -36,9 +38,9 @@ export default function SupportGuardPanel({ config, ms, result, allSites, siteCo
   const [error, setError] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<{ supportId: string; name: string } | null>(null);
 
-  const slotOptions = buildSupportSlotOptions(result.conflicts);
+  const slotOptions = buildSupportSlotOptions(result.conflicts, t);
   const sites: SitePickerOption[] = otherBranchSites(allSites, config.id, config.branch);
-  const rows = buildSupportGuardRows(config, ms);
+  const rows = buildSupportGuardRows(config, ms, t);
 
   useEffect(() => {
     setOriginGuardId("");
@@ -69,15 +71,15 @@ export default function SupportGuardPanel({ config, ms, result, allSites, siteCo
   }, [slotKey, originSiteId, siteConfigsCache, config.site]);
 
   function handleAssign() {
-    if (!slotKey) return setError("Pick an unfilled slot first.");
-    if (!originSiteId) return setError("Pick which site he's coming from.");
-    if (!originGuardId) return setError("Pick which guard is covering this shift.");
+    if (!slotKey) return setError(t("dutyRoster.common.errorPickUnfilledSlot"));
+    if (!originSiteId) return setError(t("dutyRoster.supportGuardPanel.errorPickOriginSiteComingFrom"));
+    if (!originGuardId) return setError(t("dutyRoster.common.errorPickCoveringGuard"));
     const originSite = sites.find((s) => s.id === originSiteId);
     const originGuard = (freeGuards || []).find((g) => g.id === originGuardId);
-    if (!originSite || !originGuard) return setError("Couldn't find that guard — try again.");
+    if (!originSite || !originGuard) return setError(t("dutyRoster.common.errorCouldntFindGuard"));
     setError(null);
 
-    const outcome = applyAssignSupportGuard(config, ms, slotKey, originSiteId, originSite.name, originGuardId, originGuard.name, originGuard.employeeId);
+    const outcome = applyAssignSupportGuard(config, ms, slotKey, originSiteId, originSite.name, originGuardId, originGuard.name, originGuard.employeeId, t);
     setSlotKey("");
     setOriginSiteId("");
     setOriginGuardId("");
@@ -95,7 +97,7 @@ export default function SupportGuardPanel({ config, ms, result, allSites, siteCo
 
   function handleConfirmRemove() {
     if (!removeTarget) return;
-    const outcome = applyRemoveSupportGuard(ms, removeTarget.supportId);
+    const outcome = applyRemoveSupportGuard(ms, removeTarget.supportId, t);
     setRemoveTarget(null);
     if (!outcome) return;
     onSave(outcome.ms, outcome.toast);
@@ -104,16 +106,16 @@ export default function SupportGuardPanel({ config, ms, result, allSites, siteCo
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-slate-900">Assign a support guard</h3>
+      <h3 className="text-sm font-semibold text-slate-900">{t('dutyRoster.supportGuardPanel.title')}</h3>
 
       {slotOptions.length === 0 || sites.length === 0 ? (
         <p className="text-xs text-slate-400 mt-2">
-          {sites.length === 0 ? "No other sites in this branch to borrow a guard from." : "No unfilled slots this month."}
+          {sites.length === 0 ? t('dutyRoster.supportGuardPanel.noOtherSites') : t('dutyRoster.common.noUnfilledSlotsThisMonth')}
         </p>
       ) : (
         <div className="flex flex-col gap-2 mt-3">
           <select className="input" value={slotKey} onChange={(e) => setSlotKey(e.target.value)}>
-            <option value="">Select an unfilled slot…</option>
+            <option value="">{t('dutyRoster.common.selectUnfilledSlotEllipsis')}</option>
             {slotOptions.map((o) => (
               <option key={o.key} value={o.key}>
                 {o.label}
@@ -121,7 +123,7 @@ export default function SupportGuardPanel({ config, ms, result, allSites, siteCo
             ))}
           </select>
           <select className="input" value={originSiteId} onChange={(e) => setOriginSiteId(e.target.value)}>
-            <option value="">Coming from…</option>
+            <option value="">{t('dutyRoster.common.comingFromEllipsis')}</option>
             {sites.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
@@ -129,7 +131,7 @@ export default function SupportGuardPanel({ config, ms, result, allSites, siteCo
             ))}
           </select>
           <select className="input" value={originGuardId} onChange={(e) => setOriginGuardId(e.target.value)} disabled={loading || !freeGuards}>
-            <option value="">{loading ? "Checking availability…" : (freeGuards?.length ?? 0) === 0 && freeGuards ? "No guards free that day (or would end up under-rested)" : "Select a guard…"}</option>
+            <option value="">{loading ? t('dutyRoster.common.checkingAvailability') : (freeGuards?.length ?? 0) === 0 && freeGuards ? t('dutyRoster.common.noGuardsFreeThatDay') : t('dutyRoster.common.selectGuardEllipsis')}</option>
             {(freeGuards || []).map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name} {g.employeeId ? `(${g.employeeId})` : ""}
@@ -142,7 +144,7 @@ export default function SupportGuardPanel({ config, ms, result, allSites, siteCo
             onClick={handleAssign}
             className="self-end px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
           >
-            Assign
+            {t('dutyRoster.common.assign')}
           </button>
         </div>
       )}
@@ -162,7 +164,7 @@ export default function SupportGuardPanel({ config, ms, result, allSites, siteCo
                     onClick={() => setRemoveTarget({ supportId: r.supportId, name: r.name })}
                     className="text-xs font-medium text-rose-600 hover:text-rose-700"
                   >
-                    Remove
+                    {t('dutyRoster.common.remove')}
                   </button>
                 </td>
               </tr>
@@ -173,9 +175,9 @@ export default function SupportGuardPanel({ config, ms, result, allSites, siteCo
 
       <ConfirmModal
         open={!!removeTarget}
-        title="Remove support guard"
-        message={removeTarget ? removeTempOrSupportGuardConfirmMessage(removeTarget.name) : ""}
-        okLabel="Remove"
+        title={t('dutyRoster.supportGuardPanel.removeTitle')}
+        message={removeTarget ? removeTempOrSupportGuardConfirmMessage(removeTarget.name, t) : ""}
+        okLabel={t('dutyRoster.common.remove')}
         danger
         onConfirm={handleConfirmRemove}
         onCancel={() => setRemoveTarget(null)}

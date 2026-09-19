@@ -5,6 +5,7 @@
  * against the live source at commit time). This is the most field-heavy panel — a date-RANGE
  * assignment (not a single slot), billed separately as "Additional Guard (Temporary)".
  */
+import type { TFunction } from "i18next";
 import type { SiteConfig, MonthState, TempGuardRecord, ExtraGuardRecord } from "./types";
 import { newId, nowIso, monthExtraGuards, guardName, revokeConfirmationIfPresent } from "./rosterModel";
 import { appendLog } from "./lockMachine";
@@ -26,7 +27,7 @@ export interface AdditionalGuardRow {
   id: string;
   dateLabel: string; // single date, or "start to end" if they differ
   shiftLabel: string;
-  sourceLabel: "Temporary" | "Support" | "Rest day";
+  sourceLabel: string; // translated display text — see dutyRoster.additionalGuardPanel.source*
   name: string;
 }
 
@@ -35,13 +36,14 @@ export interface AdditionalGuardRow {
 export function buildAdditionalGuardRows(
   config: Pick<SiteConfig, "guards">,
   ms: MonthState,
-  shiftOptions: { id: string; label: string }[]
+  shiftOptions: { id: string; label: string }[],
+  t: TFunction
 ): AdditionalGuardRow[] {
   const eg = monthExtraGuards(ms);
   const sourceLabels: Record<AdditionalGuardSourceMode, AdditionalGuardRow["sourceLabel"]> = {
-    temp: "Temporary",
-    support: "Support",
-    restday: "Rest day",
+    temp: t("dutyRoster.additionalGuardPanel.sourceTemporary"),
+    support: t("dutyRoster.additionalGuardPanel.sourceSupport"),
+    restday: t("dutyRoster.additionalGuardPanel.sourceRestDay"),
   };
   return Object.keys(eg).map((id) => {
     const entry = eg[id];
@@ -57,8 +59,8 @@ export function buildAdditionalGuardRows(
   });
 }
 
-export function removeAdditionalGuardConfirmMessage(name: string): string {
-  return `Remove this additional guard assignment (${name})? Its dates go back to this site's normal post count.`;
+export function removeAdditionalGuardConfirmMessage(name: string, t: TFunction): string {
+  return t("dutyRoster.additionalGuardPanel.confirmRemoveMessage", { name });
 }
 
 export interface RemoveAdditionalGuardOutcome {
@@ -71,7 +73,7 @@ export interface RemoveAdditionalGuardOutcome {
 }
 
 /** removeAdditionalGuardEntry() (lines 4508-4527). */
-export function applyRemoveAdditionalGuard(config: Pick<SiteConfig, "guards">, ms: MonthState, id: string): RemoveAdditionalGuardOutcome | null {
+export function applyRemoveAdditionalGuard(config: Pick<SiteConfig, "guards">, ms: MonthState, id: string, t: TFunction): RemoveAdditionalGuardOutcome | null {
   const eg = monthExtraGuards(ms);
   const entry = eg[id];
   if (!entry) return null;
@@ -93,8 +95,9 @@ export function applyRemoveAdditionalGuard(config: Pick<SiteConfig, "guards">, m
 
   const nextMs: MonthState = { ...ms, extraGuards: nextEg, tempGuards: nextTg, supportGuards: nextSg };
   revokeConfirmationIfPresent(nextMs);
+  // Log text (appendLog) stays in English forever, per the confirmed scope decision.
   const logged = appendLog(nextMs, `Removed additional guard ${name} (${entry.startDate} to ${entry.endDate}).`);
-  return { ms: logged, toast: `Removed ${name}.`, supportCleanup };
+  return { ms: logged, toast: t("dutyRoster.common.toastRemovedName", { name }), supportCleanup };
 }
 
 /** Enumerates every date string in [homeSiteId's cleanup range] — shared helper for both the
@@ -122,15 +125,15 @@ export interface AdditionalGuardCommonFields {
 /** Validation steps 1-4 (shift/dates), shared by every source mode. `monthKey` is the
  * currently-open month ("YYYY-MM") both dates must fall within — the original clamps the
  * date inputs' min/max to it AND re-validates at submit. */
-export function validateAdditionalGuardDates(fields: AdditionalGuardCommonFields, monthKey: string): { error: string } | null {
-  if (!fields.shiftId) return { error: "Pick a shift first." };
-  if (!fields.startDate || !fields.endDate) return { error: "Pick a start and end date." };
-  if (fields.endDate < fields.startDate) return { error: "End date can't be before the start date." };
+export function validateAdditionalGuardDates(fields: AdditionalGuardCommonFields, monthKey: string, t: TFunction): { error: string } | null {
+  if (!fields.shiftId) return { error: t("dutyRoster.additionalGuardPanel.errorPickShift") };
+  if (!fields.startDate || !fields.endDate) return { error: t("dutyRoster.additionalGuardPanel.errorPickDates") };
+  if (fields.endDate < fields.startDate) return { error: t("dutyRoster.additionalGuardPanel.errorEndBeforeStart") };
   const [y, m] = monthKey.split("-").map(Number);
   const minDate = `${monthKey}-01`;
   const maxDate = `${monthKey}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")}`;
   if (fields.startDate < minDate || fields.startDate > maxDate || fields.endDate < minDate || fields.endDate > maxDate) {
-    return { error: "Dates must fall within the month currently open." };
+    return { error: t("dutyRoster.additionalGuardPanel.errorDatesOutOfMonth") };
   }
   return null;
 }
@@ -176,7 +179,8 @@ export function applyAssignAdditionalGuard(
   config: Pick<SiteConfig, "guards" | "site">,
   ms: MonthState,
   fields: AdditionalGuardCommonFields,
-  choice: AdditionalGuardSourceChoice
+  choice: AdditionalGuardSourceChoice,
+  t: TFunction
 ): { error: string } | AssignAdditionalGuardOutcome {
   let guardId: string;
   let name: string;
@@ -184,11 +188,11 @@ export function applyAssignAdditionalGuard(
   let nextMs: MonthState = ms;
 
   if (choice.mode === "restday") {
-    if (!choice.guardId) return { error: "Pick a guard." };
+    if (!choice.guardId) return { error: t("dutyRoster.additionalGuardPanel.errorPickGuard") };
     guardId = choice.guardId;
     name = guardName(config, ms, choice.guardId);
   } else if (choice.mode === "temp") {
-    const validated = validateTempGuardIdentityFields(choice.form);
+    const validated = validateTempGuardIdentityFields(choice.form, t);
     if ("error" in validated) return validated;
     const tempId = newId("temp");
     tempRecord = validated.record;
@@ -227,6 +231,7 @@ export function applyAssignAdditionalGuard(
   revokeConfirmationIfPresent(nextMs);
 
   const label = shiftLabelForKey(config.site, fields.startDate, fields.shiftId);
+  // Log text (appendLog) stays in English forever, per the confirmed scope decision.
   nextMs = appendLog(nextMs, `Assigned additional guard ${name} to ${label} from ${fields.startDate} to ${fields.endDate}.`);
 
   let supportSync: AssignAdditionalGuardOutcome["supportSync"];
@@ -243,7 +248,7 @@ export function applyAssignAdditionalGuard(
 
   return {
     ms: nextMs,
-    toast: `Assigned ${name} as an additional guard from ${fields.startDate} to ${fields.endDate}.`,
+    toast: t("dutyRoster.additionalGuardPanel.toastAssigned", { name, start: fields.startDate, end: fields.endDate }),
     entryId,
     entry,
     tempRecord,

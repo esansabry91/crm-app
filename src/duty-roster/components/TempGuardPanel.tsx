@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { SiteConfig, MonthState, GenerateMonthResult, TempGuardRecord } from "../types";
 import {
   buildTempSlotOptions,
@@ -42,6 +43,7 @@ export interface TempGuardPanelProps {
 }
 
 export default function TempGuardPanel({ config, ms, result, siteMeta, isTestData, onSave }: TempGuardPanelProps) {
+  const { t } = useTranslation();
   const [form, setForm] = useState<TempGuardFormValues>(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
   const [matchHint, setMatchHint] = useState<string | null>(null);
@@ -49,8 +51,8 @@ export default function TempGuardPanel({ config, ms, result, siteMeta, isTestDat
   const [viewRecord, setViewRecord] = useState<TempGuardRecord | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const slotOptions = buildTempSlotOptions(result.conflicts);
-  const { rows, total } = buildTempGuardRows(config, ms);
+  const slotOptions = buildTempSlotOptions(result.conflicts, t);
+  const { rows, total } = buildTempGuardRows(config, ms, t);
 
   function set<K extends keyof TempGuardFormValues>(key: K, value: TempGuardFormValues[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -82,10 +84,8 @@ export default function TempGuardPanel({ config, ms, result, siteMeta, isTestDat
         state: match.state || f.state,
         city: match.city || f.city,
       }));
-      const lastRate = match.rate != null ? `RM ${Number(match.rate).toFixed(2)}` : "unknown";
-      setMatchHint(
-        `Matched a buffer guard used ${match.timesUsed} time${match.timesUsed === 1 ? "" : "s"} before — last rate ${lastRate}. Age/Phone/State/City filled in from their last record; enter today's rate above.`
-      );
+      const lastRate = match.rate != null ? `RM ${Number(match.rate).toFixed(2)}` : t("dutyRoster.tempGuardPanel.rateUnknown");
+      setMatchHint(t("dutyRoster.tempGuardPanel.matchHint", { count: match.timesUsed, rate: lastRate }));
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, 400);
     return () => {
@@ -95,13 +95,13 @@ export default function TempGuardPanel({ config, ms, result, siteMeta, isTestDat
   }, [form.name, form.mykadNumber]);
 
   function handleAssign() {
-    const result2 = validateTempGuardForm(form);
+    const result2 = validateTempGuardForm(form, t);
     if ("error" in result2) {
       setError(result2.error);
       return;
     }
     setError(null);
-    const outcome = applyAssignTempGuard(config, ms, form.slotKey, result2.record);
+    const outcome = applyAssignTempGuard(config, ms, form.slotKey, result2.record, t);
     setForm(EMPTY_FORM);
     setMatchHint(null);
     onSave(outcome.ms, outcome.toast);
@@ -110,7 +110,7 @@ export default function TempGuardPanel({ config, ms, result, siteMeta, isTestDat
 
   function handleConfirmRemove() {
     if (!removeTarget) return;
-    const outcome = applyRemoveTempGuard(ms, removeTarget.tempId);
+    const outcome = applyRemoveTempGuard(ms, removeTarget.tempId, t);
     setRemoveTarget(null);
     if (!outcome) return;
     onSave(outcome.ms, outcome.toast);
@@ -120,56 +120,56 @@ export default function TempGuardPanel({ config, ms, result, siteMeta, isTestDat
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-slate-900">Assign a temporary guard</h3>
+      <h3 className="text-sm font-semibold text-slate-900">{t('dutyRoster.tempGuardPanel.title')}</h3>
 
       {slotOptions.length === 0 ? (
-        <p className="text-xs text-slate-400 mt-2">No unfilled slots this month.</p>
+        <p className="text-xs text-slate-400 mt-2">{t('dutyRoster.common.noUnfilledSlotsThisMonth')}</p>
       ) : (
         <div className="flex flex-col gap-2 mt-3">
           <select className="input" value={form.slotKey} onChange={(e) => set("slotKey", e.target.value)}>
-            <option value="">Select an unfilled slot…</option>
+            <option value="">{t('dutyRoster.common.selectUnfilledSlotEllipsis')}</option>
             {slotOptions.map((o) => (
               <option key={o.key} value={o.key}>
                 {o.label}
               </option>
             ))}
           </select>
-          <input type="text" className="input" placeholder="Name" value={form.name} onChange={(e) => set("name", e.target.value)} />
+          <input type="text" className="input" placeholder={t('dutyRoster.common.namePlaceholder')} value={form.name} onChange={(e) => set("name", e.target.value)} />
           <input
             type="number"
             min={0}
             step="0.01"
             className="input"
-            placeholder="Rate (RM/manhour)"
+            placeholder={t('dutyRoster.common.ratePlaceholder')}
             value={form.rateRaw}
             onChange={(e) => set("rateRaw", e.target.value)}
           />
           <input
             type="text"
             className="input"
-            placeholder="MyKad number"
+            placeholder={t('dutyRoster.guardDetails.mykadNumber')}
             maxLength={14}
             value={form.mykadNumber}
             onChange={(e) => set("mykadNumber", formatMykadInput(e.target.value))}
           />
           {matchHint && <p className="text-xs" style={{ color: "#2F6F5E" }}>{matchHint}</p>}
-          <input type="number" min={16} className="input" placeholder="Age" value={form.ageRaw} onChange={(e) => set("ageRaw", e.target.value)} />
+          <input type="number" min={16} className="input" placeholder={t('dutyRoster.guardDetails.age')} value={form.ageRaw} onChange={(e) => set("ageRaw", e.target.value)} />
           <input
             type="text"
             className="input"
-            placeholder="Phone number"
+            placeholder={t('dutyRoster.guardDetails.phoneNumber')}
             value={form.phoneNumber}
             onChange={(e) => set("phoneNumber", formatPhoneInput(e.target.value))}
           />
-          <input type="text" className="input" placeholder="State" value={form.state} onChange={(e) => set("state", e.target.value)} />
-          <input type="text" className="input" placeholder="City" value={form.city} onChange={(e) => set("city", e.target.value)} />
+          <input type="text" className="input" placeholder={t('projectDetails.state')} value={form.state} onChange={(e) => set("state", e.target.value)} />
+          <input type="text" className="input" placeholder={t('projectDetails.city')} value={form.city} onChange={(e) => set("city", e.target.value)} />
           {error && <p className="text-sm text-rose-600">{error}</p>}
           <button
             type="button"
             onClick={handleAssign}
             className="self-end px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
           >
-            Assign
+            {t('dutyRoster.common.assign')}
           </button>
         </div>
       )}
@@ -190,30 +190,30 @@ export default function TempGuardPanel({ config, ms, result, siteMeta, isTestDat
                       onClick={() => setViewRecord(tg[r.tempId])}
                       className="text-xs font-medium text-blue-600 hover:text-blue-700 mr-3"
                     >
-                      View
+                      {t('dutyRoster.common.view')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setRemoveTarget({ tempId: r.tempId, name: r.name })}
                       className="text-xs font-medium text-rose-600 hover:text-rose-700"
                     >
-                      Remove
+                      {t('dutyRoster.common.remove')}
                     </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="text-xs text-slate-500 mt-2">Total to pay this month: RM {total.toFixed(2)}</p>
+          <p className="text-xs text-slate-500 mt-2">{t('dutyRoster.tempGuardPanel.totalToPay', { total: total.toFixed(2) })}</p>
         </>
       )}
 
       <TempGuardDetailsModal record={viewRecord} onClose={() => setViewRecord(null)} />
       <ConfirmModal
         open={!!removeTarget}
-        title="Remove temporary guard"
-        message={removeTarget ? removeTempOrSupportGuardConfirmMessage(removeTarget.name) : ""}
-        okLabel="Remove"
+        title={t('dutyRoster.tempGuardPanel.removeTitle')}
+        message={removeTarget ? removeTempOrSupportGuardConfirmMessage(removeTarget.name, t) : ""}
+        okLabel={t('dutyRoster.common.remove')}
         danger
         onConfirm={handleConfirmRemove}
         onCancel={() => setRemoveTarget(null)}

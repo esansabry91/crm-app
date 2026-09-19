@@ -6,6 +6,7 @@
  * form-based manual swap by date+shift+slot picker, always within the currently-displayed month,
  * and writes `ms.overrides` directly (no lock/draft involved).
  */
+import type { TFunction } from "i18next";
 import type { SiteConfig, MonthState, GenerateMonthResult } from "./types";
 import { computeShiftDefsForDay, postsAt, coverageDaysPerWeek } from "./shiftStructure";
 import { dowMon } from "./dateUtils";
@@ -57,7 +58,8 @@ export function applySwap(
   ms: MonthState,
   result: GenerateMonthResult,
   a: SwapSlotRef,
-  b: SwapSlotRef
+  b: SwapSlotRef,
+  t: TFunction
 ): SwapOutcome {
   const site = config.site;
   const defsA = computeShiftDefsForDay(site, dowMon(a.date));
@@ -79,5 +81,5 @@ export function applySwap(
     { ...ms, overrides: nextOverrides },
     `Swapped ${nameA} (${a.date}, ${a.shiftId} Slot ${a.slot + 1}) with ${nameB} (${b.date}, ${b.shiftId} Slot ${b.slot + 1}).`
   );
-  return { ms: nextMs, toast: "Swapped shifts." };
+  return { ms: nextMs, toast: t("dutyRoster.swapPanel.toastSwapped") };
 }

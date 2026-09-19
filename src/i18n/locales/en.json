@@ -489,7 +489,27 @@
       "cancel": "Cancel",
       "close": "Close",
       "add": "Add",
-      "remove": "Remove"
+      "remove": "Remove",
+      "selectGuardEllipsis": "Select a guard…",
+      "comingFromEllipsis": "Coming from…",
+      "checkingAvailability": "Checking availability…",
+      "noGuardsFreeThatDay": "No guards free that day (or would end up under-rested)",
+      "noUnfilledSlotsThisMonth": "No unfilled slots this month.",
+      "selectUnfilledSlotEllipsis": "Select an unfilled slot…",
+      "namePlaceholder": "Name",
+      "ratePlaceholder": "Rate (RM/manhour)",
+      "assign": "Assign",
+      "view": "View",
+      "errorPickOriginSiteBorrow": "Pick which site to borrow a guard from.",
+      "errorPickCoveringGuard": "Pick which guard is covering this shift.",
+      "errorCouldntFindGuard": "Couldn't find that guard — try again.",
+      "errorPickUnfilledSlot": "Pick an unfilled slot first.",
+      "toastRemovedName": "Removed {{name}}.",
+      "optionTemporaryGuard": "Temporary guard",
+      "optionCurrentGuardRestDay": "Current guard on rest day",
+      "optionSupportBorrow": "Support (borrow from another site)",
+      "dateShiftSlotOption": "{{date}} — {{shiftLabel}}, Slot {{slot}}",
+      "shiftSlotLabel": "{{shiftLabel}}, Slot {{slot}}"
     },
     "guardDetails": {
       "employeeId": "Employee ID",
@@ -677,6 +697,98 @@
     "logPanel": {
       "title": "Change log",
       "noChangesYet": "No changes logged yet."
+    },
+    "leaveReasons": {
+      "leave": "Leave",
+      "absent": "Absent",
+      "medicalLeave": "Medical leave (MC)",
+      "unpaidLeave": "Unpaid Leave",
+      "supportOtherSite": "Support (Other Site)"
+    },
+    "leavePhrase": {
+      "leave": "on leave",
+      "absent": "absent",
+      "medicalLeave": "on medical leave",
+      "unpaidLeave": "on unpaid leave",
+      "supportOtherSite": "supporting another site"
+    },
+    "leavePanel": {
+      "title": "Mark a guard on leave",
+      "chooseHowCoveredEllipsis": "Choose how it's covered…",
+      "selectRestingGuardEllipsis": "Select a resting guard…",
+      "markOnLeave": "Mark on leave",
+      "clear": "Clear",
+      "notScheduled": "{{name}} isn't scheduled to work on {{date}} — no replacement needed.",
+      "coveringShiftSlot": "Covering {{shiftLabel}}, Slot {{slot}} on {{date}}.",
+      "noGuardsResting": "No guards are currently resting on {{date}} — choose Temporary guard instead.",
+      "slotWillStayOpen": "{{shiftLabel}}, Slot {{slot}} on {{date}} will stay open — assign a temporary guard for it below.",
+      "coveringWithSupportGuard": "Covering {{shiftLabel}}, Slot {{slot}} on {{date}} with a guard borrowed from another site — his own home site is marked automatically.",
+      "scheduledChooseCoverage": "{{name}} is scheduled for {{shiftLabel}}, Slot {{slot}} on {{date}} — choose how it's covered.",
+      "errorChooseReplacement": "Choose a replacement — temporary guard, current guard on rest day, or support guard.",
+      "errorNoRestDayGuard": "No guard on rest day is available to cover this shift — choose Temporary guard instead.",
+      "toastMarked": "Marked {{name}} {{phrase}} for {{date}}.",
+      "toastMarkedSupport": "Marked {{name}} {{phrase}} for {{date}}. His home site was marked automatically too.",
+      "pillTempGuard": "temp guard",
+      "pillCoveredBy": "covered by {{name}}",
+      "pillSupportGuard": "support guard: {{name}}",
+      "pillSupportGuardFrom": "support guard: {{name}} from {{site}}",
+      "destinationPill": "→ {{site}}"
+    },
+    "additionalGuardPanel": {
+      "title": "Assign an additional guard",
+      "selectShiftEllipsis": "Select a shift…",
+      "howSourcedEllipsis": "How is this post sourced?",
+      "removeAdditionalGuardTitle": "Remove additional guard",
+      "errorPickShift": "Pick a shift first.",
+      "errorPickDates": "Pick a start and end date.",
+      "errorEndBeforeStart": "End date can't be before the start date.",
+      "errorDatesOutOfMonth": "Dates must fall within the month currently open.",
+      "errorChooseSource": "Choose how this post is sourced.",
+      "errorPickGuard": "Pick a guard.",
+      "confirmRemoveMessage": "Remove this additional guard assignment ({{name}})? Its dates go back to this site's normal post count.",
+      "toastAssigned": "Assigned {{name}} as an additional guard from {{start}} to {{end}}.",
+      "sourceTemporary": "Temporary",
+      "sourceSupport": "Support",
+      "sourceRestDay": "Rest day"
+    },
+    "tempGuardPanel": {
+      "title": "Assign a temporary guard",
+      "removeTitle": "Remove temporary guard",
+      "totalToPay": "Total to pay this month: RM {{total}}",
+      "errorEnterName": "Enter the temporary guard's name.",
+      "errorEnterRate": "Enter a valid rate.",
+      "errorEnterMykad": "Enter a valid 12-digit MyKad number (e.g. 901231-14-5678).",
+      "errorEnterAge": "Enter a valid age.",
+      "errorEnterPhone": "Enter a valid phone number (e.g. 012-3456789).",
+      "errorEnterState": "Enter the temporary guard's state.",
+      "errorEnterCity": "Enter the temporary guard's city.",
+      "confirmRemoveMessage": "Remove {{name}} from this slot? It goes back to unfilled unless another guard covers it.",
+      "toastAssigned": "Assigned {{name}} to cover {{date}}.",
+      "matchHint_one": "Matched a buffer guard used {{count}} time before — last rate {{rate}}. Age/Phone/State/City filled in from their last record; enter today's rate above.",
+      "matchHint_other": "Matched a buffer guard used {{count}} times before — last rate {{rate}}. Age/Phone/State/City filled in from their last record; enter today's rate above.",
+      "rateUnknown": "unknown"
+    },
+    "supportGuardPanel": {
+      "title": "Assign a support guard",
+      "noOtherSites": "No other sites in this branch to borrow a guard from.",
+      "removeTitle": "Remove support guard",
+      "errorPickOriginSiteComingFrom": "Pick which site he's coming from.",
+      "toastAssigned": "Assigned {{name}} to cover {{date}}. His home site ({{site}}) was marked automatically."
+    },
+    "swapPanel": {
+      "title": "Swap two shifts",
+      "shiftALabel": "Shift A",
+      "shiftBLabel": "Shift B",
+      "noSlotsThatDay": "No slots that day",
+      "slotOption": "Slot {{n}}",
+      "swap": "Swap",
+      "errorPickBothDates": "Pick both dates.",
+      "errorSwapWithinMonth": "Swap only within the month currently shown. Navigate to that month first.",
+      "toastSwapped": "Swapped shifts."
+    },
+    "adjustmentsTab": {
+      "inRoster": "In-Roster",
+      "replacement": "Replacement"
     }
   },
   "linkedSiteCard": {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Guard, SiteConfig, MonthState } from "../types";
 import type { GenerateMonthConfig } from "../schedulingEngine";
 import {
@@ -59,6 +60,7 @@ export default function AdditionalGuardPanel({
   isTestData,
   onSave,
 }: AdditionalGuardPanelProps) {
+  const { t } = useTranslation();
   const [shiftId, setShiftId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -71,7 +73,7 @@ export default function AdditionalGuardPanel({
   const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null);
 
   const shiftOptions = additionalGuardShiftOptions(config.site);
-  const rows = buildAdditionalGuardRows(config, ms, shiftOptions);
+  const rows = buildAdditionalGuardRows(config, ms, shiftOptions, t);
   const restdayGuards = activeGuardOptions(config);
   const supportSites: SitePickerOption[] = canAssignSupport ? otherBranchSites(allSites, config.id, config.branch) : [];
   const originGuards: Guard[] = originSiteId ? additionalGuardSupportGuardOptions(siteConfigsCache[originSiteId] || { guards: [] }) : [];
@@ -107,9 +109,9 @@ export default function AdditionalGuardPanel({
   }
 
   function handleAssign() {
-    const dateError = validateAdditionalGuardDates({ shiftId, startDate, endDate }, currentMonthKey);
+    const dateError = validateAdditionalGuardDates({ shiftId, startDate, endDate }, currentMonthKey, t);
     if (dateError) return setError(dateError.error);
-    if (!mode) return setError("Choose how this post is sourced.");
+    if (!mode) return setError(t("dutyRoster.additionalGuardPanel.errorChooseSource"));
     if (mode === "support" && !canAssignSupport) return; // silent, matches the original
 
     let choice: AdditionalGuardSourceChoice;
@@ -120,9 +122,9 @@ export default function AdditionalGuardPanel({
     } else {
       const originSite = supportSites.find((s) => s.id === originSiteId);
       const originGuard = originGuards.find((g) => g.id === originGuardId);
-      if (!originSiteId) return setError("Pick which site to borrow a guard from.");
-      if (!originGuardId) return setError("Pick which guard is covering this shift.");
-      if (!originSite || !originGuard) return setError("Couldn't find that guard — try again.");
+      if (!originSiteId) return setError(t("dutyRoster.common.errorPickOriginSiteBorrow"));
+      if (!originGuardId) return setError(t("dutyRoster.common.errorPickCoveringGuard"));
+      if (!originSite || !originGuard) return setError(t("dutyRoster.common.errorCouldntFindGuard"));
       choice = {
         mode: "support",
         originSiteId,
@@ -133,7 +135,7 @@ export default function AdditionalGuardPanel({
       };
     }
 
-    const outcome = applyAssignAdditionalGuard(config, ms, { shiftId, startDate, endDate }, choice);
+    const outcome = applyAssignAdditionalGuard(config, ms, { shiftId, startDate, endDate }, choice, t);
     if ("error" in outcome) return setError(outcome.error);
     resetForm();
     onSave(outcome.ms, outcome.toast);
@@ -148,7 +150,7 @@ export default function AdditionalGuardPanel({
 
   function handleConfirmRemove() {
     if (!removeTarget) return;
-    const outcome = applyRemoveAdditionalGuard(config, ms, removeTarget.id);
+    const outcome = applyRemoveAdditionalGuard(config, ms, removeTarget.id, t);
     setRemoveTarget(null);
     if (!outcome) return;
     onSave(outcome.ms, outcome.toast);
@@ -160,11 +162,11 @@ export default function AdditionalGuardPanel({
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-slate-900">Assign an additional guard</h3>
+      <h3 className="text-sm font-semibold text-slate-900">{t('dutyRoster.additionalGuardPanel.title')}</h3>
 
       <div className="flex flex-col gap-2 mt-3">
         <select className="input" value={shiftId} onChange={(e) => setShiftId(e.target.value)}>
-          <option value="">Select a shift…</option>
+          <option value="">{t('dutyRoster.additionalGuardPanel.selectShiftEllipsis')}</option>
           {shiftOptions.map((s) => (
             <option key={s.id} value={s.id}>
               {s.label}
@@ -176,15 +178,15 @@ export default function AdditionalGuardPanel({
           <input type="date" className="input" min={minDate} max={maxDate} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
         </div>
         <select className="input" value={mode} onChange={(e) => setMode(e.target.value as AdditionalGuardSourceMode)}>
-          <option value="">How is this post sourced?</option>
-          <option value="restday">Current guard on rest day</option>
-          <option value="temp">Temporary guard</option>
-          {canAssignSupport && <option value="support">Support (borrow from another site)</option>}
+          <option value="">{t('dutyRoster.additionalGuardPanel.howSourcedEllipsis')}</option>
+          <option value="restday">{t('dutyRoster.common.optionCurrentGuardRestDay')}</option>
+          <option value="temp">{t('dutyRoster.common.optionTemporaryGuard')}</option>
+          {canAssignSupport && <option value="support">{t('dutyRoster.common.optionSupportBorrow')}</option>}
         </select>
 
         {mode === "restday" && (
           <select className="input" value={restdayGuardId} onChange={(e) => setRestdayGuardId(e.target.value)}>
-            <option value="">Select a guard…</option>
+            <option value="">{t('dutyRoster.common.selectGuardEllipsis')}</option>
             {restdayGuards.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name}
@@ -195,41 +197,41 @@ export default function AdditionalGuardPanel({
 
         {mode === "temp" && (
           <div className="flex flex-col gap-2 rounded-lg bg-slate-50 p-2">
-            <input type="text" className="input" placeholder="Name" value={tempForm.name} onChange={(e) => setTemp("name", e.target.value)} />
+            <input type="text" className="input" placeholder={t('dutyRoster.common.namePlaceholder')} value={tempForm.name} onChange={(e) => setTemp("name", e.target.value)} />
             <input
               type="number"
               min={0}
               step="0.01"
               className="input"
-              placeholder="Rate (RM/manhour)"
+              placeholder={t('dutyRoster.common.ratePlaceholder')}
               value={tempForm.rateRaw}
               onChange={(e) => setTemp("rateRaw", e.target.value)}
             />
             <input
               type="text"
               className="input"
-              placeholder="MyKad number"
+              placeholder={t('dutyRoster.guardDetails.mykadNumber')}
               maxLength={14}
               value={tempForm.mykadNumber}
               onChange={(e) => setTemp("mykadNumber", formatMykadInput(e.target.value))}
             />
-            <input type="number" min={16} className="input" placeholder="Age" value={tempForm.ageRaw} onChange={(e) => setTemp("ageRaw", e.target.value)} />
+            <input type="number" min={16} className="input" placeholder={t('dutyRoster.guardDetails.age')} value={tempForm.ageRaw} onChange={(e) => setTemp("ageRaw", e.target.value)} />
             <input
               type="text"
               className="input"
-              placeholder="Phone number"
+              placeholder={t('dutyRoster.guardDetails.phoneNumber')}
               value={tempForm.phoneNumber}
               onChange={(e) => setTemp("phoneNumber", formatPhoneInput(e.target.value))}
             />
-            <input type="text" className="input" placeholder="State" value={tempForm.state} onChange={(e) => setTemp("state", e.target.value)} />
-            <input type="text" className="input" placeholder="City" value={tempForm.city} onChange={(e) => setTemp("city", e.target.value)} />
+            <input type="text" className="input" placeholder={t('projectDetails.state')} value={tempForm.state} onChange={(e) => setTemp("state", e.target.value)} />
+            <input type="text" className="input" placeholder={t('projectDetails.city')} value={tempForm.city} onChange={(e) => setTemp("city", e.target.value)} />
           </div>
         )}
 
         {mode === "support" && (
           <div className="flex flex-col gap-2">
             <select className="input" value={originSiteId} onChange={(e) => setOriginSiteId(e.target.value)}>
-              <option value="">Coming from…</option>
+              <option value="">{t('dutyRoster.common.comingFromEllipsis')}</option>
               {supportSites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -237,7 +239,7 @@ export default function AdditionalGuardPanel({
               ))}
             </select>
             <select className="input" value={originGuardId} onChange={(e) => setOriginGuardId(e.target.value)}>
-              <option value="">Select a guard…</option>
+              <option value="">{t('dutyRoster.common.selectGuardEllipsis')}</option>
               {originGuards.map((g) => (
                 <option key={g.id} value={g.id}>
                   {g.name} {g.employeeId ? `(${g.employeeId})` : ""}
@@ -251,11 +253,11 @@ export default function AdditionalGuardPanel({
         <div className="self-end flex items-center gap-2">
           {hasInput && (
             <button type="button" onClick={handleCancel} className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800">
-              Cancel
+              {t('dutyRoster.common.cancel')}
             </button>
           )}
           <button type="button" onClick={handleAssign} className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
-            Assign
+            {t('dutyRoster.common.assign')}
           </button>
         </div>
       </div>
@@ -275,7 +277,7 @@ export default function AdditionalGuardPanel({
                     onClick={() => setRemoveTarget({ id: r.id, name: r.name })}
                     className="text-xs font-medium text-rose-600 hover:text-rose-700"
                   >
-                    Remove
+                    {t('dutyRoster.common.remove')}
                   </button>
                 </td>
               </tr>
@@ -286,9 +288,9 @@ export default function AdditionalGuardPanel({
 
       <ConfirmModal
         open={!!removeTarget}
-        title="Remove additional guard"
-        message={removeTarget ? removeAdditionalGuardConfirmMessage(removeTarget.name) : ""}
-        okLabel="Remove"
+        title={t('dutyRoster.additionalGuardPanel.removeAdditionalGuardTitle')}
+        message={removeTarget ? removeAdditionalGuardConfirmMessage(removeTarget.name, t) : ""}
+        okLabel={t('dutyRoster.common.remove')}
         danger
         onConfirm={handleConfirmRemove}
         onCancel={() => setRemoveTarget(null)}

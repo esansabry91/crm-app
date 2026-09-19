@@ -12,11 +12,31 @@
  * write to the guard's home site — that part lives in supportGuardCrossSite.ts and is composed
  * in by the caller, not here.
  */
+import type { TFunction } from "i18next";
 import type { Guard, SiteConfig, MonthState, LeaveEntry, DayAssignments, GenerateMonthResult, ResolvedGuard } from "./types";
 import { RESERVED_FOR_TEMP } from "./types";
 import { activeGuardsOn, guardName, leaveEntriesFor, leaveGuardIdsFor, guardById } from "./rosterModel";
 import { appendLog } from "./lockMachine";
 import { computeShiftDefsForDay } from "./shiftStructure";
+
+/** Maps a raw LEAVE_REASONS value to its translation-key segment. Not run through the generic
+ * labelToKey() helper (used elsewhere for Pipeline stages / DISMISS_REASONS) because two of these
+ * reasons carry parenthesised text ("Medical leave (MC)", "Support (Other Site)") that would
+ * produce an ugly/inconsistent key under that transform — an explicit map is clearer here. */
+const LEAVE_REASON_KEYS: Record<string, string> = {
+  Leave: "leave",
+  Absent: "absent",
+  "Medical leave (MC)": "medicalLeave",
+  "Unpaid Leave": "unpaidLeave",
+  "Support (Other Site)": "supportOtherSite",
+};
+
+/** Display-translation key for a stored LEAVE_REASONS value — used for both the reason dropdown/
+ * table pill (dutyRoster.leaveReasons.*) and the log/toast verb-phrase (dutyRoster.leavePhrase.*).
+ * The stored data value itself stays in English, matching the DISMISS_REASONS pattern. */
+export function leaveReasonKey(reason: string): string {
+  return LEAVE_REASON_KEYS[reason] || reason;
+}
 
 export interface GuardSlotInfo {
   shiftId: string;
@@ -82,35 +102,46 @@ export function leaveReplacementNote(
   dateStr: string,
   slotInfo: GuardSlotInfo | null,
   mode: LeaveReplacementMode,
-  restingCount: number
+  restingCount: number,
+  t: TFunction
 ): string {
   const name = guardName(config, ms, guardId);
-  if (!slotInfo) return `${name} isn't scheduled to work on ${dateStr} — no replacement needed.`;
+  if (!slotInfo) return t("dutyRoster.leavePanel.notScheduled", { name, date: dateStr });
   const { shiftLabel, slot } = slotInfo;
   if (mode === "restday") {
     return restingCount > 0
-      ? `Covering ${shiftLabel}, Slot ${slot + 1} on ${dateStr}.`
-      : `No guards are currently resting on ${dateStr} — choose Temporary guard instead.`;
+      ? t("dutyRoster.leavePanel.coveringShiftSlot", { shiftLabel, slot: slot + 1, date: dateStr })
+      : t("dutyRoster.leavePanel.noGuardsResting", { date: dateStr });
   }
   if (mode === "temp") {
-    return `${shiftLabel}, Slot ${slot + 1} on ${dateStr} will stay open — assign a temporary guard for it below.`;
+    return t("dutyRoster.leavePanel.slotWillStayOpen", { shiftLabel, slot: slot + 1, date: dateStr });
   }
   if (mode === "support") {
-    return `Covering ${shiftLabel}, Slot ${slot + 1} on ${dateStr} with a guard borrowed from another site — his own home site is marked automatically.`;
+    return t("dutyRoster.leavePanel.coveringWithSupportGuard", { shiftLabel, slot: slot + 1, date: dateStr });
   }
-  return `${name} is scheduled for ${shiftLabel}, Slot ${slot + 1} on ${dateStr} — choose how it's covered.`;
+  return t("dutyRoster.leavePanel.scheduledChooseCoverage", { name, shiftLabel, slot: slot + 1, date: dateStr });
 }
 
-/** leavePhrase() (inlined in the #addLeaveBtn handler) — the verb-phrase form used in log/toast
- * text ("Marked X ${phrase} for ${date}"). Distinct wording from rosterModel.ts's leaveNoun()
- * (a noun form used in flag text elsewhere) — both are faithful ports of two different
- * original helpers that happen to cover the same reasons. */
+/** leavePhrase() (inlined in the #addLeaveBtn handler) — the verb-phrase form used in the
+ * permanent change-log text ("Marked X ${phrase} for ${date}"). Distinct wording from
+ * rosterModel.ts's leaveNoun() (a noun form used in flag text elsewhere) — both are faithful
+ * ports of two different original helpers that happen to cover the same reasons.
+ *
+ * Deliberately kept in English and NOT translated — this only ever feeds the permanent change
+ * log (appendLog), which stays in English forever per the confirmed scope decision (translating
+ * it would mean old and new entries show in whichever language was active when each was
+ * written). Use leavePhraseTranslated() below for any user-facing (toast) text. */
 export function leavePhrase(reason: string): string {
   if (reason === "Absent") return "absent";
   if (reason.toLowerCase().includes("medical")) return "on medical leave";
   if (reason === "Unpaid Leave") return "on unpaid leave";
   if (reason === "Support (Other Site)") return "supporting another site";
   return "on leave";
+}
+
+/** Translated equivalent of leavePhrase(), for user-facing toast text (never the log). */
+export function leavePhraseTranslated(reason: string, t: TFunction): string {
+  return t(`dutyRoster.leavePhrase.${leaveReasonKey(reason)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +185,8 @@ export function applyMarkLeave(
   dateStr: string,
   reason: string,
   slotInfo: GuardSlotInfo | null,
-  choice: MarkLeaveChoice | null
+  choice: MarkLeaveChoice | null,
+  t: TFunction
 ): MarkLeaveOutcome | { error: string } {
   let replacementKey: string | undefined;
   let replacementMode: LeaveReplacementMode | undefined;
@@ -164,7 +196,7 @@ export function applyMarkLeave(
   const nextMs: MonthState = { ...ms, overrides: { ...ms.overrides }, leaves: { ...ms.leaves } };
 
   if (slotInfo) {
-    if (!choice) return { error: "Choose a replacement — temporary guard, current guard on rest day, or support guard." };
+    if (!choice) return { error: t("dutyRoster.leavePanel.errorChooseReplacement") };
     const { shiftId, shiftLabel, slot } = slotInfo;
     replacementKey = `${dateStr}|${shiftId}|${slot}`;
 
@@ -179,7 +211,7 @@ export function applyMarkLeave(
       supportSync = { originSiteId: choice.originSiteId, originGuardId: choice.originGuardId };
     } else {
       if (!choice.coverGuardId) {
-        return { error: "No guard on rest day is available to cover this shift — choose Temporary guard instead." };
+        return { error: t("dutyRoster.leavePanel.errorNoRestDayGuard") };
       }
       replacementMode = "restday";
       replacementGuardId = choice.coverGuardId;
@@ -207,11 +239,13 @@ export function applyMarkLeave(
   nextMs.leaves[dateStr] = dayEntries;
 
   const name = guardName(config, ms, guardId);
+  // Log text (appendLog) stays in English forever — leavePhrase(), not the translated version.
   const loggedMs = appendLog(nextMs, `Marked ${name} ${leavePhrase(reason)} for ${dateStr}.${logSuffix}`);
+  const phrase = leavePhraseTranslated(reason, t);
   const toast =
     choice?.mode === "support"
-      ? `Marked ${name} ${leavePhrase(reason)} for ${dateStr}. His home site was marked automatically too.`
-      : `Marked ${name} ${leavePhrase(reason)} for ${dateStr}.`;
+      ? t("dutyRoster.leavePanel.toastMarkedSupport", { name, phrase, date: dateStr })
+      : t("dutyRoster.leavePanel.toastMarked", { name, phrase, date: dateStr });
 
   return { ms: loggedMs, toast, supportSync };
 }
@@ -225,16 +259,17 @@ export interface LeaveReplacementPillInfo {
 }
 
 /** leaveReplacementPill() (lines 4648-4657). */
-export function leaveReplacementPill(config: Pick<SiteConfig, "guards">, ms: MonthState, e: LeaveEntry): LeaveReplacementPillInfo | null {
-  if (e.replacementMode === "temp") return { text: "temp guard" };
+export function leaveReplacementPill(config: Pick<SiteConfig, "guards">, ms: MonthState, e: LeaveEntry, t: TFunction): LeaveReplacementPillInfo | null {
+  if (e.replacementMode === "temp") return { text: t("dutyRoster.leavePanel.pillTempGuard") };
   if (e.replacementMode === "restday" && e.replacementGuardId) {
-    return { text: `covered by ${guardName(config, ms, e.replacementGuardId)}` };
+    return { text: t("dutyRoster.leavePanel.pillCoveredBy", { name: guardName(config, ms, e.replacementGuardId) }) };
   }
   if (e.replacementMode === "support" && e.replacementGuardId) {
     const g = guardById(config, ms, e.replacementGuardId) as ResolvedGuard | null;
     if (g) {
-      const fromSite = g.homeSiteName ? ` from ${g.homeSiteName}` : "";
-      return { text: `support guard: ${g.name}${fromSite}` };
+      return g.homeSiteName
+        ? { text: t("dutyRoster.leavePanel.pillSupportGuardFrom", { name: g.name, site: g.homeSiteName }) }
+        : { text: t("dutyRoster.leavePanel.pillSupportGuard", { name: g.name }) };
     }
   }
   return null;
@@ -242,8 +277,8 @@ export function leaveReplacementPill(config: Pick<SiteConfig, "guards">, ms: Mon
 
 /** leaveSupportDestinationPill() (lines 4658-4666) — only meaningful on the auto-written
  * home-site safeguard entry. */
-export function leaveSupportDestinationPill(e: LeaveEntry): LeaveReplacementPillInfo | null {
-  return e.supportToSiteName ? { text: `→ ${e.supportToSiteName}` } : null;
+export function leaveSupportDestinationPill(e: LeaveEntry, t: TFunction): LeaveReplacementPillInfo | null {
+  return e.supportToSiteName ? { text: t("dutyRoster.leavePanel.destinationPill", { site: e.supportToSiteName }) } : null;
 }
 
 export interface LeaveTableCell {
@@ -260,7 +295,7 @@ export interface LeaveTableRow {
 }
 
 /** buildLeaveTableRows() — one row per date with any leave entries, sorted ascending. */
-export function buildLeaveTableRows(config: Pick<SiteConfig, "guards">, ms: MonthState): LeaveTableRow[] {
+export function buildLeaveTableRows(config: Pick<SiteConfig, "guards">, ms: MonthState, t: TFunction): LeaveTableRow[] {
   return Object.keys(ms.leaves)
     .filter((d) => (ms.leaves[d] || []).length > 0)
     .sort()
@@ -269,9 +304,9 @@ export function buildLeaveTableRows(config: Pick<SiteConfig, "guards">, ms: Mont
       cells: leaveEntriesFor(ms, date).map((e) => ({
         guardId: e.id,
         guardName: guardName(config, ms, e.id),
-        reason: e.reason,
-        replacementPill: leaveReplacementPill(config, ms, e),
-        destinationPill: leaveSupportDestinationPill(e),
+        reason: t(`dutyRoster.leaveReasons.${leaveReasonKey(e.reason)}`),
+        replacementPill: leaveReplacementPill(config, ms, e, t),
+        destinationPill: leaveSupportDestinationPill(e, t),
       })),
     }));
 }

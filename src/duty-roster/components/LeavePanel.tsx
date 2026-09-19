@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Guard, SiteConfig, MonthState, GenerateMonthResult } from "../types";
 import { LEAVE_REASONS } from "../types";
 import type { GenerateMonthConfig } from "../schedulingEngine";
@@ -10,6 +11,7 @@ import {
   applyMarkLeave,
   buildLeaveTableRows,
   applyClearLeaveDay,
+  leaveReasonKey,
   type LeaveReplacementMode,
   type MarkLeaveChoice,
 } from "../leaveData";
@@ -39,6 +41,7 @@ export interface LeavePanelProps {
 }
 
 export default function LeavePanel({ config, ms, result, canAssignSupport, allSites, siteConfigsCache, onSave }: LeavePanelProps) {
+  const { t } = useTranslation();
   const [guardId, setGuardId] = useState("");
   const [dateStr, setDateStr] = useState("");
   const [reason, setReason] = useState<string>(LEAVE_REASONS[0]);
@@ -57,7 +60,7 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, allSi
     () => (slotInfo && day ? restingGuardsOn(config, ms, dateStr, guardId, day) : []),
     [slotInfo, day, config, ms, dateStr, guardId]
   );
-  const note = guardId && dateStr ? leaveReplacementNote(config, ms, guardId, dateStr, slotInfo, mode, resting.length) : "";
+  const note = guardId && dateStr ? leaveReplacementNote(config, ms, guardId, dateStr, slotInfo, mode, resting.length, t) : "";
   const supportSites: SitePickerOption[] = canAssignSupport ? otherBranchSites(allSites, config.id, config.branch) : [];
 
   // fillLeaveSupportSites()/fillLeaveSupportGuardSelect() (lines ~4230-4260) — mirrors
@@ -91,7 +94,7 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, allSi
     };
   }, [mode, slotInfo, originSiteId, siteConfigsCache, config.site, dateStr]);
 
-  const rows = buildLeaveTableRows(config, ms);
+  const rows = buildLeaveTableRows(config, ms, t);
 
   function handleAdd() {
     if (!guardId || !dateStr) return; // silent no-op, matches the original
@@ -102,11 +105,11 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, allSi
       else if (mode === "restday") choice = { mode: "restday", coverGuardId };
       else if (mode === "support") {
         if (!canAssignSupport) return; // silent, matches the original's defensive guard
-        if (!originSiteId) return setError("Pick which site to borrow a guard from.");
-        if (!originGuardId) return setError("Pick which guard is covering this shift.");
+        if (!originSiteId) return setError(t("dutyRoster.common.errorPickOriginSiteBorrow"));
+        if (!originGuardId) return setError(t("dutyRoster.common.errorPickCoveringGuard"));
         const originSite = supportSites.find((s) => s.id === originSiteId);
         const originGuard = (freeGuards || []).find((g) => g.id === originGuardId);
-        if (!originSite || !originGuard) return setError("Couldn't find that guard — try again.");
+        if (!originSite || !originGuard) return setError(t("dutyRoster.common.errorCouldntFindGuard"));
         const defs = computeShiftDefsForDay(config.site, dowMon(dateStr));
         const sd = defs.find((s) => s.id === slotInfo.shiftId);
         const supportShiftEndMs = sd ? shiftStartEnd(dateStr, sd).end.getTime() : Date.now();
@@ -120,7 +123,7 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, allSi
         };
       }
     }
-    const outcome = applyMarkLeave(config, ms, guardId, dateStr, reason, slotInfo, choice);
+    const outcome = applyMarkLeave(config, ms, guardId, dateStr, reason, slotInfo, choice, t);
     if ("error" in outcome) {
       setError(outcome.error);
       return;
@@ -164,11 +167,11 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, allSi
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-slate-900">Mark a guard on leave</h3>
+      <h3 className="text-sm font-semibold text-slate-900">{t('dutyRoster.leavePanel.title')}</h3>
 
       <div className="grid grid-cols-2 gap-2 mt-3">
         <select className="input" value={guardId} onChange={(e) => setGuardId(e.target.value)}>
-          <option value="">Select a guard…</option>
+          <option value="">{t('dutyRoster.common.selectGuardEllipsis')}</option>
           {guards.map((g) => (
             <option key={g.id} value={g.id}>
               {g.name}
@@ -179,7 +182,7 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, allSi
         <select className="input col-span-2" value={reason} onChange={(e) => setReason(e.target.value)}>
           {LEAVE_REASONS.filter((r) => r !== "Support (Other Site)" || canAssignSupport).map((r) => (
             <option key={r} value={r}>
-              {r}
+              {t(`dutyRoster.leaveReasons.${leaveReasonKey(r)}`)}
             </option>
           ))}
         </select>
@@ -191,14 +194,14 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, allSi
           {slotInfo && (
             <div className="flex flex-col gap-1.5 mt-2">
               <select className="input" value={mode} onChange={(e) => setMode(e.target.value as LeaveReplacementMode)}>
-                <option value="">Choose how it's covered…</option>
-                <option value="temp">Temporary guard</option>
-                <option value="restday">Current guard on rest day</option>
-                {canAssignSupport && <option value="support">Support (borrow from another site)</option>}
+                <option value="">{t('dutyRoster.leavePanel.chooseHowCoveredEllipsis')}</option>
+                <option value="temp">{t('dutyRoster.common.optionTemporaryGuard')}</option>
+                <option value="restday">{t('dutyRoster.common.optionCurrentGuardRestDay')}</option>
+                {canAssignSupport && <option value="support">{t('dutyRoster.common.optionSupportBorrow')}</option>}
               </select>
               {mode === "restday" && (
                 <select className="input" value={coverGuardId} onChange={(e) => setCoverGuardId(e.target.value)}>
-                  <option value="">Select a resting guard…</option>
+                  <option value="">{t('dutyRoster.leavePanel.selectRestingGuardEllipsis')}</option>
                   {resting.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.name}
@@ -209,7 +212,7 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, allSi
               {mode === "support" && (
                 <>
                   <select className="input" value={originSiteId} onChange={(e) => setOriginSiteId(e.target.value)}>
-                    <option value="">Coming from…</option>
+                    <option value="">{t('dutyRoster.common.comingFromEllipsis')}</option>
                     {supportSites.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
@@ -224,10 +227,10 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, allSi
                   >
                     <option value="">
                       {freeGuardsLoading
-                        ? "Checking availability…"
+                        ? t('dutyRoster.common.checkingAvailability')
                         : (freeGuards?.length ?? 0) === 0 && freeGuards
-                          ? "No guards free that day (or would end up under-rested)"
-                          : "Select a guard…"}
+                          ? t('dutyRoster.common.noGuardsFreeThatDay')
+                          : t('dutyRoster.common.selectGuardEllipsis')}
                     </option>
                     {(freeGuards || []).map((g) => (
                       <option key={g.id} value={g.id}>
@@ -247,11 +250,11 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, allSi
       <div className="flex justify-end gap-2 mt-3">
         {(guardId || dateStr) && (
           <button type="button" onClick={handleCancel} className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800">
-            Cancel
+            {t('dutyRoster.common.cancel')}
           </button>
         )}
         <button type="button" onClick={handleAdd} className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
-          Mark on leave
+          {t('dutyRoster.leavePanel.markOnLeave')}
         </button>
       </div>
 
@@ -283,7 +286,7 @@ export default function LeavePanel({ config, ms, result, canAssignSupport, allSi
                 </td>
                 <td className="py-1.5 text-right">
                   <button type="button" onClick={() => handleClear(row.date)} className="text-xs font-medium text-rose-600 hover:text-rose-700">
-                    Clear
+                    {t('dutyRoster.leavePanel.clear')}
                   </button>
                 </td>
               </tr>

@@ -484,7 +484,27 @@
       "cancel": "Batal",
       "close": "Tutup",
       "add": "Tambah",
-      "remove": "Buang"
+      "remove": "Buang",
+      "selectGuardEllipsis": "Pilih pengawal…",
+      "comingFromEllipsis": "Datang dari…",
+      "checkingAvailability": "Menyemak ketersediaan…",
+      "noGuardsFreeThatDay": "Tiada pengawal bebas pada hari itu (atau akan kurang rehat)",
+      "noUnfilledSlotsThisMonth": "Tiada slot kosong bulan ini.",
+      "selectUnfilledSlotEllipsis": "Pilih slot kosong…",
+      "namePlaceholder": "Nama",
+      "ratePlaceholder": "Kadar (RM/jam-orang)",
+      "assign": "Tugaskan",
+      "view": "Lihat",
+      "errorPickOriginSiteBorrow": "Pilih tapak untuk meminjam pengawal.",
+      "errorPickCoveringGuard": "Pilih pengawal yang menggantikan syif ini.",
+      "errorCouldntFindGuard": "Pengawal itu tidak ditemui — cuba lagi.",
+      "errorPickUnfilledSlot": "Pilih slot kosong dahulu.",
+      "toastRemovedName": "{{name}} telah dibuang.",
+      "optionTemporaryGuard": "Pengawal sementara",
+      "optionCurrentGuardRestDay": "Pengawal sedia ada pada hari rehat",
+      "optionSupportBorrow": "Sokongan (pinjam dari tapak lain)",
+      "dateShiftSlotOption": "{{date}} — {{shiftLabel}}, Slot {{slot}}",
+      "shiftSlotLabel": "{{shiftLabel}}, Slot {{slot}}"
     },
     "guardDetails": {
       "employeeId": "ID Pekerja",
@@ -669,6 +689,97 @@
     "logPanel": {
       "title": "Log perubahan",
       "noChangesYet": "Belum ada perubahan dilog."
+    },
+    "leaveReasons": {
+      "leave": "Cuti",
+      "absent": "Tidak Hadir",
+      "medicalLeave": "Cuti sakit (MC)",
+      "unpaidLeave": "Cuti Tanpa Gaji",
+      "supportOtherSite": "Sokongan (Tapak Lain)"
+    },
+    "leavePhrase": {
+      "leave": "bercuti",
+      "absent": "tidak hadir",
+      "medicalLeave": "bercuti sakit",
+      "unpaidLeave": "bercuti tanpa gaji",
+      "supportOtherSite": "menyokong tapak lain"
+    },
+    "leavePanel": {
+      "title": "Tandakan pengawal bercuti",
+      "chooseHowCoveredEllipsis": "Pilih cara ia digantikan…",
+      "selectRestingGuardEllipsis": "Pilih pengawal yang berehat…",
+      "markOnLeave": "Tandakan bercuti",
+      "clear": "Kosongkan",
+      "notScheduled": "{{name}} tidak dijadualkan bekerja pada {{date}} — tiada penggantian diperlukan.",
+      "coveringShiftSlot": "Menggantikan {{shiftLabel}}, Slot {{slot}} pada {{date}}.",
+      "noGuardsResting": "Tiada pengawal sedang berehat pada {{date}} — pilih Pengawal sementara.",
+      "slotWillStayOpen": "{{shiftLabel}}, Slot {{slot}} pada {{date}} akan kekal kosong — tugaskan pengawal sementara untuknya di bawah.",
+      "coveringWithSupportGuard": "Menggantikan {{shiftLabel}}, Slot {{slot}} pada {{date}} dengan pengawal yang dipinjam dari tapak lain — tapak asalnya ditandakan secara automatik.",
+      "scheduledChooseCoverage": "{{name}} dijadualkan untuk {{shiftLabel}}, Slot {{slot}} pada {{date}} — pilih cara ia digantikan.",
+      "errorChooseReplacement": "Pilih penggantian — pengawal sementara, pengawal sedia ada pada hari rehat, atau pengawal sokongan.",
+      "errorNoRestDayGuard": "Tiada pengawal yang berehat tersedia untuk menggantikan syif ini — pilih Pengawal sementara.",
+      "toastMarked": "{{name}} ditandakan {{phrase}} untuk {{date}}.",
+      "toastMarkedSupport": "{{name}} ditandakan {{phrase}} untuk {{date}}. Tapak asalnya turut ditandakan secara automatik.",
+      "pillTempGuard": "pengawal sementara",
+      "pillCoveredBy": "digantikan oleh {{name}}",
+      "pillSupportGuard": "pengawal sokongan: {{name}}",
+      "pillSupportGuardFrom": "pengawal sokongan: {{name}} dari {{site}}",
+      "destinationPill": "→ {{site}}"
+    },
+    "additionalGuardPanel": {
+      "title": "Tugaskan pengawal tambahan",
+      "selectShiftEllipsis": "Pilih syif…",
+      "howSourcedEllipsis": "Bagaimana jawatan ini disumberkan?",
+      "removeAdditionalGuardTitle": "Buang pengawal tambahan",
+      "errorPickShift": "Pilih syif dahulu.",
+      "errorPickDates": "Pilih tarikh mula dan tamat.",
+      "errorEndBeforeStart": "Tarikh tamat tidak boleh sebelum tarikh mula.",
+      "errorDatesOutOfMonth": "Tarikh mesti dalam bulan yang sedang dibuka.",
+      "errorChooseSource": "Pilih bagaimana jawatan ini disumberkan.",
+      "errorPickGuard": "Pilih pengawal.",
+      "confirmRemoveMessage": "Buang tugasan pengawal tambahan ini ({{name}})? Tarikhnya akan kembali kepada bilangan jawatan normal tapak ini.",
+      "toastAssigned": "{{name}} ditugaskan sebagai pengawal tambahan dari {{start}} hingga {{end}}.",
+      "sourceTemporary": "Sementara",
+      "sourceSupport": "Sokongan",
+      "sourceRestDay": "Hari rehat"
+    },
+    "tempGuardPanel": {
+      "title": "Tugaskan pengawal sementara",
+      "removeTitle": "Buang pengawal sementara",
+      "totalToPay": "Jumlah dibayar bulan ini: RM {{total}}",
+      "errorEnterName": "Masukkan nama pengawal sementara.",
+      "errorEnterRate": "Masukkan kadar yang sah.",
+      "errorEnterMykad": "Masukkan nombor MyKad 12 digit yang sah (cth. 901231-14-5678).",
+      "errorEnterAge": "Masukkan umur yang sah.",
+      "errorEnterPhone": "Masukkan nombor telefon yang sah (cth. 012-3456789).",
+      "errorEnterState": "Masukkan negeri pengawal sementara.",
+      "errorEnterCity": "Masukkan bandar pengawal sementara.",
+      "confirmRemoveMessage": "Buang {{name}} dari slot ini? Ia akan kembali kosong melainkan pengawal lain menggantikannya.",
+      "toastAssigned": "{{name}} ditugaskan untuk menggantikan {{date}}.",
+      "matchHint_other": "Sepadan dengan pengawal simpanan yang digunakan {{count}} kali sebelum ini — kadar terakhir {{rate}}. Umur/Telefon/Negeri/Bandar diisi daripada rekod terakhir mereka; masukkan kadar hari ini di atas.",
+      "rateUnknown": "tidak diketahui"
+    },
+    "supportGuardPanel": {
+      "title": "Tugaskan pengawal sokongan",
+      "noOtherSites": "Tiada tapak lain dalam cawangan ini untuk meminjam pengawal.",
+      "removeTitle": "Buang pengawal sokongan",
+      "errorPickOriginSiteComingFrom": "Pilih tapak asal kedatangannya.",
+      "toastAssigned": "{{name}} ditugaskan untuk menggantikan {{date}}. Tapak asalnya ({{site}}) ditandakan secara automatik."
+    },
+    "swapPanel": {
+      "title": "Tukar dua syif",
+      "shiftALabel": "Syif A",
+      "shiftBLabel": "Syif B",
+      "noSlotsThatDay": "Tiada slot pada hari itu",
+      "slotOption": "Slot {{n}}",
+      "swap": "Tukar",
+      "errorPickBothDates": "Pilih kedua-dua tarikh.",
+      "errorSwapWithinMonth": "Hanya tukar dalam bulan yang sedang dipaparkan. Navigasi ke bulan itu dahulu.",
+      "toastSwapped": "Syif telah ditukar."
+    },
+    "adjustmentsTab": {
+      "inRoster": "Dalam Roster",
+      "replacement": "Penggantian"
     }
   },
   "linkedSiteCard": {

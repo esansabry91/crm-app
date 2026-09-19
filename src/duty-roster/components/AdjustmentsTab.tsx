@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { SiteConfig, MonthState, GenerateMonthResult } from "../types";
 import type { GenerateMonthConfig } from "../schedulingEngine";
 import type { RosterSession } from "../rosterModel";
@@ -42,6 +43,7 @@ export default function AdjustmentsTab({
   onPersistMonth,
   onToast,
 }: AdjustmentsTabProps) {
+  const { t } = useTranslation();
   const canAssignSupport = canAssignSupportGuard(session);
   const siteMeta: SiteMeta = { id: config.id, name: config.name, branch: config.branch, tenderId: config.tenderId };
   const isTestData = !!config.isTestData;
@@ -54,7 +56,7 @@ export default function AdjustmentsTab({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <div className="flex flex-col gap-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">In-Roster</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t('dutyRoster.adjustmentsTab.inRoster')}</p>
         <LeavePanel
           config={config}
           ms={ms}
@@ -76,7 +78,7 @@ export default function AdjustmentsTab({
           onSave={save}
         />
 
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mt-2">Replacement</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mt-2">{t('dutyRoster.adjustmentsTab.replacement')}</p>
         <TempGuardPanel config={config} ms={ms} result={result} siteMeta={siteMeta} isTestData={isTestData} onSave={save} />
         {canAssignSupport && (
           <SupportGuardPanel config={config} ms={ms} result={result} allSites={allSites} siteConfigsCache={siteConfigsCache} onSave={save} />

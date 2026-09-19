@@ -16,10 +16,10 @@ export interface TempSlotOption {
 }
 
 /** Populates #tempSlotSelect from result.conflicts (this month's unfilled slots). */
-export function buildTempSlotOptions(conflicts: ConflictEntry[]): TempSlotOption[] {
+export function buildTempSlotOptions(conflicts: ConflictEntry[], t: TFunction): TempSlotOption[] {
   return conflicts.map((c) => ({
     key: `${c.date}|${c.shiftId}|${c.slot}`,
-    label: `${c.date} — ${c.shiftLabel}, Slot ${c.slot + 1}`,
+    label: t("dutyRoster.common.dateShiftSlotOption", { date: c.date, shiftLabel: c.shiftLabel, slot: c.slot + 1 }),
   }));
 }
 
@@ -33,7 +33,7 @@ export interface TempGuardRow {
 
 /** Existing-temp-guards table — orphans (no override still references them) are silently
  * skipped, sorted by date ascending. */
-export function buildTempGuardRows(config: Pick<SiteConfig, "site">, ms: MonthState): { rows: TempGuardRow[]; total: number } {
+export function buildTempGuardRows(config: Pick<SiteConfig, "site">, ms: MonthState, t: TFunction): { rows: TempGuardRow[]; total: number } {
   const tg = monthTempGuards(ms);
   const rows: TempGuardRow[] = [];
   Object.keys(tg).forEach((tempId) => {
@@ -43,7 +43,7 @@ export function buildTempGuardRows(config: Pick<SiteConfig, "site">, ms: MonthSt
     rows.push({
       tempId,
       date,
-      shiftSlotLabel: `${shiftLabelForKey(config.site, date, shiftId)}, Slot ${Number(slot) + 1}`,
+      shiftSlotLabel: t("dutyRoster.common.shiftSlotLabel", { shiftLabel: shiftLabelForKey(config.site, date, shiftId), slot: Number(slot) + 1 }),
       name: tg[tempId].name,
       rate: Number(tg[tempId].rate) || 0,
     });
@@ -72,19 +72,19 @@ export interface TempGuardFormValues extends TempGuardIdentityFormValues {
  * slot pick first, see validateTempGuardForm() below) and the temp-guard branch of "Assign an
  * additional guard" (additionalGuardData.ts), which validates its date range separately instead
  * of a slot. */
-export function validateTempGuardIdentityFields(form: TempGuardIdentityFormValues): { error: string } | { record: TempGuardRecord } {
+export function validateTempGuardIdentityFields(form: TempGuardIdentityFormValues, t: TFunction): { error: string } | { record: TempGuardRecord } {
   const name = form.name.trim();
-  if (!name) return { error: "Enter the temporary guard's name." };
+  if (!name) return { error: t("dutyRoster.tempGuardPanel.errorEnterName") };
   const rate = Number(form.rateRaw);
-  if (form.rateRaw.trim() === "" || !Number.isFinite(rate) || rate < 0) return { error: "Enter a valid rate." };
-  if (!isValidMykad(form.mykadNumber)) return { error: "Enter a valid 12-digit MyKad number (e.g. 901231-14-5678)." };
+  if (form.rateRaw.trim() === "" || !Number.isFinite(rate) || rate < 0) return { error: t("dutyRoster.tempGuardPanel.errorEnterRate") };
+  if (!isValidMykad(form.mykadNumber)) return { error: t("dutyRoster.tempGuardPanel.errorEnterMykad") };
   const age = Number(form.ageRaw);
-  if (form.ageRaw.trim() === "" || !Number.isFinite(age) || age <= 0) return { error: "Enter a valid age." };
-  if (!isValidPhone(form.phoneNumber)) return { error: "Enter a valid phone number (e.g. 012-3456789)." };
+  if (form.ageRaw.trim() === "" || !Number.isFinite(age) || age <= 0) return { error: t("dutyRoster.tempGuardPanel.errorEnterAge") };
+  if (!isValidPhone(form.phoneNumber)) return { error: t("dutyRoster.tempGuardPanel.errorEnterPhone") };
   const state = form.state.trim();
-  if (!state) return { error: "Enter the temporary guard's state." };
+  if (!state) return { error: t("dutyRoster.tempGuardPanel.errorEnterState") };
   const city = form.city.trim();
-  if (!city) return { error: "Enter the temporary guard's city." };
+  if (!city) return { error: t("dutyRoster.tempGuardPanel.errorEnterCity") };
 
   return {
     record: { name, rate, mykadNumber: form.mykadNumber, age, phoneNumber: form.phoneNumber, state, city, createdAt: nowIso() },
@@ -93,9 +93,9 @@ export function validateTempGuardIdentityFields(form: TempGuardIdentityFormValue
 
 /** #assignTempBtn validation, exact original order (first failure wins): the slot pick, THEN the
  * 7 identity/rate fields via validateTempGuardIdentityFields(). */
-export function validateTempGuardForm(form: TempGuardFormValues): { error: string } | { record: TempGuardRecord } {
-  if (!form.slotKey) return { error: "Pick an unfilled slot first." };
-  return validateTempGuardIdentityFields(form);
+export function validateTempGuardForm(form: TempGuardFormValues, t: TFunction): { error: string } | { record: TempGuardRecord } {
+  if (!form.slotKey) return { error: t("dutyRoster.common.errorPickUnfilledSlot") };
+  return validateTempGuardIdentityFields(form, t);
 }
 
 export interface AssignTempGuardOutcome {
@@ -112,11 +112,13 @@ export function applyAssignTempGuard(
   config: Pick<SiteConfig, "site">,
   ms: MonthState,
   slotKey: string,
-  record: TempGuardRecord
+  record: TempGuardRecord,
+  t: TFunction
 ): AssignTempGuardOutcome {
   const tempId = newId("temp");
   const [date, shiftId, slot] = slotKey.split("|");
   const label = shiftLabelForKey(config.site, date, shiftId);
+  // Log text (appendLog) stays in English forever, per the confirmed scope decision.
   const nextMs = appendLog(
     {
       ...ms,
@@ -125,12 +127,12 @@ export function applyAssignTempGuard(
     },
     `Assigned temporary guard ${record.name} (RM ${record.rate.toFixed(2)}) to ${label}, Slot ${Number(slot) + 1} on ${date}.`
   );
-  return { ms: nextMs, toast: `Assigned ${record.name} to cover ${date}.`, tempId, record };
+  return { ms: nextMs, toast: t("dutyRoster.tempGuardPanel.toastAssigned", { name: record.name, date }), tempId, record };
 }
 
 /** Remove-temp-guard confirm message (shared wording with the support-guard panel's own Remove). */
-export function removeTempOrSupportGuardConfirmMessage(name: string): string {
-  return `Remove ${name} from this slot? It goes back to unfilled unless another guard covers it.`;
+export function removeTempOrSupportGuardConfirmMessage(name: string, t: TFunction): string {
+  return t("dutyRoster.tempGuardPanel.confirmRemoveMessage", { name });
 }
 
 export interface RemoveTempGuardOutcome {
@@ -140,7 +142,7 @@ export interface RemoveTempGuardOutcome {
 
 /** Remove — only clears the override if it still points at this exact temp id (doesn't stomp
  * a later reassignment). */
-export function applyRemoveTempGuard(ms: MonthState, tempId: string): RemoveTempGuardOutcome | null {
+export function applyRemoveTempGuard(ms: MonthState, tempId: string, t: TFunction): RemoveTempGuardOutcome | null {
   const tg = monthTempGuards(ms);
   const record = tg[tempId];
   if (!record) return null;
@@ -150,7 +152,7 @@ export function applyRemoveTempGuard(ms: MonthState, tempId: string): RemoveTemp
   const nextTg = { ...tg };
   delete nextTg[tempId];
   const nextMs = appendLog({ ...ms, overrides: nextOverrides, tempGuards: nextTg }, `Removed temporary guard ${record.name}.`);
-  return { ms: nextMs, toast: `Removed ${record.name}.` };
+  return { ms: nextMs, toast: t("dutyRoster.common.toastRemovedName", { name: record.name }) };
 }
 
 export interface TempGuardDetailRow {
