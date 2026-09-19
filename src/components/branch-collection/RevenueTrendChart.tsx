@@ -1,4 +1,5 @@
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { useTranslation } from 'react-i18next';
 import { VIZ } from '../../utils/vizColors';
 import { formatRM } from '../../utils/format';
 
@@ -14,10 +15,11 @@ export interface RevenueTrendPoint {
  *  doesn't group. Mirrors PipelineTrendChart's look (same VIZ palette/axis conventions) so the
  *  Revenue tab reads as part of the same app rather than a bolted-on widget. */
 export default function RevenueTrendChart({ data }: { data: RevenueTrendPoint[] }) {
+  const { t } = useTranslation();
   if (data.length === 0) {
     return (
       <div className="h-64 flex items-center justify-center text-sm text-slate-400">
-        No invoices yet — generate one to start the trend.
+        {t('branchCollection.revenueTrendChart.empty')}
       </div>
     );
   }
@@ -45,8 +47,8 @@ export default function RevenueTrendChart({ data }: { data: RevenueTrendPoint[] 
           contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: VIZ.chrome.gridline }}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Bar dataKey="revenue" name="Invoiced revenue" fill={VIZ.categorical.blue} radius={[4, 4, 0, 0]} maxBarSize={44} />
-        <Bar dataKey="discrepancy" name="Discrepancy" fill={VIZ.status.warning} radius={[4, 4, 0, 0]} maxBarSize={44} />
+        <Bar dataKey="revenue" name={t('branchCollection.revenueTrendChart.invoicedRevenue')} fill={VIZ.categorical.blue} radius={[4, 4, 0, 0]} maxBarSize={44} />
+        <Bar dataKey="discrepancy" name={t('branchCollection.revenueTrendChart.discrepancy')} fill={VIZ.status.warning} radius={[4, 4, 0, 0]} maxBarSize={44} />
       </BarChart>
     </ResponsiveContainer>
   );

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   subscribeInvoices,
   updateInvoiceStatus,
@@ -20,12 +22,11 @@ import StatCard from '../analytics/StatCard';
 import { isAdminRole } from '../../types';
 import type { Invoice, InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceStatus } from '../../types';
 
-const STATUS_LABEL: Record<InvoiceStatus, string> = {
-  unpaid: 'Unpaid',
-  partial: 'Partially Paid',
-  paid: 'Paid',
-  void: 'Void',
-};
+// InvoiceStatus itself ('unpaid'/'partial'/'paid'/'void') stays the stored/data-model value —
+// only the on-screen label is translated, via statusLabel()/branchCollection.status.*.
+function statusLabel(status: InvoiceStatus, t: TFunction): string {
+  return t(`branchCollection.status.${status}`);
+}
 const STATUS_COLOR: Record<InvoiceStatus, string> = {
   unpaid: 'bg-rose-50 text-rose-700',
   partial: 'bg-amber-50 text-amber-700',
@@ -89,6 +90,7 @@ function lastPayment(inv: Invoice): { amount: number; date: string } | null {
  * rather than a figure that has to be trusted blind.
  */
 function StatusEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const balance = roundMoney(Math.max(0, invoice.total - invoice.amountPaid));
   const [addAmount, setAddAmount] = useState(0);
@@ -129,25 +131,27 @@ function StatusEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => v
     <div className="border-t border-slate-100 pt-3 mt-3">
       {history && (
         <div className="mb-2.5 space-y-0.5">
-          <p className="text-xs font-medium text-slate-500">Payment history</p>
+          <p className="text-xs font-medium text-slate-500">{t('branchCollection.statusEditor.paymentHistory')}</p>
           {history.map((p, i) => (
             <p key={i} className="text-xs text-slate-500">
-              RM {p.amount.toFixed(2)}
-              {p.date && ` on ${formatShortDate(p.date)}`}
-              {p.recordedByName && ` — recorded by ${p.recordedByName}`}
+              {t('branchCollection.statusEditor.paymentAmount', { amount: p.amount.toFixed(2) })}
+              {p.date && ' ' + t('branchCollection.statusEditor.onDate', { date: formatShortDate(p.date) })}
+              {p.recordedByName && ' — ' + t('branchCollection.statusEditor.recordedBy', { name: p.recordedByName })}
             </p>
           ))}
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2">
         <span className={`px-2.5 py-1.5 text-xs font-medium rounded-lg ${STATUS_COLOR[previewStatus]}`}>
-          {STATUS_LABEL[previewStatus]}
+          {statusLabel(previewStatus, t)}
         </span>
         {balance <= 0 ? (
-          <span className="text-xs text-slate-400">Fully paid — no balance left to record.</span>
+          <span className="text-xs text-slate-400">{t('branchCollection.statusEditor.fullyPaid')}</span>
         ) : (
           <div>
-            <label className="text-xs text-slate-500 block">Add payment (RM) — balance RM {balance.toFixed(2)}</label>
+            <label className="text-xs text-slate-500 block">
+              {t('branchCollection.statusEditor.addPaymentLabel', { balance: balance.toFixed(2) })}
+            </label>
             <input
               type="number"
               value={addAmount === 0 ? '' : addAmount}
@@ -170,16 +174,16 @@ function StatusEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => v
             disabled={busy || clampedAdd <= 0}
             className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg"
           >
-            {busy ? 'Saving…' : 'Add payment'}
+            {busy ? t('branchCollection.common.savingEllipsis') : t('branchCollection.statusEditor.addPayment')}
           </button>
         )}
         <button onClick={onClose} className="text-xs text-slate-500 hover:underline">
-          Cancel
+          {t('branchCollection.common.cancel')}
         </button>
       </div>
       {clampedAdd > 0 && (
         <p className="text-xs text-slate-400 mt-1">
-          New balance after this payment: RM {(balance - clampedAdd).toFixed(2)}
+          {t('branchCollection.statusEditor.newBalanceAfter', { balance: (balance - clampedAdd).toFixed(2) })}
         </p>
       )}
     </div>
@@ -190,6 +194,7 @@ function StatusEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => v
  *  Requires a reason so the audit trail (shown on the row afterwards, and on the printed invoice
  *  itself — see InvoicePrintView's void banner) always says why. */
 function VoidPrompt({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -198,7 +203,7 @@ function VoidPrompt({ invoice, onClose }: { invoice: Invoice; onClose: () => voi
   async function confirmVoid() {
     if (!profile) return;
     if (!reason.trim()) {
-      setError('A reason is required so there’s a record of why this invoice was cancelled.');
+      setError(t('branchCollection.voidPrompt.errorReasonRequired'));
       return;
     }
     setBusy(true);
@@ -207,7 +212,7 @@ function VoidPrompt({ invoice, onClose }: { invoice: Invoice; onClose: () => voi
       await voidInvoice(invoice.id, reason, { uid: profile.uid, name: profile.name });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to void invoice.');
+      setError(err instanceof Error ? err.message : t('branchCollection.voidPrompt.errorFailed'));
     } finally {
       setBusy(false);
     }
@@ -216,13 +221,12 @@ function VoidPrompt({ invoice, onClose }: { invoice: Invoice; onClose: () => voi
   return (
     <div className="border-t border-rose-100 pt-3 mt-3">
       <p className="text-xs font-medium text-rose-700 mb-1.5">
-        Void invoice {invoice.invoiceNo} — this cancels it permanently (the invoice number stays
-        spent) but keeps it on record. This cannot be undone.
+        {t('branchCollection.voidPrompt.warning', { invoiceNo: invoice.invoiceNo })}
       </p>
       <textarea
         value={reason}
         onChange={(e) => setReason(e.target.value)}
-        placeholder="Reason (e.g. wrong client billed, duplicate invoice, incorrect amount)…"
+        placeholder={t('branchCollection.voidPrompt.reasonPlaceholder')}
         rows={2}
         className="input w-full text-sm"
       />
@@ -233,10 +237,10 @@ function VoidPrompt({ invoice, onClose }: { invoice: Invoice; onClose: () => voi
           disabled={busy}
           className="px-3 py-1.5 text-xs font-medium text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-60 rounded-lg"
         >
-          {busy ? 'Voiding…' : 'Confirm void'}
+          {busy ? t('branchCollection.voidPrompt.voidingEllipsis') : t('branchCollection.voidPrompt.confirmVoid')}
         </button>
         <button onClick={onClose} className="text-xs text-slate-500 hover:underline">
-          Cancel
+          {t('branchCollection.common.cancel')}
         </button>
       </div>
     </div>
@@ -249,6 +253,7 @@ function VoidPrompt({ invoice, onClose }: { invoice: Invoice; onClose: () => voi
  *  stay fixed). Only ever shown for a still-'unpaid' invoice — see the Edit button's gating below
  *  — so there's never a recorded payment whose amount this could retroactively invalidate. */
 function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
+  const { t } = useTranslation();
   const [clientName, setClientName] = useState(invoice.clientName);
   const [clientAddress, setClientAddress] = useState(invoice.clientAddress || '');
   const [attnName, setAttnName] = useState(invoice.attnName || '');
@@ -375,7 +380,7 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
       await updateInvoiceContent(invoice.id, input);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save changes.');
+      setError(err instanceof Error ? err.message : t('branchCollection.contentEditor.errorFailedSave'));
     } finally {
       setSaving(false);
     }
@@ -383,31 +388,28 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
 
   return (
     <div className="border-t border-slate-200 pt-3 mt-3 space-y-3">
-      <p className="text-xs text-slate-500">
-        Correcting invoice {invoice.invoiceNo}. The invoice number and billing month stay fixed —
-        void it instead if it needs to be numbered or billed differently.
-      </p>
+      <p className="text-xs text-slate-500">{t('branchCollection.contentEditor.correctingNotice', { invoiceNo: invoice.invoiceNo })}</p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Client name" className="input" />
-        <input value={attnName} onChange={(e) => setAttnName(e.target.value)} placeholder="Attn" className="input" />
+        <input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder={t('branchCollection.contentEditor.clientNamePlaceholder')} className="input" />
+        <input value={attnName} onChange={(e) => setAttnName(e.target.value)} placeholder={t('branchCollection.contentEditor.attnPlaceholder')} className="input" />
         <input
           value={clientAddress}
           onChange={(e) => setClientAddress(e.target.value)}
-          placeholder="Client address"
+          placeholder={t('branchCollection.contentEditor.clientAddressPlaceholder')}
           className="input sm:col-span-2"
         />
         <div>
-          <label className="text-xs text-slate-500">Invoice date</label>
+          <label className="text-xs text-slate-500">{t('branchCollection.contentEditor.invoiceDateLabel')}</label>
           <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className="input w-full" />
         </div>
         <div>
-          <label className="text-xs text-slate-500">Contract ref (from Tender Document No.)</label>
-          <input value={contractRef} onChange={(e) => setContractRef(e.target.value)} placeholder="Contract ref" className="input w-full" />
+          <label className="text-xs text-slate-500">{t('branchCollection.contentEditor.contractRefLabel')}</label>
+          <input value={contractRef} onChange={(e) => setContractRef(e.target.value)} placeholder={t('branchCollection.contentEditor.contractRefPlaceholder')} className="input w-full" />
         </div>
-        <input value={quotationNo} onChange={(e) => setQuotationNo(e.target.value)} placeholder="Quotation no." className="input" />
+        <input value={quotationNo} onChange={(e) => setQuotationNo(e.target.value)} placeholder={t('branchCollection.contentEditor.quotationNoPlaceholder')} className="input" />
         <div className="flex items-center gap-1.5">
-          <label className="text-xs text-slate-500 whitespace-nowrap">Payment terms (days)</label>
+          <label className="text-xs text-slate-500 whitespace-nowrap">{t('branchCollection.contentEditor.paymentTermsLabel')}</label>
           <input
             type="number"
             value={paymentTermsDays === 0 ? '' : paymentTermsDays}
@@ -417,7 +419,7 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
           />
         </div>
         <div className="flex items-center gap-1.5">
-          <label className="text-xs text-slate-500 whitespace-nowrap">SST rate</label>
+          <label className="text-xs text-slate-500 whitespace-nowrap">{t('branchCollection.contentEditor.sstRateLabel')}</label>
           <input
             type="number"
             step="0.01"
@@ -431,7 +433,7 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
 
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <p className="text-xs font-medium text-slate-600">Line items</p>
+          <p className="text-xs font-medium text-slate-600">{t('branchCollection.contentEditor.lineItems')}</p>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 rounded-md border border-slate-200 p-0.5">
               <button
@@ -441,7 +443,7 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
                   billingMode === 'headcount' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
                 }`}
               >
-                Headcount &amp; days
+                {t('branchCollection.contentEditor.headcountAndDays')}
               </button>
               <button
                 type="button"
@@ -450,11 +452,11 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
                   billingMode === 'manhour' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
                 }`}
               >
-                Man-hour
+                {t('branchCollection.contentEditor.manHour')}
               </button>
             </div>
             <button onClick={addLineGroup} className="text-xs font-medium text-blue-700 hover:underline">
-              + Add location
+              {t('branchCollection.contentEditor.addLocation')}
             </button>
           </div>
         </div>
@@ -464,30 +466,30 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
               <input
                 value={group.location}
                 onChange={(e) => updateLineGroup(gi, e.target.value)}
-                placeholder="e.g. MDEC HQ"
+                placeholder={t('branchCollection.contentEditor.locationPlaceholder')}
                 className="input flex-1 font-medium"
               />
               <button onClick={() => removeLineGroup(gi)} className="text-xs text-rose-500 hover:text-rose-700 shrink-0">
-                Remove location
+                {t('branchCollection.contentEditor.removeLocation')}
               </button>
             </div>
             <table className="w-full text-sm mb-1.5">
               <thead>
                 <tr className="text-left text-xs text-slate-400">
-                  <th className="font-medium pb-1">Category</th>
+                  <th className="font-medium pb-1">{t('branchCollection.contentEditor.colCategory')}</th>
                   {billingMode === 'manhour' ? (
                     <>
-                      <th className="font-medium pb-1 w-24">Man-hours</th>
-                      <th className="font-medium pb-1 w-20">Headcount</th>
+                      <th className="font-medium pb-1 w-24">{t('branchCollection.contentEditor.colManHours')}</th>
+                      <th className="font-medium pb-1 w-20">{t('branchCollection.contentEditor.colHeadcount')}</th>
                     </>
                   ) : (
                     <>
-                      <th className="font-medium pb-1 w-20">Headcount</th>
-                      <th className="font-medium pb-1 w-20">Days</th>
+                      <th className="font-medium pb-1 w-20">{t('branchCollection.contentEditor.colHeadcount')}</th>
+                      <th className="font-medium pb-1 w-20">{t('branchCollection.contentEditor.colDays')}</th>
                     </>
                   )}
-                  <th className="font-medium pb-1 w-24">Rate</th>
-                  <th className="font-medium pb-1 w-24 text-right">Amount</th>
+                  <th className="font-medium pb-1 w-24">{t('branchCollection.contentEditor.colRate')}</th>
+                  <th className="font-medium pb-1 w-24 text-right">{t('branchCollection.contentEditor.colAmount')}</th>
                   <th className="w-14" />
                 </tr>
               </thead>
@@ -559,7 +561,7 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
                     <td className="text-right py-1 pr-2">{row.amount.toFixed(2)}</td>
                     <td className="py-1">
                       <button onClick={() => removeRow(gi, ri)} className="text-xs text-rose-500 hover:text-rose-700">
-                        Remove
+                        {t('branchCollection.common.remove')}
                       </button>
                     </td>
                   </tr>
@@ -567,28 +569,28 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
               </tbody>
             </table>
             <button onClick={() => addRow(gi)} className="text-xs font-medium text-blue-700 hover:underline">
-              + Add row
+              {t('branchCollection.contentEditor.addRow')}
             </button>
           </div>
         ))}
-        {lineGroups.length === 0 && <p className="text-xs text-slate-400">No locations — add at least one.</p>}
+        {lineGroups.length === 0 && <p className="text-xs text-slate-400">{t('branchCollection.contentEditor.noLocations')}</p>}
       </div>
 
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <p className="text-xs font-medium text-slate-600">Equipment / add-ons</p>
+          <p className="text-xs font-medium text-slate-600">{t('branchCollection.contentEditor.equipmentAddons')}</p>
           <button onClick={addEquipmentRow} className="text-xs font-medium text-blue-700 hover:underline">
-            + Add equipment
+            {t('branchCollection.contentEditor.addEquipment')}
           </button>
         </div>
         {equipmentRows.length > 0 && (
           <table className="w-full text-sm mb-1.5">
             <thead>
               <tr className="text-left text-xs text-slate-400">
-                <th className="font-medium pb-1">Item</th>
-                <th className="font-medium pb-1 w-20">Quantity</th>
-                <th className="font-medium pb-1 w-24">Rate / month</th>
-                <th className="font-medium pb-1 w-24 text-right">Amount</th>
+                <th className="font-medium pb-1">{t('branchCollection.contentEditor.colItem')}</th>
+                <th className="font-medium pb-1 w-20">{t('branchCollection.contentEditor.colQuantity')}</th>
+                <th className="font-medium pb-1 w-24">{t('branchCollection.contentEditor.colRatePerMonth')}</th>
+                <th className="font-medium pb-1 w-24 text-right">{t('branchCollection.contentEditor.colAmount')}</th>
                 <th className="w-14" />
               </tr>
             </thead>
@@ -624,7 +626,7 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
                   <td className="text-right py-1 pr-2">{row.amount.toFixed(2)}</td>
                   <td className="py-1">
                     <button onClick={() => removeEquipmentRow(i)} className="text-xs text-rose-500 hover:text-rose-700">
-                      Remove
+                      {t('branchCollection.common.remove')}
                     </button>
                   </td>
                 </tr>
@@ -632,22 +634,22 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
             </tbody>
           </table>
         )}
-        {equipmentRows.length === 0 && <p className="text-xs text-slate-400">No equipment added.</p>}
+        {equipmentRows.length === 0 && <p className="text-xs text-slate-400">{t('branchCollection.contentEditor.noEquipment')}</p>}
       </div>
 
       <div className="flex justify-end text-sm">
         <table>
           <tbody>
             <tr>
-              <td className="pr-3 text-slate-500">Sub total</td>
+              <td className="pr-3 text-slate-500">{t('branchCollection.contentEditor.subTotal')}</td>
               <td className="text-right font-medium">RM {subTotal.toFixed(2)}</td>
             </tr>
             <tr>
-              <td className="pr-3 text-slate-500">SST</td>
+              <td className="pr-3 text-slate-500">{t('branchCollection.contentEditor.sst')}</td>
               <td className="text-right font-medium">RM {sstAmount.toFixed(2)}</td>
             </tr>
             <tr>
-              <td className="pr-3 text-slate-600 font-semibold">Total</td>
+              <td className="pr-3 text-slate-600 font-semibold">{t('branchCollection.contentEditor.total')}</td>
               <td className="text-right font-semibold">RM {total.toFixed(2)}</td>
             </tr>
           </tbody>
@@ -661,10 +663,10 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
           disabled={saving || !canSave}
           className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg"
         >
-          {saving ? 'Saving…' : 'Save changes'}
+          {saving ? t('branchCollection.common.savingEllipsis') : t('branchCollection.contentEditor.saveChanges')}
         </button>
         <button onClick={onClose} className="text-xs text-slate-500 hover:underline">
-          Cancel
+          {t('branchCollection.common.cancel')}
         </button>
       </div>
     </div>
@@ -676,6 +678,7 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
  *  or make a limited content correction (see canManageInvoices above). Invoices themselves are
  *  created from InvoiceGenerator — this component never creates one. */
 export default function InvoiceList() {
+  const { t } = useTranslation();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const { brands } = useBrands();
   const { branches } = useBranches();
@@ -733,7 +736,7 @@ export default function InvoiceList() {
             onClick={() => setViewingId(null)}
             className="px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200"
           >
-            ← Back to list
+            {t('branchCollection.invoiceList.backToList')}
           </button>
           <button
             onClick={() => {
@@ -748,13 +751,13 @@ export default function InvoiceList() {
             }}
             className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
           >
-            Print / Save as PDF
+            {t('branchCollection.invoiceList.printSaveAsPdf')}
           </button>
         </div>
         {brand ? (
           <InvoicePrintView data={{ ...viewing, brand }} />
         ) : (
-          <p className="text-sm text-rose-600">This invoice's brand no longer exists — can't render its letterhead.</p>
+          <p className="text-sm text-rose-600">{t('branchCollection.invoiceList.errorNoBrand')}</p>
         )}
       </div>
     );
@@ -763,12 +766,12 @@ export default function InvoiceList() {
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5">
       <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
-        <h3 className="text-sm font-semibold text-slate-800">Invoices ({filteredInvoices.length})</h3>
+        <h3 className="text-sm font-semibold text-slate-800">{t('branchCollection.invoiceList.title', { count: filteredInvoices.length })}</h3>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input text-sm">
-          <option value="">All brands</option>
+          <option value="">{t('branchCollection.invoiceList.allBrands')}</option>
           {brands.map((b) => (
             <option key={b.id} value={b.id}>
               {b.name}
@@ -777,7 +780,7 @@ export default function InvoiceList() {
         </select>
         {canFilterByBranch && (
           <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input text-sm">
-            <option value="">All branches</option>
+            <option value="">{t('branchCollection.invoiceList.allBranches')}</option>
             {branches.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
@@ -787,7 +790,7 @@ export default function InvoiceList() {
         )}
         {statusFilter && (
           <span className="text-xs font-medium text-slate-600 bg-slate-100 rounded px-2 py-1">
-            Status: {STATUS_LABEL[statusFilter]}
+            {t('branchCollection.invoiceList.statusChip', { status: statusLabel(statusFilter, t) })}
           </span>
         )}
         {(brandFilter || effectiveBranchFilter || statusFilter) && (
@@ -799,35 +802,35 @@ export default function InvoiceList() {
             }}
             className="text-xs text-slate-500 hover:underline"
           >
-            Clear filters
+            {t('branchCollection.invoiceList.clearFilters')}
           </button>
         )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard
-          label="Unpaid"
+          label={statusLabel('unpaid', t)}
           value={String(statusCounts.unpaid)}
           accent={STATUS_ACCENT.unpaid}
-          action={{ label: 'Go to list', onClick: () => setStatusFilter('unpaid') }}
+          action={{ label: t('branchCollection.invoiceList.goToList'), onClick: () => setStatusFilter('unpaid') }}
         />
         <StatCard
-          label="Partially Paid"
+          label={statusLabel('partial', t)}
           value={String(statusCounts.partial)}
           accent={STATUS_ACCENT.partial}
-          action={{ label: 'Go to list', onClick: () => setStatusFilter('partial') }}
+          action={{ label: t('branchCollection.invoiceList.goToList'), onClick: () => setStatusFilter('partial') }}
         />
         <StatCard
-          label="Paid"
+          label={statusLabel('paid', t)}
           value={String(statusCounts.paid)}
           accent={STATUS_ACCENT.paid}
-          action={{ label: 'Go to list', onClick: () => setStatusFilter('paid') }}
+          action={{ label: t('branchCollection.invoiceList.goToList'), onClick: () => setStatusFilter('paid') }}
         />
         <StatCard
-          label="Void"
+          label={statusLabel('void', t)}
           value={String(statusCounts.void)}
           accent={STATUS_ACCENT.void}
-          action={{ label: 'Go to list', onClick: () => setStatusFilter('void') }}
+          action={{ label: t('branchCollection.invoiceList.goToList'), onClick: () => setStatusFilter('void') }}
         />
       </div>
 
@@ -840,7 +843,7 @@ export default function InvoiceList() {
                   {inv.invoiceNo} · {inv.clientName}
                   {inv.isMigrated && (
                     <span className="text-[10px] font-medium text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">
-                      Migrated
+                      {t('branchCollection.invoiceList.migrated')}
                     </span>
                   )}
                 </p>
@@ -849,19 +852,20 @@ export default function InvoiceList() {
                 </p>
                 {inv.status === 'void' ? (
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Voided{inv.voidedByName ? ` by ${inv.voidedByName}` : ''}
-                    {formatShortDateFromTs(inv.voidedAt) ? ` on ${formatShortDateFromTs(inv.voidedAt)}` : ''}
+                    {t('branchCollection.invoiceList.voided')}
+                    {inv.voidedByName ? ' ' + t('branchCollection.invoiceList.byName', { name: inv.voidedByName }) : ''}
+                    {formatShortDateFromTs(inv.voidedAt) ? ' ' + t('branchCollection.statusEditor.onDate', { date: formatShortDateFromTs(inv.voidedAt) }) : ''}
                     {inv.voidReason ? ` — ${inv.voidReason}` : ''}
                   </p>
                 ) : (
                   inv.status !== 'unpaid' &&
                   lastPayment(inv) && (
                     <p className="text-xs text-emerald-600 mt-0.5">
-                      Last paid: RM {lastPayment(inv)!.amount.toFixed(2)}
-                      {lastPayment(inv)!.date && ` on ${formatShortDate(lastPayment(inv)!.date)}`}
+                      {t('branchCollection.invoiceList.lastPaid', { amount: lastPayment(inv)!.amount.toFixed(2) })}
+                      {lastPayment(inv)!.date && ' ' + t('branchCollection.statusEditor.onDate', { date: formatShortDate(lastPayment(inv)!.date) })}
                       {' · '}
                       <span className={inv.total - inv.amountPaid > 0 ? 'text-amber-600' : 'text-slate-400'}>
-                        Balance: RM {(inv.total - inv.amountPaid).toFixed(2)}
+                        {t('branchCollection.invoiceList.balance', { amount: (inv.total - inv.amountPaid).toFixed(2) })}
                       </span>
                     </p>
                   )
@@ -869,18 +873,18 @@ export default function InvoiceList() {
               </div>
               <div className="flex items-center gap-3 flex-wrap">
                 <span className={`text-xs font-medium px-2 py-1 rounded ${STATUS_COLOR[inv.status]}`}>
-                  {STATUS_LABEL[inv.status]}
+                  {statusLabel(inv.status, t)}
                 </span>
                 <span className="text-sm font-semibold">RM {inv.total.toFixed(2)}</span>
                 <button onClick={() => setViewingId(inv.id)} className="text-xs font-medium text-blue-700 hover:underline">
-                  View
+                  {t('branchCollection.invoiceList.view')}
                 </button>
                 {inv.status !== 'void' && (
                   <button
                     onClick={() => togglePanel(inv.id, 'status')}
                     className="text-xs font-medium text-slate-500 hover:underline"
                   >
-                    Status
+                    {t('branchCollection.invoiceList.statusButton')}
                   </button>
                 )}
                 {canManage && inv.status === 'unpaid' && (
@@ -888,7 +892,7 @@ export default function InvoiceList() {
                     onClick={() => togglePanel(inv.id, 'edit')}
                     className="text-xs font-medium text-slate-500 hover:underline"
                   >
-                    Edit
+                    {t('branchCollection.invoiceList.editButton')}
                   </button>
                 )}
                 {canManage && inv.status !== 'void' && (
@@ -896,7 +900,7 @@ export default function InvoiceList() {
                     onClick={() => togglePanel(inv.id, 'void')}
                     className="text-xs font-medium text-rose-500 hover:underline"
                   >
-                    Void
+                    {t('branchCollection.invoiceList.voidButton')}
                   </button>
                 )}
               </div>
@@ -914,7 +918,7 @@ export default function InvoiceList() {
         ))}
         {filteredInvoices.length === 0 && (
           <p className="text-xs text-slate-400">
-            {invoices.length === 0 ? 'No invoices generated yet.' : 'No invoices match these filters.'}
+            {invoices.length === 0 ? t('branchCollection.invoiceList.noneGenerated') : t('branchCollection.invoiceList.noneMatchFilters')}
           </p>
         )}
       </div>

@@ -1,4 +1,5 @@
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { useTranslation } from 'react-i18next';
 import { VIZ } from '../../utils/vizColors';
 import { formatRM } from '../../utils/format';
 
@@ -14,10 +15,11 @@ export interface OutstandingTrendChartPoint {
  *  reads as part of the same app. A single series needs no legend box — the chart's own title
  *  above it already names what's plotted. */
 export default function OutstandingTrendChart({ data }: { data: OutstandingTrendChartPoint[] }) {
+  const { t } = useTranslation();
   if (data.length === 0) {
     return (
       <div className="h-64 flex items-center justify-center text-sm text-slate-400">
-        No invoices yet — generate one to start the trend.
+        {t('branchCollection.revenueTrendChart.empty')}
       </div>
     );
   }
@@ -47,7 +49,7 @@ export default function OutstandingTrendChart({ data }: { data: OutstandingTrend
         <Area
           type="monotone"
           dataKey="outstanding"
-          name="Total outstanding"
+          name={t('branchCollection.outstandingTrendChart.totalOutstanding')}
           stroke={VIZ.status.warning}
           strokeWidth={2}
           fill={VIZ.status.warning}

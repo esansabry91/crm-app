@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useWonTenders } from '../../hooks/useActiveProjects';
 import { createMigratedInvoice, deriveInvoiceStatus, clampAmountPaid } from '../../services/invoices';
 import { formatRM } from '../../utils/format';
 
+// Kept in English regardless of app language — this feeds the printed/PDF invoice's own billing-
+// month line (see InvoicePrintView), a formal client-facing business document, not app UI. Same
+// scope boundary as InvoiceGenerator's own identical helper.
 const MONTH_NAMES = [
   'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
   'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
@@ -46,13 +50,14 @@ function guessRunningNumber(invoiceNo: string): number | null {
  * reusing a running number a migrated invoice's number already carries.
  */
 export default function MigrateInvoiceForm() {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const { brands } = useBrands();
   const { branches } = useBranches();
   const { wonTenders } = useWonTenders(profile);
 
   const [tenderId, setTenderId] = useState('');
-  const tender = wonTenders.find((t) => t.id === tenderId) || null;
+  const tender = wonTenders.find((item) => item.id === tenderId) || null;
   const matchedBranch = tender?.activeBranch ? branches.find((b) => b.name === tender.activeBranch) || null : null;
 
   const [brandId, setBrandId] = useState('');
@@ -156,7 +161,7 @@ export default function MigrateInvoiceForm() {
         },
         { uid: profile.uid, name: profile.name, role: profile.role }
       );
-      setSaveMessage({ text: `Historical invoice ${invoiceNo.trim()} saved — find it in the Invoices tab.`, isError: false });
+      setSaveMessage({ text: t('branchCollection.migrateInvoiceForm.toastSaved', { invoiceNo: invoiceNo.trim() }), isError: false });
       setInvoiceNo('');
       setSubTotal(0);
       setAmountPaid(0);
@@ -164,7 +169,7 @@ export default function MigrateInvoiceForm() {
       setReserveTouched(false);
       setReserveRunningNumber(null);
     } catch (err) {
-      setSaveMessage({ text: err instanceof Error ? err.message : 'Could not save invoice.', isError: true });
+      setSaveMessage({ text: err instanceof Error ? err.message : t('branchCollection.migrateInvoiceForm.errorCouldNotSave'), isError: true });
     } finally {
       setSaving(false);
     }
@@ -173,29 +178,27 @@ export default function MigrateInvoiceForm() {
   return (
     <div className="space-y-6">
       <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
-        For a past invoice that was already issued outside this app — no Duty Roster site to link
-        it to, but tied to an Active Project. Pick the project it belongs to, type in the amount
-        and the invoice number exactly as originally issued, and set its current payment status.
+        {t('branchCollection.migrateInvoiceForm.intro')}
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 className="text-sm font-semibold text-slate-800 mb-3">Project &amp; client</h3>
+        <h3 className="text-sm font-semibold text-slate-800 mb-3">{t('branchCollection.migrateInvoiceForm.sectionProjectClient')}</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="sm:col-span-2">
-            <label className="block text-xs font-medium text-slate-500 mb-1">Active Project</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.activeProjectLabel')}</label>
             <select value={tenderId} onChange={(e) => setTenderId(e.target.value)} className="input w-full">
-              <option value="">Select the project this invoice was billed under…</option>
-              {wonTenders.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.clientName} {t.activeBranch ? `(${t.activeBranch})` : ''}
+              <option value="">{t('branchCollection.migrateInvoiceForm.selectProjectPlaceholder')}</option>
+              {wonTenders.map((wt) => (
+                <option key={wt.id} value={wt.id}>
+                  {wt.clientName} {wt.activeBranch ? `(${wt.activeBranch})` : ''}
                 </option>
               ))}
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Brand (issuing company)</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.brandLabel')}</label>
             <select value={brandId} onChange={(e) => setBrandId(e.target.value)} className="input w-full">
-              <option value="">Select a brand…</option>
+              <option value="">{t('branchCollection.migrateInvoiceForm.selectBrandPlaceholder')}</option>
               {brands.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
@@ -204,13 +207,13 @@ export default function MigrateInvoiceForm() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Branch</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.branchLabel')}</label>
             <select
               value={branchIdOverride || matchedBranch?.id || ''}
               onChange={(e) => setBranchIdOverride(e.target.value)}
               className="input w-full"
             >
-              <option value="">Select a branch…</option>
+              <option value="">{t('branchCollection.migrateInvoiceForm.selectBranchPlaceholder')}</option>
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
@@ -219,47 +222,47 @@ export default function MigrateInvoiceForm() {
             </select>
             {tender && !matchedBranch && (
               <p className="text-xs text-slate-400 mt-1">
-                Couldn't auto-match a branch from this project — pick one.
+                {t('branchCollection.migrateInvoiceForm.noBranchMatch')}
               </p>
             )}
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Client name</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.clientNameLabel')}</label>
             <input value={clientName} onChange={(e) => setClientName(e.target.value)} className="input w-full" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Attn.</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.attnLabel')}</label>
             <input value={attnName} onChange={(e) => setAttnName(e.target.value)} className="input w-full" />
           </div>
           <div className="sm:col-span-2">
-            <label className="block text-xs font-medium text-slate-500 mb-1">Client address</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.clientAddressLabel')}</label>
             <textarea value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} className="input w-full" rows={2} />
           </div>
         </div>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 className="text-sm font-semibold text-slate-800 mb-3">Invoice details</h3>
+        <h3 className="text-sm font-semibold text-slate-800 mb-3">{t('branchCollection.migrateInvoiceForm.sectionInvoiceDetails')}</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Invoice no. (as originally issued)</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.invoiceNoLabel')}</label>
             <input
               value={invoiceNo}
               onChange={(e) => setInvoiceNo(e.target.value)}
               className="input w-full"
-              placeholder="e.g. PZ/KV3/ABC/2024/07"
+              placeholder={t('branchCollection.migrateInvoiceForm.invoiceNoPlaceholder')}
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Invoice date</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.invoiceDateLabel')}</label>
             <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className="input w-full" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Billing month (for the description line)</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.billingMonthLabel')}</label>
             <input type="month" value={billingMonthValue} onChange={(e) => setBillingMonthValue(e.target.value)} className="input w-full" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Payment terms (days)</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.paymentTermsLabel')}</label>
             <input
               type="number"
               value={paymentTermsDays === 0 ? '' : paymentTermsDays}
@@ -272,18 +275,18 @@ export default function MigrateInvoiceForm() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Quotation no.</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.quotationNoLabel')}</label>
             <input value={quotationNo} onChange={(e) => setQuotationNo(e.target.value)} className="input w-full" placeholder="-" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Contract / Letter of Award / PO No.</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.contractRefLabel')}</label>
             <input value={contractRef} onChange={(e) => setContractRef(e.target.value)} className="input w-full" />
           </div>
         </div>
 
         <div className="mt-4 pt-4 border-t border-slate-100">
           <label className="block text-xs font-medium text-slate-500 mb-1">
-            Reserve running number for this brand/branch/client
+            {t('branchCollection.migrateInvoiceForm.reserveRunningNumberLabel')}
           </label>
           <input
             type="number"
@@ -294,22 +297,19 @@ export default function MigrateInvoiceForm() {
               setReserveRunningNumber(raw === '' ? null : Number(raw) || null);
             }}
             className="input w-40"
-            placeholder="Leave blank to skip"
+            placeholder={t('branchCollection.migrateInvoiceForm.reserveRunningNumberPlaceholder')}
           />
           <p className="text-xs text-slate-400 mt-1">
-            Guessed from the invoice number above — bumps this brand/branch/client's own
-            auto-numbering counter so the next NEW invoice generated for them never repeats a
-            running number this one already used. Leave blank if this invoice's number doesn't
-            follow that scheme, or if you're not sure.
+            {t('branchCollection.migrateInvoiceForm.reserveRunningNumberHint')}
           </p>
         </div>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 className="text-sm font-semibold text-slate-800 mb-3">Amount &amp; payment status</h3>
+        <h3 className="text-sm font-semibold text-slate-800 mb-3">{t('branchCollection.migrateInvoiceForm.sectionAmountStatus')}</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Subtotal (RM)</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.subtotalLabel')}</label>
             <input
               type="number"
               value={subTotal === 0 ? '' : subTotal}
@@ -323,23 +323,23 @@ export default function MigrateInvoiceForm() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">SST rate</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.sstRateLabel')}</label>
             <select value={sstRate} onChange={(e) => setSstRate(Number(e.target.value))} className="input w-full">
               <option value={0.08}>8%</option>
               <option value={0.06}>6%</option>
-              <option value={0}>0% (exempt)</option>
+              <option value={0}>{t('branchCollection.migrateInvoiceForm.sstExempt')}</option>
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">SST amount</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.sstAmountLabel')}</label>
             <div className="input w-full bg-slate-50 text-slate-600">{formatRM(sstAmount)}</div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Total</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.contentEditor.total')}</label>
             <div className="input w-full bg-slate-50 text-slate-800 font-semibold">{formatRM(total)}</div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Amount paid (RM)</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.amountPaidLabel')}</label>
             <input
               type="number"
               value={amountPaid === 0 ? '' : amountPaid}
@@ -353,17 +353,17 @@ export default function MigrateInvoiceForm() {
               className="input w-full"
               placeholder="0.00"
             />
-            <p className="text-xs text-slate-400 mt-1">Can't exceed the total ({formatRM(total)}).</p>
+            <p className="text-xs text-slate-400 mt-1">{t('branchCollection.migrateInvoiceForm.cannotExceedTotal', { total: formatRM(total) })}</p>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.debtorList.colStatus')}</label>
             <div className="input w-full bg-slate-50 text-slate-700 font-medium">
-              {status === 'unpaid' ? 'Unpaid' : status === 'partial' ? 'Partially Paid' : 'Paid'}
+              {status === 'unpaid' ? t('branchCollection.status.unpaid') : status === 'partial' ? t('branchCollection.status.partial') : t('branchCollection.status.paid')}
             </div>
           </div>
           {status !== 'unpaid' && (
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Last paid date</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.lastPaidDateLabel')}</label>
               <input type="date" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} className="input w-full" />
             </div>
           )}
@@ -376,7 +376,7 @@ export default function MigrateInvoiceForm() {
           disabled={!canSave || saving}
           className="px-4 py-2 text-sm font-medium text-white bg-slate-700 hover:bg-slate-800 disabled:opacity-60 rounded-lg"
         >
-          {saving ? 'Saving…' : 'Save historical invoice'}
+          {saving ? t('branchCollection.common.savingEllipsis') : t('branchCollection.migrateInvoiceForm.saveButton')}
         </button>
         {saveMessage && (
           <p className={`text-sm ${saveMessage.isError ? 'text-rose-600' : 'text-emerald-600'}`}>{saveMessage.text}</p>

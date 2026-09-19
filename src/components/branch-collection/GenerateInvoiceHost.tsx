@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import clsx from 'clsx';
+import { useTranslation } from 'react-i18next';
 import InvoiceGenerator from './InvoiceGenerator';
 import MigrateInvoiceForm from './MigrateInvoiceForm';
 
@@ -13,6 +14,7 @@ type Mode = 'new' | 'migrate';
  * nothing beyond both producing an Invoice doc.
  */
 export default function GenerateInvoiceHost() {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<Mode>('new');
 
   return (
@@ -25,7 +27,7 @@ export default function GenerateInvoiceHost() {
             mode === 'new' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-100'
           )}
         >
-          New Invoice
+          {t('branchCollection.generateInvoiceHost.newInvoice')}
         </button>
         <button
           onClick={() => setMode('migrate')}
@@ -34,7 +36,7 @@ export default function GenerateInvoiceHost() {
             mode === 'migrate' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-100'
           )}
         >
-          Add Historical Invoice
+          {t('branchCollection.generateInvoiceHost.addHistoricalInvoice')}
         </button>
       </div>
       {mode === 'new' ? <InvoiceGenerator /> : <MigrateInvoiceForm />}
