@@ -1,5 +1,7 @@
 import { Fragment, useMemo, useState, type FormEvent } from 'react';
 import clsx from 'clsx';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useTasks } from '../hooks/useTasks';
 import { useUsers } from '../hooks/useUsers';
@@ -34,7 +36,22 @@ function priorityBadgeClass(priority: TaskPriority): string {
   }
 }
 
+// TaskPriority itself ('High'/'Medium'/'Low') stays the stored/data-model value — only its
+// on-screen label is translated, matching the same convention as every other status/priority
+// enum elsewhere in this app.
+function priorityLabel(priority: TaskPriority, t: TFunction): string {
+  switch (priority) {
+    case 'High':
+      return t('taskBoard.priorityHigh');
+    case 'Medium':
+      return t('taskBoard.priorityMedium');
+    default:
+      return t('taskBoard.priorityLow');
+  }
+}
+
 export default function TaskBoardPage() {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const { tasks, loading } = useTasks();
   const { users } = useUsers();
@@ -174,20 +191,20 @@ export default function TaskBoardPage() {
     e.preventDefault();
     setError(null);
     if (!profile) {
-      setError('Not signed in.');
+      setError(t('taskBoard.errorNotSignedIn'));
       return;
     }
     if (!title.trim()) {
-      setError('Give the task a title.');
+      setError(t('taskBoard.errorGiveTitle'));
       return;
     }
     if (!effectiveAssignDept) {
-      setError('Pick a branch.');
+      setError(t('taskBoard.errorPickBranch'));
       return;
     }
     const assignee = assigneeOptions.find((u) => u.uid === assigneeUid);
     if (!assignee) {
-      setError('Pick who this task is for.');
+      setError(t('taskBoard.errorPickAssignee'));
       return;
     }
     setBusy(true);
@@ -202,11 +219,11 @@ export default function TaskBoardPage() {
         createdByUid: profile.uid,
         createdByName: profile.name,
       });
-      flash(`Assigned "${title.trim()}" to ${assignee.name}.`);
+      flash(t('taskBoard.toastAssigned', { title: title.trim(), name: assignee.name }));
       resetForm();
       setFormOpen(false);
     } catch (err) {
-      setError('Could not assign that task. Please try again.');
+      setError(t('taskBoard.errorAssignFailed'));
       console.error(err);
     } finally {
       setBusy(false);
@@ -216,37 +233,37 @@ export default function TaskBoardPage() {
   async function handleMarkDone(task: StaffTask) {
     try {
       await markTaskDone(task.id);
-      flash(`Marked "${task.title}" as done — waiting for your manager to confirm.`);
+      flash(t('taskBoard.toastMarkedDone', { title: task.title }));
     } catch {
-      flash('Could not update that task.');
+      flash(t('taskBoard.errorMarkDoneFailed'));
     }
   }
 
   async function handleClose(task: StaffTask) {
     try {
-      await closeTask(task.id, profile?.name || 'Unknown');
-      flash(`Closed "${task.title}".`);
+      await closeTask(task.id, profile?.name || t('taskBoard.unknownFallback'));
+      flash(t('taskBoard.toastClosed', { title: task.title }));
     } catch {
-      flash('Could not close that task.');
+      flash(t('taskBoard.errorCloseFailed'));
     }
   }
 
   async function handleReopen(task: StaffTask) {
     try {
       await reopenTask(task.id);
-      flash(`Reopened "${task.title}".`);
+      flash(t('taskBoard.toastReopened', { title: task.title }));
     } catch {
-      flash('Could not reopen that task.');
+      flash(t('taskBoard.errorReopenFailed'));
     }
   }
 
   async function handleDelete(task: StaffTask) {
-    if (!window.confirm(`Delete "${task.title}"? This cannot be undone.`)) return;
+    if (!window.confirm(t('taskBoard.confirmDelete', { title: task.title }))) return;
     try {
       await deleteTask(task.id);
-      flash('Task deleted.');
+      flash(t('taskBoard.toastDeleted'));
     } catch {
-      flash('Could not delete that task.');
+      flash(t('taskBoard.errorDeleteFailed'));
     }
   }
 
@@ -255,7 +272,7 @@ export default function TaskBoardPage() {
     try {
       await updateTaskPriority(task.id, next);
     } catch {
-      flash('Could not update priority.');
+      flash(t('taskBoard.errorPriorityFailed'));
     }
   }
 
@@ -265,9 +282,9 @@ export default function TaskBoardPage() {
     try {
       await addProgressUpdate(task.id, { text: progressDraft.trim(), byUid: profile.uid, byName: profile.name });
       setProgressDraft('');
-      flash('Progress update added.');
+      flash(t('taskBoard.toastProgressAdded'));
     } catch {
-      flash('Could not add that update.');
+      flash(t('taskBoard.errorProgressFailed'));
     } finally {
       setProgressBusy(false);
     }
@@ -280,7 +297,7 @@ export default function TaskBoardPage() {
   const colCount = 6 + (!isStaff ? 1 : 0) + (view === 'completed' ? 1 : 0);
 
   if (loading) {
-    return <div className="p-6 text-sm text-slate-400">Loading…</div>;
+    return <div className="p-6 text-sm text-slate-400">{t('taskBoard.loadingEllipsis')}</div>;
   }
 
   return (
@@ -288,9 +305,9 @@ export default function TaskBoardPage() {
       <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-lg font-semibold text-slate-900">Task Board</h1>
+            <h1 className="text-lg font-semibold text-slate-900">{t('nav.links.taskBoard')}</h1>
             <p className="text-sm text-slate-500 mt-0.5">
-              {canManage ? "Assign and track your Operation Staff's tasks." : 'Tasks assigned to you.'}
+              {canManage ? t('taskBoard.subtitleManage') : t('taskBoard.subtitleStaff')}
             </p>
           </div>
           {canManage && (
@@ -301,33 +318,33 @@ export default function TaskBoardPage() {
               }}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
             >
-              {formOpen ? 'Cancel' : '+ Assign Task'}
+              {formOpen ? t('taskBoard.cancel') : t('taskBoard.assignTaskButton')}
             </button>
           )}
         </div>
 
         <div className={clsx('grid gap-3 mt-4 max-w-3xl', isStaff ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3')}>
           <StatCard
-            label="Open Tasks"
+            label={t('taskBoard.openTasksLabel')}
             value={String(openTasks.length)}
-            sub={awaitingConfirmationCount > 0 ? `${awaitingConfirmationCount} awaiting your confirmation` : undefined}
+            sub={awaitingConfirmationCount > 0 ? t('taskBoard.awaitingConfirmationSub', { count: awaitingConfirmationCount }) : undefined}
             accent="#283278"
-            action={{ label: 'Go to list', onClick: () => setView('open'), disabled: openTasks.length === 0 }}
+            action={{ label: t('taskBoard.goToList'), onClick: () => setView('open'), disabled: openTasks.length === 0 }}
           />
           <StatCard
-            label="Completed Tasks"
+            label={t('taskBoard.completedTasksLabel')}
             value={String(completedThisMonth.length)}
-            sub="This month — resets every 1st"
+            sub={t('taskBoard.completedSub')}
             accent="#0f766e"
-            action={{ label: 'Go to list', onClick: () => setView('completed'), disabled: completedThisMonth.length === 0 }}
+            action={{ label: t('taskBoard.goToList'), onClick: () => setView('completed'), disabled: completedThisMonth.length === 0 }}
           />
           {/* Operation Staff don't get a productivity readout on their own tasks — this is a
               management metric for whoever's assigning the work, not the person doing it. */}
           {!isStaff && (
             <StatCard
-              label="Productivity"
+              label={t('taskBoard.productivityLabel')}
               value={productivity === null ? '—' : `${productivity}%`}
-              sub="Completed this month ÷ (completed + open)"
+              sub={t('taskBoard.productivitySub')}
               accent="#00a3da"
             />
           )}
@@ -343,18 +360,18 @@ export default function TaskBoardPage() {
 
         {canManage && formOpen && (
           <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <h3 className="text-sm font-semibold text-slate-800">Assign Task</h3>
+            <h3 className="text-sm font-semibold text-slate-800">{t('taskBoard.assignTaskFormTitle')}</h3>
             <form onSubmit={handleAssign} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Task title"
+                placeholder={t('taskBoard.taskTitlePlaceholder')}
                 className="input sm:col-span-2"
               />
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Details (optional)"
+                placeholder={t('taskBoard.detailsPlaceholder')}
                 rows={2}
                 className="input sm:col-span-2"
               />
@@ -367,7 +384,7 @@ export default function TaskBoardPage() {
                   }}
                   className="input"
                 >
-                  <option value="">Select a branch…</option>
+                  <option value="">{t('taskBoard.selectBranchPlaceholder')}</option>
                   {branches.map((b) => (
                     <option key={b.id} value={b.name}>
                       {b.name}
@@ -376,11 +393,11 @@ export default function TaskBoardPage() {
                 </select>
               ) : (
                 <div className="input flex items-center bg-slate-50 text-slate-500">
-                  {profile?.department || '—'} (your branch)
+                  {t('taskBoard.yourBranch', { branch: profile?.department || '—' })}
                 </div>
               )}
               <select value={assigneeUid} onChange={(e) => setAssigneeUid(e.target.value)} className="input">
-                <option value="">Select Operation Staff…</option>
+                <option value="">{t('taskBoard.selectStaffPlaceholder')}</option>
                 {assigneeOptions.map((u) => (
                   <option key={u.uid} value={u.uid}>
                     {u.name}
@@ -392,9 +409,9 @@ export default function TaskBoardPage() {
                 onChange={(e) => setPriority(e.target.value as TaskPriority)}
                 className="input sm:col-span-2"
               >
-                <option value="High">High priority</option>
-                <option value="Medium">Medium priority</option>
-                <option value="Low">Low priority</option>
+                <option value="High">{t('taskBoard.priorityHighFull')}</option>
+                <option value="Medium">{t('taskBoard.priorityMediumFull')}</option>
+                <option value="Low">{t('taskBoard.priorityLowFull')}</option>
               </select>
               {error && <p className="sm:col-span-2 text-sm text-rose-600">{error}</p>}
               <button
@@ -402,7 +419,7 @@ export default function TaskBoardPage() {
                 disabled={busy}
                 className="sm:col-span-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-60"
               >
-                {busy ? 'Assigning…' : 'Assign Task'}
+                {busy ? t('taskBoard.assigningEllipsis') : t('taskBoard.assignTaskFormTitle')}
               </button>
             </form>
           </div>
@@ -417,7 +434,7 @@ export default function TaskBoardPage() {
                 view === 'open' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               )}
             >
-              Open ({filteredOpenTasks.length})
+              {t('taskBoard.openTab', { count: filteredOpenTasks.length })}
             </button>
             <button
               onClick={() => setView('completed')}
@@ -426,7 +443,7 @@ export default function TaskBoardPage() {
                 view === 'completed' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               )}
             >
-              Completed this month ({filteredCompletedTasks.length})
+              {t('taskBoard.completedTab', { count: filteredCompletedTasks.length })}
             </button>
           </div>
           {/* A staff account only ever has itself as an assignee, so the filter would be a
@@ -437,7 +454,7 @@ export default function TaskBoardPage() {
               onChange={(e) => setAssigneeFilter(e.target.value)}
               className="input text-sm sm:max-w-[180px]"
             >
-              <option value={ALL_ASSIGNEES}>All assignees</option>
+              <option value={ALL_ASSIGNEES}>{t('taskBoard.allAssignees')}</option>
               {assigneeFilterOptions.map((a) => (
                 <option key={a.uid} value={a.uid}>
                   {a.name}
@@ -450,10 +467,10 @@ export default function TaskBoardPage() {
             onChange={(e) => setPriorityFilter(e.target.value as 'all' | TaskPriority)}
             className="input text-sm sm:max-w-[160px]"
           >
-            <option value="all">All priorities</option>
-            <option value="High">High priority</option>
-            <option value="Medium">Medium priority</option>
-            <option value="Low">Low priority</option>
+            <option value="all">{t('taskBoard.allPriorities')}</option>
+            <option value="High">{t('taskBoard.priorityHighFull')}</option>
+            <option value="Medium">{t('taskBoard.priorityMediumFull')}</option>
+            <option value="Low">{t('taskBoard.priorityLowFull')}</option>
           </select>
           {isAdmin && (
             <select
@@ -461,7 +478,7 @@ export default function TaskBoardPage() {
               onChange={(e) => setBranchFilter(e.target.value)}
               className="input text-sm ml-auto sm:max-w-[200px]"
             >
-              <option value={ALL_BRANCHES}>All branches</option>
+              <option value={ALL_BRANCHES}>{t('taskBoard.allBranches')}</option>
               {branches.map((b) => (
                 <option key={b.id} value={b.name}>
                   {b.name}
@@ -476,77 +493,77 @@ export default function TaskBoardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
-                  <th className="py-2 pr-4 font-medium">Task</th>
-                  {!isStaff && <th className="py-2 pr-4 font-medium">Assignee</th>}
-                  <th className="py-2 pr-4 font-medium">Priority</th>
-                  <th className="py-2 pr-4 font-medium">Assigned Date</th>
-                  <th className="py-2 pr-4 font-medium">Close Date</th>
-                  <th className="py-2 pr-4 font-medium">Progress Update</th>
-                  {view === 'completed' && <th className="py-2 pr-4 font-medium">Confirmed</th>}
-                  <th className="py-2 font-medium text-right">Actions</th>
+                  <th className="py-2 pr-4 font-medium">{t('taskBoard.colTask')}</th>
+                  {!isStaff && <th className="py-2 pr-4 font-medium">{t('taskBoard.colAssignee')}</th>}
+                  <th className="py-2 pr-4 font-medium">{t('taskBoard.colPriority')}</th>
+                  <th className="py-2 pr-4 font-medium">{t('taskBoard.colAssignedDate')}</th>
+                  <th className="py-2 pr-4 font-medium">{t('taskBoard.colCloseDate')}</th>
+                  <th className="py-2 pr-4 font-medium">{t('taskBoard.colProgressUpdate')}</th>
+                  {view === 'completed' && <th className="py-2 pr-4 font-medium">{t('taskBoard.colConfirmed')}</th>}
+                  <th className="py-2 font-medium text-right">{t('taskBoard.colActions')}</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((t) => (
-                  <Fragment key={t.id}>
+                {rows.map((task) => (
+                  <Fragment key={task.id}>
                     <tr className="border-b border-slate-50 last:border-0 align-top">
                       <td className="py-2.5 pr-4">
-                        <p className="font-medium text-slate-800">{t.title}</p>
-                        {t.description && <p className="text-xs text-slate-400 mt-0.5">{t.description}</p>}
+                        <p className="font-medium text-slate-800">{task.title}</p>
+                        {task.description && <p className="text-xs text-slate-400 mt-0.5">{task.description}</p>}
                       </td>
-                      {!isStaff && <td className="py-2.5 pr-4 text-slate-600">{t.assigneeName}</td>}
+                      {!isStaff && <td className="py-2.5 pr-4 text-slate-600">{task.assigneeName}</td>}
                       <td className="py-2.5 pr-4">
-                        {canManage && t.status !== 'closed' ? (
+                        {canManage && task.status !== 'closed' ? (
                           <select
-                            value={t.priority}
-                            onChange={(e) => handlePriorityChange(t, e.target.value as TaskPriority)}
+                            value={task.priority}
+                            onChange={(e) => handlePriorityChange(task, e.target.value as TaskPriority)}
                             className={clsx(
                               'text-xs rounded-full px-2 py-1 border-0 font-medium',
-                              priorityBadgeClass(t.priority)
+                              priorityBadgeClass(task.priority)
                             )}
                           >
-                            <option value="High">High</option>
-                            <option value="Medium">Medium</option>
-                            <option value="Low">Low</option>
+                            <option value="High">{t('taskBoard.priorityHigh')}</option>
+                            <option value="Medium">{t('taskBoard.priorityMedium')}</option>
+                            <option value="Low">{t('taskBoard.priorityLow')}</option>
                           </select>
                         ) : (
-                          <span className={clsx('text-xs rounded-full px-2 py-1 font-medium', priorityBadgeClass(t.priority))}>
-                            {t.priority}
+                          <span className={clsx('text-xs rounded-full px-2 py-1 font-medium', priorityBadgeClass(task.priority))}>
+                            {priorityLabel(task.priority, t)}
                           </span>
                         )}
                       </td>
-                      <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap">{formatDateTime(t.createdAt)}</td>
+                      <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap">{formatDateTime(task.createdAt)}</td>
                       <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap">
-                        {t.staffCompletedAt ? formatDateTime(t.staffCompletedAt) : '—'}
+                        {task.staffCompletedAt ? formatDateTime(task.staffCompletedAt) : '—'}
                       </td>
                       <td className="py-2.5 pr-4 max-w-[180px]">
-                        {t.progressUpdates.length > 0 ? (
+                        {task.progressUpdates.length > 0 ? (
                           <>
                             <p
                               className="text-xs text-slate-600 truncate"
-                              title={t.progressUpdates[t.progressUpdates.length - 1].text}
+                              title={task.progressUpdates[task.progressUpdates.length - 1].text}
                             >
-                              {t.progressUpdates[t.progressUpdates.length - 1].text}
+                              {task.progressUpdates[task.progressUpdates.length - 1].text}
                             </p>
                             <button
                               onClick={() => {
-                                setExpandedTaskId((cur) => (cur === t.id ? null : t.id));
+                                setExpandedTaskId((cur) => (cur === task.id ? null : task.id));
                                 setProgressDraft('');
                               }}
                               className="text-xs text-blue-600 hover:text-blue-700 mt-0.5"
                             >
-                              {expandedTaskId === t.id ? 'Hide' : `View log (${t.progressUpdates.length})`}
+                              {expandedTaskId === task.id ? t('taskBoard.hide') : t('taskBoard.viewLog', { count: task.progressUpdates.length })}
                             </button>
                           </>
-                        ) : t.status !== 'closed' ? (
+                        ) : task.status !== 'closed' ? (
                           <button
                             onClick={() => {
-                              setExpandedTaskId((cur) => (cur === t.id ? null : t.id));
+                              setExpandedTaskId((cur) => (cur === task.id ? null : task.id));
                               setProgressDraft('');
                             }}
                             className="text-xs text-blue-600 hover:text-blue-700"
                           >
-                            {expandedTaskId === t.id ? 'Hide' : 'Add update'}
+                            {expandedTaskId === task.id ? t('taskBoard.hide') : t('taskBoard.addUpdate')}
                           </button>
                         ) : (
                           <span className="text-xs text-slate-300">—</span>
@@ -554,51 +571,51 @@ export default function TaskBoardPage() {
                       </td>
                       {view === 'completed' && (
                         <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap">
-                          {t.closedAt ? formatDateTime(t.closedAt) : '—'}
-                          {t.closedByName && <span className="block text-xs text-slate-400">by {t.closedByName}</span>}
+                          {task.closedAt ? formatDateTime(task.closedAt) : '—'}
+                          {task.closedByName && <span className="block text-xs text-slate-400">{t('taskBoard.byName', { name: task.closedByName })}</span>}
                         </td>
                       )}
                       <td className="py-2.5 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-3">
-                          {isStaff && t.status === 'open' && (
+                          {isStaff && task.status === 'open' && (
                             <button
-                              onClick={() => handleMarkDone(t)}
+                              onClick={() => handleMarkDone(task)}
                               className="text-xs font-medium text-blue-600 hover:text-blue-700"
                             >
-                              Mark as Done
+                              {t('taskBoard.markAsDone')}
                             </button>
                           )}
-                          {isStaff && t.status === 'staffCompleted' && (
-                            <span className="text-xs text-amber-600">Awaiting confirmation</span>
+                          {isStaff && task.status === 'staffCompleted' && (
+                            <span className="text-xs text-amber-600">{t('taskBoard.awaitingConfirmationBadge')}</span>
                           )}
-                          {canManage && t.status === 'staffCompleted' && (
+                          {canManage && task.status === 'staffCompleted' && (
                             <>
                               <button
-                                onClick={() => handleClose(t)}
+                                onClick={() => handleClose(task)}
                                 className="text-xs font-medium text-emerald-600 hover:text-emerald-700"
                               >
-                                Close Task
+                                {t('taskBoard.closeTaskButton')}
                               </button>
-                              <button onClick={() => handleReopen(t)} className="text-xs text-slate-500 hover:text-amber-600">
-                                Reopen
+                              <button onClick={() => handleReopen(task)} className="text-xs text-slate-500 hover:text-amber-600">
+                                {t('taskBoard.reopenButton')}
                               </button>
                             </>
                           )}
                           {canManage && (
-                            <button onClick={() => handleDelete(t)} className="text-xs text-slate-400 hover:text-rose-600">
-                              Delete
+                            <button onClick={() => handleDelete(task)} className="text-xs text-slate-400 hover:text-rose-600">
+                              {t('taskBoard.deleteButton')}
                             </button>
                           )}
                         </div>
                       </td>
                     </tr>
-                    {expandedTaskId === t.id && (
+                    {expandedTaskId === task.id && (
                       <tr className="bg-slate-50 border-b border-slate-100">
                         <td colSpan={colCount} className="px-4 py-3">
                           <div className="space-y-2 max-w-xl">
-                            {t.progressUpdates.length > 0 && (
+                            {task.progressUpdates.length > 0 && (
                               <ul className="space-y-1.5 max-h-40 overflow-y-auto">
-                                {[...t.progressUpdates].reverse().map((u, i) => (
+                                {[...task.progressUpdates].reverse().map((u, i) => (
                                   <li key={i} className="text-xs text-slate-600 border-l-2 border-slate-200 pl-2">
                                     <span className="block text-slate-400">
                                       {formatDateTime(u.at)} · {u.byName}
@@ -608,26 +625,26 @@ export default function TaskBoardPage() {
                                 ))}
                               </ul>
                             )}
-                            {t.status !== 'closed' ? (
+                            {task.status !== 'closed' ? (
                               <div className="flex items-start gap-2">
                                 <textarea
                                   value={progressDraft}
                                   onChange={(e) => setProgressDraft(e.target.value)}
-                                  placeholder="Add a progress update…"
+                                  placeholder={t('taskBoard.addProgressUpdatePlaceholder')}
                                   rows={2}
                                   className="input flex-1 text-xs"
                                 />
                                 <button
-                                  onClick={() => handleAddProgressUpdate(t)}
+                                  onClick={() => handleAddProgressUpdate(task)}
                                   disabled={progressBusy || !progressDraft.trim()}
                                   className="px-3 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-60 shrink-0"
                                 >
-                                  Post
+                                  {t('taskBoard.postButton')}
                                 </button>
                               </div>
                             ) : (
-                              t.progressUpdates.length === 0 && (
-                                <p className="text-xs text-slate-400">No progress updates were logged on this task.</p>
+                              task.progressUpdates.length === 0 && (
+                                <p className="text-xs text-slate-400">{t('taskBoard.noProgressUpdates')}</p>
                               )
                             )}
                           </div>
@@ -639,7 +656,7 @@ export default function TaskBoardPage() {
                 {rows.length === 0 && (
                   <tr>
                     <td colSpan={colCount} className="py-8 text-center text-sm text-slate-400">
-                      {view === 'open' ? 'No open tasks.' : 'No tasks completed this month yet.'}
+                      {view === 'open' ? t('taskBoard.noOpenTasks') : t('taskBoard.noCompletedTasks')}
                     </td>
                   </tr>
                 )}
