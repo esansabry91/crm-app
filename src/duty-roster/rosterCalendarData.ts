@@ -7,12 +7,14 @@
  * `canEdit` user can edit a calendar slot directly regardless of lock state; only the Roster
  * Sheet grid's drag-and-drop goes through the lock machine).
  */
+import type { TFunction } from "i18next";
 import type { FlagEntry, GenerateMonthResult, LeaveEntry, MonthState } from "./types";
 import { RESERVED_FOR_TEMP } from "./types";
 import type { GenerateMonthConfig } from "./schedulingEngine";
 import { coveringGuardNameFor, guardById, guardName, leaveEntriesFor } from "./rosterModel";
 import { computeShiftDefsForDay, postsAt } from "./shiftStructure";
 import { isWeekend, weekdayShort } from "./dateUtils";
+import { leaveReasonKey } from "./leaveData";
 
 export const AUTO_ASSIGN_VALUE = "__auto__";
 export const UNFILLED_VALUE = "";
@@ -66,7 +68,8 @@ export function buildCalendarDays(
   m: number,
   config: GenerateMonthConfig,
   ms: MonthState,
-  result: GenerateMonthResult
+  result: GenerateMonthResult,
+  t: TFunction
 ): CalendarLayout {
   const guardsAll = config.guards;
   const firstWeekday = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
@@ -78,7 +81,11 @@ export function buildCalendarDays(
 
     const leaveLines = leaveEntriesToday.map((lv: LeaveEntry) => {
       const covering = coveringGuardNameFor(config, ms, lv);
-      const text = `${guardName(config, ms, lv.id)} — ${lv.reason || "Leave"}` + (covering ? ` — covered by ${covering}` : "");
+      const name = guardName(config, ms, lv.id);
+      const reason = t(`dutyRoster.leaveReasons.${leaveReasonKey(lv.reason || "Leave")}`);
+      const text = covering
+        ? t("dutyRoster.rosterCalendar.leaveLineCovered", { name, reason, covering })
+        : t("dutyRoster.rosterCalendar.leaveLineBase", { name, reason });
       return { text };
     });
 
@@ -97,10 +104,12 @@ export function buildCalendarDays(
             slots.push({
               kind: "readonlyExtraGuard",
               shiftLabel,
-              displayText: guardId ? guardName(config, ms, guardId) : "(unassigned)",
+              displayText: guardId ? guardName(config, ms, guardId) : t("dutyRoster.rosterCalendar.unassignedParen"),
               title:
-                'Additional guard (temporary) — manage from the "Assign an additional guard" panel in Adjustments' +
-                (flag ? ` — ${flag.reason}` : ""),
+                t("dutyRoster.rosterCalendar.additionalGuardTitle", {
+                  panel: t("dutyRoster.additionalGuardPanel.title"),
+                  tab: t("dutyRoster.tabs.adjust"),
+                }) + (flag ? ` — ${flag.reason}` : ""),
               flagged: !!flag,
             });
             return;
@@ -111,12 +120,12 @@ export function buildCalendarDays(
           const flagged = findFlag(result.flags, day.dateStr, st.id, slotIdx);
 
           const options: CalendarSlotOption[] = [
-            { value: UNFILLED_VALUE, label: isOverridden ? "Unfilled (manual)" : "Unfilled" },
-            { value: AUTO_ASSIGN_VALUE, label: "Auto-assign" },
+            { value: UNFILLED_VALUE, label: isOverridden ? t("dutyRoster.rosterCalendar.unfilledManual") : t("dutyRoster.rosterCalendar.unfilled") },
+            { value: AUTO_ASSIGN_VALUE, label: t("dutyRoster.rosterCalendar.autoAssign") },
             ...guardsAll.map((g) => {
               let label = g.name;
-              if (g.active === false || (g.inactiveFrom && day.dateStr >= g.inactiveFrom)) label += " (inactive)";
-              else if (leaveGuards.includes(g.id)) label += " (leave)";
+              if (g.active === false || (g.inactiveFrom && day.dateStr >= g.inactiveFrom)) label += ` ${t("dutyRoster.rosterCalendar.inactiveParen")}`;
+              else if (leaveGuards.includes(g.id)) label += ` ${t("dutyRoster.rosterCalendar.leaveParen")}`;
               return { value: g.id, label };
             }),
           ];

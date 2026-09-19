@@ -13,6 +13,7 @@
  * click (a cross-site read, computeIncomingSupportDates() in combinedHoursCrossSite.ts) rather
  * than being always-live.
  */
+import type { TFunction } from "i18next";
 import type { SiteConfig, MonthState, GenerateMonthResult, ConfirmedSummary, IncomingSupportMap } from "./types";
 import type { RosterSession } from "./rosterModel";
 import { monthConfirmed, canConfirmCombinedHours, nowIso } from "./rosterModel";
@@ -70,7 +71,8 @@ export function buildCombinedReportData(
   ms: MonthState,
   result: GenerateMonthResult,
   session: RosterSession,
-  liveIncoming: IncomingSupportMap | null
+  liveIncoming: IncomingSupportMap | null,
+  t: TFunction
 ): CombinedReportData {
   const isPayrollLike = !session.canEdit;
   const incoming = resolveCombinedIncoming(ms, session, liveIncoming);
@@ -108,7 +110,7 @@ export function buildCombinedReportData(
 
   const total: CombinedDataRow = {
     employeeId: "",
-    name: "Total — all guards",
+    name: t("dutyRoster.common.totalAllGuards"),
     manHours: fmtHours(totals.manHours),
     normalDays: fmtCount(totals.normalDays),
     restDaysWorked: fmtCount(totals.restDaysWorked),
@@ -143,7 +145,7 @@ export interface CombinedConfirmControlsView {
  * Payroll — the confirm button's enabled state always depends on whether THIS viewer has
  * personally refreshed it (though Payroll can never click Confirm anyway per
  * canConfirmCombinedHours(), so the distinction is moot in practice — preserved for fidelity). */
-export function combinedConfirmControls(ms: MonthState, session: RosterSession, liveIncoming: IncomingSupportMap | null): CombinedConfirmControlsView {
+export function combinedConfirmControls(ms: MonthState, session: RosterSession, liveIncoming: IncomingSupportMap | null, t: TFunction): CombinedConfirmControlsView {
   const isPayrollLike = !session.canEdit;
   const confirmed = monthConfirmed(ms);
   const canConfirm = canConfirmCombinedHours(session);
@@ -152,10 +154,14 @@ export function combinedConfirmControls(ms: MonthState, session: RosterSession, 
   let statusText = "";
   if (confirmed) {
     statusVisible = true;
-    statusText = `Confirmed by ${confirmed.byName || "someone"} on ${formatConfirmedAt(confirmed.at)}` + (isPayrollLike ? "." : " — Payroll/HR can now view and export this.");
+    const name = confirmed.byName || t("dutyRoster.common.someoneFallback");
+    const date = formatConfirmedAt(confirmed.at);
+    statusText = isPayrollLike
+      ? t("dutyRoster.combinedHoursPanel.statusConfirmedPlain", { name, date })
+      : t("dutyRoster.combinedHoursPanel.statusConfirmedCanExport", { name, date });
   } else if (isPayrollLike) {
     statusVisible = true;
-    statusText = "Waiting for the branch manager to confirm this month's combined hours.";
+    statusText = t("dutyRoster.combinedHoursPanel.statusWaitingForBranchManager");
   }
 
   return {
@@ -179,26 +185,30 @@ export interface ConfirmCombinedOutcome {
 }
 
 /** Shared with exportTimeAttendanceToExcel()'s own guard — click a Refresh first. */
-export const NEED_REFRESH_TOAST = 'Click "Refresh combined hours" first.';
+export function getNeedRefreshToast(t: TFunction): string {
+  return t("dutyRoster.combinedHoursPanel.needRefreshToast");
+}
 
 /** Caller must first check `canConfirmCombinedHours(session)` (silent no-op if false) and that
  * `incoming` (the current session's cached "Refresh combined hours" result) is non-null —
- * surfaced as its own toast (NEED_REFRESH_TOAST) rather than swallowed here. */
-export function applyConfirmCombinedHours(ms: MonthState, incoming: IncomingSupportMap, actorUid: string | null, actorName: string | null): ConfirmCombinedOutcome {
-  const confirmed: ConfirmedSummary = { byUid: actorUid, byName: actorName || "Branch Manager", at: nowIso() };
+ * surfaced as its own toast (getNeedRefreshToast()) rather than swallowed here. */
+export function applyConfirmCombinedHours(ms: MonthState, incoming: IncomingSupportMap, actorUid: string | null, actorName: string | null, t: TFunction): ConfirmCombinedOutcome {
+  const confirmed: ConfirmedSummary = { byUid: actorUid, byName: actorName || t("dutyRoster.combinedHoursPanel.fallbackBranchManager"), at: nowIso() };
   return {
     ms: { ...ms, confirmed, confirmedIncoming: incoming },
-    toast: "Combined hours confirmed — Payroll can now view and export this month.",
+    toast: t("dutyRoster.combinedHoursPanel.toastConfirmed"),
     suppressConfirmRevoke: true,
   };
 }
 
-export const UNCONFIRM_COMBINED_MODAL = {
-  title: "Unconfirm combined hours",
-  message: "Payroll won't be able to view or export this month's combined hours until you confirm it again.",
-  okLabel: "Unconfirm",
-} as const;
+export function getUnconfirmCombinedModal(t: TFunction) {
+  return {
+    title: t("dutyRoster.combinedHoursPanel.unconfirmModalTitle"),
+    message: t("dutyRoster.combinedHoursPanel.unconfirmModalMessage"),
+    okLabel: t("dutyRoster.common.unconfirm"),
+  } as const;
+}
 
-export function applyUnconfirmCombinedHours(ms: MonthState): ConfirmCombinedOutcome {
-  return { ms: { ...ms, confirmed: null, confirmedIncoming: null }, toast: "Combined hours unconfirmed.", suppressConfirmRevoke: true };
+export function applyUnconfirmCombinedHours(ms: MonthState, t: TFunction): ConfirmCombinedOutcome {
+  return { ms: { ...ms, confirmed: null, confirmedIncoming: null }, toast: t("dutyRoster.combinedHoursPanel.toastUnconfirmed"), suppressConfirmRevoke: true };
 }

@@ -17,6 +17,7 @@
  * time inline. The row/column data below (which needs the full per-guard breakdown, not just
  * the totals) still comes from computeGuardSummary() directly, same as the original.
  */
+import type { TFunction } from "i18next";
 import type { SiteConfig, MonthState, GenerateMonthResult, TenderRateConfig, ConfirmedMonthSummary } from "./types";
 import type { RosterSession } from "./rosterModel";
 import { monthTempGuards, monthSupportGuards, activeSupportIds, guardName, nowIso, monthInvoiceConfirmed, canConfirmInvoiceSummary } from "./rosterModel";
@@ -87,7 +88,8 @@ export function buildSummaryReportData(
   config: SiteConfig,
   ms: MonthState,
   result: GenerateMonthResult,
-  rateConfig: TenderRateConfig | null
+  rateConfig: TenderRateConfig | null,
+  t: TFunction
 ): SummaryReportData {
   const summary = computeGuardSummary(y, m, config, ms, result);
   const guards = config.guards.filter((g) => g.active !== false || (result.totalShifts[g.id] || 0) > 0);
@@ -176,7 +178,7 @@ export function buildSummaryReportData(
   // or the lowest 'multiple'-mode position rate — never a temp guard's own display-only
   // `rate` field) and feed the grand total, but get no per-day breakdown (10 dash cells).
   if (tempIds.length) {
-    items.push({ type: "divider", id: "div-temp", label: "Temporary guards this month" });
+    items.push({ type: "divider", id: "div-temp", label: t("dutyRoster.summaryReportPanel.dividerTemp") });
     tempIds.forEach((id) => {
       const hrs = normalManHours(id);
       totals.manHours += hrs;
@@ -190,8 +192,8 @@ export function buildSummaryReportData(
         id: `temp-${id}`,
         row: {
           employeeId: DASH,
-          name: tempGuardsMap[id]?.name || "(unknown)",
-          nameSuffix: "(Temp)",
+          name: tempGuardsMap[id]?.name || t("dutyRoster.summaryReportPanel.unknownName"),
+          nameSuffix: t("dutyRoster.summaryReportPanel.nameSuffixTemp"),
           manHours: fmtHours(hrs),
           ...BLANK10,
           rate: rate != null ? fmtRM(rate) : DASH,
@@ -202,7 +204,7 @@ export function buildSummaryReportData(
   }
 
   if (supportIds.length) {
-    items.push({ type: "divider", id: "div-support", label: "Support guards this month" });
+    items.push({ type: "divider", id: "div-support", label: t("dutyRoster.summaryReportPanel.dividerSupport") });
     supportIds.forEach((id) => {
       const entry = supportGuardsMap[id];
       const hrs = normalManHours(id);
@@ -217,8 +219,8 @@ export function buildSummaryReportData(
         id: `support-${id}`,
         row: {
           employeeId: entry?.employeeId || DASH,
-          name: entry?.name || "(unknown)",
-          nameSuffix: `(Support — ${entry?.homeSiteName || "?"})`,
+          name: entry?.name || t("dutyRoster.summaryReportPanel.unknownName"),
+          nameSuffix: t("dutyRoster.summaryReportPanel.nameSuffixSupport", { site: entry?.homeSiteName || "?" }),
           manHours: fmtHours(hrs),
           ...BLANK10,
           rate: rate != null ? fmtRM(rate) : DASH,
@@ -231,7 +233,7 @@ export function buildSummaryReportData(
   // Additional Guard (Temporary) posts — NOT folded into the grand total below; "Total — all
   // guards" keeps meaning exactly the normal Client Site Requirement billing.
   if (additionalGuardIds.length) {
-    items.push({ type: "divider", id: "div-additional", label: "Additional Guard (Temporary) posts this month" });
+    items.push({ type: "divider", id: "div-additional", label: t("dutyRoster.summaryReportPanel.dividerAdditional") });
     additionalGuardIds.forEach((id) => {
       items.push({
         type: "guard",
@@ -242,7 +244,7 @@ export function buildSummaryReportData(
           manHours: fmtHours(extraGuardHours[id]),
           ...BLANK10,
           rate: DASH,
-          amount: "see Branch Collection",
+          amount: t("dutyRoster.summaryReportPanel.seeBranchCollection", { branchCollection: t("nav.sections.branchCollection") }),
           amountLiteral: true,
         },
       });
@@ -256,13 +258,13 @@ export function buildSummaryReportData(
   // where every guard happens to share a rate) would just repeat the grand total.
   const rateGroupKeys = Object.keys(rateGroups).sort((ka, kb) => rateGroups[ka].rate - rateGroups[kb].rate);
   if (rateConfig && rateConfig.guardRateMode === "multiple" && rateGroupKeys.length > 1) {
-    items.push({ type: "divider", id: "div-rate", label: "Subtotal by rate" });
+    items.push({ type: "divider", id: "div-rate", label: t("dutyRoster.summaryReportPanel.dividerRate") });
     rateGroupKeys.forEach((key) => {
       const grp = rateGroups[key];
       items.push({
         type: "rateSubtotal",
         id: `rate-${key}`,
-        label: `Subtotal — RM${fmtRM(grp.rate)}/hr`,
+        label: t("dutyRoster.summaryReportPanel.rateSubtotalLabel", { rate: fmtRM(grp.rate) }),
         manHours: fmtHours(grp.manHours),
         rate: fmtRM(grp.rate),
         amount: fmtRM(grp.amount),
@@ -275,7 +277,7 @@ export function buildSummaryReportData(
       type: "total",
       row: {
         employeeId: "",
-        name: "Total — all guards",
+        name: t("dutyRoster.common.totalAllGuards"),
         manHours: fmtHours(totals.manHours),
         normalDays: fmtCount(totals.normalDays),
         restDaysWorked: fmtCount(totals.restDaysWorked),
@@ -295,12 +297,15 @@ export function buildSummaryReportData(
 
   const holidayCount = configHolidays(config).filter((d) => d.slice(0, 7) === ms.month).length;
   const subText =
-    `${monthLabel(y, m)} — normal-day overtime starts after ${normalHoursLabel(config)}h/shift. ` +
+    t("dutyRoster.summaryReportPanel.subTextBase", { month: monthLabel(y, m), hours: normalHoursLabel(config) }) +
     (holidayCount
-      ? `${holidayCount} public holiday${holidayCount === 1 ? "" : "s"} marked this month. `
-      : `No public holidays marked this month — add them in Guards & Shifts if this month has any. `) +
+      ? t("dutyRoster.summaryReportPanel.subTextHolidays", { count: holidayCount })
+      : t("dutyRoster.summaryReportPanel.subTextNoHolidays", { tab: t("dutyRoster.tabs.setup") })) +
     (anyGuardsAtAll && anyMissingRate
-      ? `Some guards have no billing rate resolved — set one up in this project's Project Details, and give each guard a matching Position if it bills by position; their Amount is excluded from the total until then.`
+      ? t("dutyRoster.summaryReportPanel.subTextMissingRate", {
+          projectDetails: t("projectDetails.title"),
+          position: t("dutyRoster.guardDetails.position"),
+        })
       : ``);
 
   return { items, hasAnyRows: anyGuardsAtAll, subText };
@@ -323,25 +328,34 @@ export interface InvoiceConfirmControlsView {
 export function invoiceSummaryConfirmControls(
   ms: MonthState,
   session: RosterSession,
-  liveTotals: Pick<SummaryTotals, "hasAnyGuards">
+  liveTotals: Pick<SummaryTotals, "hasAnyGuards">,
+  t: TFunction
 ): InvoiceConfirmControlsView {
   const confirmed = monthInvoiceConfirmed(ms);
   const canConfirm = canConfirmInvoiceSummary(session);
+  const branchCollection = t("nav.sections.branchCollection");
 
   let statusVisible = false;
   let statusText = "";
   if (confirmed) {
     statusVisible = true;
     statusText =
-      `Confirmed by ${confirmed.byName || "someone"} on ${formatConfirmedAt(confirmed.at)} — ` +
-      `RM${(confirmed.amount || 0).toFixed(2)} / ${(confirmed.manHours || 0).toFixed(1)} man-hours. ` +
-      `This is what Branch Collection's invoice generator uses for this site and month.` +
+      t("dutyRoster.summaryReportPanel.statusConfirmed", {
+        name: confirmed.byName || t("dutyRoster.common.someoneFallback"),
+        date: formatConfirmedAt(confirmed.at),
+        amount: (confirmed.amount || 0).toFixed(2),
+        hours: (confirmed.manHours || 0).toFixed(1),
+        branchCollection,
+      }) +
       (confirmed.additionalManHours
-        ? ` Plus ${confirmed.additionalManHours.toFixed(1)} man-hours from Additional Guard (Temporary) posts, billed separately in Branch Collection.`
+        ? t("dutyRoster.summaryReportPanel.statusConfirmedPlusAdditional", { hours: confirmed.additionalManHours.toFixed(1), branchCollection })
         : "");
   } else if (canConfirm && liveTotals.hasAnyGuards) {
     statusVisible = true;
-    statusText = `Not yet confirmed — click "Confirm for invoicing" once this month's figures are final so Branch Collection can use them.`;
+    statusText = t("dutyRoster.summaryReportPanel.statusNotYetConfirmed", {
+      branchCollection,
+      confirmLabel: t("dutyRoster.summaryReportPanel.confirmForInvoicing"),
+    });
   }
 
   return {
@@ -383,12 +397,13 @@ export function applyConfirmInvoiceSummary(
   totals: SummaryTotals,
   actorUid: string | null,
   actorName: string | null,
-  categories: ConfirmedMonthSummary["categories"] = []
+  categories: ConfirmedMonthSummary["categories"] = [],
+  t: TFunction
 ): ConfirmInvoiceOutcome | { error: string } {
-  if (!totals.hasAnyGuards) return { error: "Add guards to this site before confirming." };
+  if (!totals.hasAnyGuards) return { error: t("dutyRoster.summaryReportPanel.errorAddGuardsFirst") };
   const invoiceConfirmed: ConfirmedMonthSummary = {
     byUid: actorUid,
-    byName: actorName || "Branch staff",
+    byName: actorName || t("dutyRoster.summaryReportPanel.fallbackBranchStaff"),
     at: nowIso(),
     manHours: totals.manHours,
     amount: totals.amount,
@@ -397,17 +412,19 @@ export function applyConfirmInvoiceSummary(
   };
   return {
     ms: { ...ms, invoiceConfirmed },
-    toast: "Summary confirmed — pushed to Branch Collection for invoicing.",
+    toast: t("dutyRoster.summaryReportPanel.toastConfirmed", { branchCollection: t("nav.sections.branchCollection") }),
     suppressConfirmRevoke: true,
   };
 }
 
-export const UNCONFIRM_INVOICE_MODAL = {
-  title: "Unconfirm invoicing summary",
-  message: "Branch Collection's invoice generator won't show a confirmed total for this site/month until you confirm it again.",
-  okLabel: "Unconfirm",
-} as const;
+export function getUnconfirmInvoiceModal(t: TFunction) {
+  return {
+    title: t("dutyRoster.summaryReportPanel.unconfirmModalTitle"),
+    message: t("dutyRoster.summaryReportPanel.unconfirmModalMessage", { branchCollection: t("nav.sections.branchCollection") }),
+    okLabel: t("dutyRoster.common.unconfirm"),
+  } as const;
+}
 
-export function applyUnconfirmInvoiceSummary(ms: MonthState): ConfirmInvoiceOutcome {
-  return { ms: { ...ms, invoiceConfirmed: null }, toast: "Invoicing summary unconfirmed.", suppressConfirmRevoke: true };
+export function applyUnconfirmInvoiceSummary(ms: MonthState, t: TFunction): ConfirmInvoiceOutcome {
+  return { ms: { ...ms, invoiceConfirmed: null }, toast: t("dutyRoster.summaryReportPanel.toastUnconfirmed"), suppressConfirmRevoke: true };
 }

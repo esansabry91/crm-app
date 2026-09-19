@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import type { IncomingSupportMap } from "../types";
 import type { SiteConfig, MonthState, GenerateMonthResult } from "../types";
 import type { RosterSession } from "../rosterModel";
@@ -25,16 +27,34 @@ export interface CombinedHoursPanelProps {
   onUnconfirm: () => void;
 }
 
-const TH = ["Employee ID", "Guard", "Man-hours", "Normal worked days", "Worked rest days", "Worked public holidays", "Normal OT (hrs)", "Rest-day OT (hrs)", "Public holiday OT (hrs)", "MC", "Absent", "Leave", "Unpaid leave"];
+function tableHeaders(t: TFunction): string[] {
+  return [
+    t('dutyRoster.payrollColumns.employeeId'),
+    t('dutyRoster.payrollColumns.guard'),
+    t('dutyRoster.payrollColumns.manHours'),
+    t('dutyRoster.payrollColumns.normalWorkedDays'),
+    t('dutyRoster.payrollColumns.workedRestDays'),
+    t('dutyRoster.payrollColumns.workedPublicHolidays'),
+    t('dutyRoster.payrollColumns.normalOTHours'),
+    t('dutyRoster.payrollColumns.restOTHours'),
+    t('dutyRoster.payrollColumns.holidayOTHours'),
+    t('dutyRoster.payrollColumns.mc'),
+    t('dutyRoster.payrollColumns.absent'),
+    t('dutyRoster.payrollColumns.leave'),
+    t('dutyRoster.payrollColumns.unpaidLeave'),
+  ];
+}
 
 export default function CombinedHoursPanel({ y, m, config, ms, result, session, liveIncoming, refreshing, onRefresh, onExport, onConfirm, onUnconfirm }: CombinedHoursPanelProps) {
-  const data = buildCombinedReportData(y, m, config, ms, result, session, liveIncoming);
-  const controls = combinedConfirmControls(ms, session, liveIncoming);
+  const { t } = useTranslation();
+  const data = buildCombinedReportData(y, m, config, ms, result, session, liveIncoming, t);
+  const controls = combinedConfirmControls(ms, session, liveIncoming, t);
+  const TH = tableHeaders(t);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h2 className="text-base font-semibold text-slate-900">Combined hours (incl. support elsewhere) - for payroll process</h2>
-      <p className="text-xs text-slate-500 mt-1">Each of this site's own guards, with support-guard shifts at other branch sites folded in</p>
+      <h2 className="text-base font-semibold text-slate-900">{t('dutyRoster.combinedHoursPanel.panelTitle')}</h2>
+      <p className="text-xs text-slate-500 mt-1">{t('dutyRoster.combinedHoursPanel.panelSubtitle')}</p>
 
       <div className="flex flex-wrap items-center gap-2 mt-3">
         <button
@@ -43,10 +63,10 @@ export default function CombinedHoursPanel({ y, m, config, ms, result, session, 
           disabled={data.exportDisabled}
           className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg"
         >
-          Export to Excel (TimeAttendance format)
+          {t('dutyRoster.combinedHoursPanel.exportButton')}
         </button>
         <button type="button" onClick={onRefresh} disabled={refreshing} className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800 disabled:opacity-60">
-          {refreshing ? "Refreshing…" : "Refresh combined hours"}
+          {refreshing ? t('dutyRoster.combinedHoursPanel.refreshingEllipsis') : t('dutyRoster.combinedHoursPanel.refreshButton')}
         </button>
         {controls.showConfirm && (
           <button
@@ -55,12 +75,12 @@ export default function CombinedHoursPanel({ y, m, config, ms, result, session, 
             disabled={controls.confirmDisabled}
             className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg"
           >
-            Confirm
+            {t('dutyRoster.common.confirm')}
           </button>
         )}
         {controls.showUnconfirm && (
           <button type="button" onClick={onUnconfirm} className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800">
-            Unconfirm
+            {t('dutyRoster.common.unconfirm')}
           </button>
         )}
       </div>
@@ -68,9 +88,7 @@ export default function CombinedHoursPanel({ y, m, config, ms, result, session, 
       {controls.statusVisible && <p className="text-xs text-slate-500 mt-2">{controls.statusText}</p>}
       {!controls.noteHidden && (
         <p className="text-xs text-slate-400 mt-2">
-          Every column here is this site's own numbers (worked days, OT, leave, etc.) plus the same guard's shifts as a support guard at other branch sites this
-          month — this is the figure the Excel export above uses, and it never changes the plain Summary report above. Click "Refresh combined hours" to (re)load
-          it.
+          {t('dutyRoster.combinedHoursPanel.explanatoryNote', { refreshLabel: t('dutyRoster.combinedHoursPanel.refreshButton') })}
         </p>
       )}
 
@@ -89,21 +107,21 @@ export default function CombinedHoursPanel({ y, m, config, ms, result, session, 
             {data.state.kind === "waitingForConfirm" && (
               <tr>
                 <td colSpan={13} className="py-3 text-center text-slate-400">
-                  Waiting for the branch manager to confirm this month's combined hours.
+                  {t('dutyRoster.combinedHoursPanel.stateWaitingForConfirm')}
                 </td>
               </tr>
             )}
             {data.state.kind === "clickRefresh" && (
               <tr>
                 <td colSpan={13} className="py-3 text-center text-slate-400">
-                  Click "Refresh combined hours" to load this.
+                  {t('dutyRoster.combinedHoursPanel.stateClickRefresh', { refreshLabel: t('dutyRoster.combinedHoursPanel.refreshButton') })}
                 </td>
               </tr>
             )}
             {data.state.kind === "noGuards" && (
               <tr>
                 <td colSpan={13} className="py-3 text-center text-slate-400">
-                  Add guards to see combined hours.
+                  {t('dutyRoster.combinedHoursPanel.stateNoGuards')}
                 </td>
               </tr>
             )}

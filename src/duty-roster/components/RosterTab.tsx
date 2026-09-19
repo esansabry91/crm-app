@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { MonthState, GenerateMonthResult } from "../types";
 import type { GenerateMonthConfig } from "../schedulingEngine";
 import { appendLog, type SlotRef } from "../lockMachine";
@@ -80,6 +81,7 @@ export default function RosterTab({
   onDragSwap,
   onPersistMonth,
 }: RosterTabProps) {
+  const { t } = useTranslation();
   // Defaults to the Grid ("Roster sheet") view — matches the day-to-day workflow better than
   // Calendar (drag-to-swap rearranging, at-a-glance shift-letter/post columns), per Ihsan's own
   // preference.
@@ -109,7 +111,7 @@ export default function RosterTab({
                 : { borderColor: "transparent" }
             }
           >
-            Calendar
+            {t('dutyRoster.rosterTab.calendar')}
           </button>
           <button
             type="button"
@@ -121,7 +123,7 @@ export default function RosterTab({
                 : { borderColor: "transparent" }
             }
           >
-            Roster sheet
+            {t('dutyRoster.rosterTab.rosterSheet')}
           </button>
         </div>
         <button
@@ -130,7 +132,7 @@ export default function RosterTab({
           className={TOGGLE_BTN}
           style={{ borderColor: ROSTER_TOKENS.line, background: ROSTER_TOKENS.surface, marginLeft: "auto" }}
         >
-          Export to Excel
+          {t('dutyRoster.rosterTab.exportToExcel')}
         </button>
       </div>
 

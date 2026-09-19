@@ -9,6 +9,7 @@
  * rosterViewer.ts's own doc comment on avoiding redundant re-fetches) and produces everything
  * the SitePickerBar component needs to render, in one pure call per render.
  */
+import type { TFunction } from "i18next";
 import type { RosterViewer } from "./rosterViewer";
 
 /** Mirrors `state.sites`' own entry shape (index.html line 1290) — a lightweight summary, not
@@ -85,14 +86,19 @@ export interface SitePickerView {
   brandSubtitle: string;
 }
 
-const DEFAULT_BRAND_SUBTITLE = "Global Density — security guard scheduling";
-
-function clientFilterOptions(scopedSites: SiteListEntry[]): SitePickerOption[] {
+function clientFilterOptions(scopedSites: SiteListEntry[], t: TFunction): SitePickerOption[] {
   const clients = Array.from(new Set(scopedSites.map((s) => (s.clientName || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
-  return [{ id: "", label: "All clients" }, ...clients.map((c) => ({ id: c, label: c }))];
+  return [{ id: "", label: t("dutyRoster.sitePickerBar.allClients") }, ...clients.map((c) => ({ id: c, label: c }))];
 }
 
-export function buildSitePickerView(viewer: RosterViewer, allSites: SiteListEntry[], branches: { name: string }[], currentSiteId: string | null, filters: SitePickerFilters): SitePickerView {
+export function buildSitePickerView(
+  viewer: RosterViewer,
+  allSites: SiteListEntry[],
+  branches: { name: string }[],
+  currentSiteId: string | null,
+  filters: SitePickerFilters,
+  t: TFunction
+): SitePickerView {
   const canFilterBranch = viewer.isPayrollLike || viewer.isPrivileged;
 
   let visibleSites = allSites;
@@ -105,15 +111,15 @@ export function buildSitePickerView(viewer: RosterViewer, allSites: SiteListEntr
 
   const branchOptions: SitePickerOption[] = canFilterBranch
     ? [
-        { id: "", label: "All branches" },
+        { id: "", label: t("dutyRoster.sitePickerBar.allBranches") },
         ...branches.filter((b) => b.name !== "HQ").map((b) => ({ id: b.name, label: b.name })),
-        { id: UNASSIGNED_BRANCH_FILTER, label: "Unassigned" },
+        { id: UNASSIGNED_BRANCH_FILTER, label: t("dutyRoster.sitePickerBar.unassigned") },
       ]
     : [];
 
   // Client options come from the branch-scoped list, BEFORE narrowing by the client filter
   // itself, so the dropdown's own options always match what's actually selectable.
-  const clientOptions = clientFilterOptions(visibleSites);
+  const clientOptions = clientFilterOptions(visibleSites, t);
   const effectiveClientFilterValue = filters.clientFilterValue && clientOptions.some((o) => o.id === filters.clientFilterValue) ? filters.clientFilterValue : "";
 
   if (effectiveClientFilterValue) {
@@ -129,11 +135,13 @@ export function buildSitePickerView(viewer: RosterViewer, allSites: SiteListEntr
   let emptyMessage: string | null = null;
   let siteOptions: SitePickerOption[] = [];
   if (!filteredSites.length) {
-    emptyMessage = effectiveClientFilterValue ? `No sites for "${effectiveClientFilterValue}"` : "No client sites in this branch";
+    emptyMessage = effectiveClientFilterValue
+      ? t("dutyRoster.sitePickerBar.noSitesForClient", { client: effectiveClientFilterValue })
+      : t("dutyRoster.sitePickerBar.noClientSitesInBranch");
   } else {
     siteOptions = filteredSites.map((s) => {
       const label = !effectiveClientFilterValue && s.clientName && s.clientName !== s.name ? `${s.clientName} — ${s.name}` : s.name;
-      return { id: s.id, label: label + (s.archived ? " (Archived)" : "") };
+      return { id: s.id, label: label + (s.archived ? t("dutyRoster.sitePickerBar.archivedSuffix") : "") };
     });
   }
 
@@ -141,14 +149,16 @@ export function buildSitePickerView(viewer: RosterViewer, allSites: SiteListEntr
   if (!(viewer.isPayrollLike || viewer.isPrivileged)) {
     const site = allSites.find((s) => s.id === currentSiteId);
     const branch = site ? site.branch || null : null;
-    branchBadgeText = branch ? `Branch: ${branch}` : "Branch: Unassigned";
+    branchBadgeText = branch ? t("dutyRoster.sitePickerBar.branchBadge", { branch }) : t("dutyRoster.sitePickerBar.branchBadgeUnassigned");
   }
 
-  let brandSubtitle = DEFAULT_BRAND_SUBTITLE;
-  if (viewer.isHr) brandSubtitle = "HR — all branches, view & export only";
-  else if (viewer.isPayroll) brandSubtitle = "Payroll — all branches, view & export only";
-  else if (viewer.isPrivileged) brandSubtitle = "Master Schedule";
-  else if (viewer.myDepartment) brandSubtitle = `${viewer.myDepartment} — security guard scheduling`;
+  // "Global Density" is the company's own brand name — kept fixed, never translated, matching
+  // how every other proper noun (site names, client names) in this app stays as-is.
+  let brandSubtitle = t("dutyRoster.sitePickerBar.brandSubtitleDefault");
+  if (viewer.isHr) brandSubtitle = t("dutyRoster.sitePickerBar.brandSubtitleHr");
+  else if (viewer.isPayroll) brandSubtitle = t("dutyRoster.sitePickerBar.brandSubtitlePayroll");
+  else if (viewer.isPrivileged) brandSubtitle = t("dutyRoster.sitePickerBar.brandSubtitlePrivileged");
+  else if (viewer.myDepartment) brandSubtitle = t("dutyRoster.sitePickerBar.brandSubtitleDepartment", { department: viewer.myDepartment });
 
   return {
     canFilterBranch,

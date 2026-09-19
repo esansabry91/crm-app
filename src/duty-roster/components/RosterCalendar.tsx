@@ -9,6 +9,7 @@
  * Deliberately NOT lock-gated — see rosterCalendarData.ts's doc comment: every `canEdit` user
  * can change a slot here directly regardless of the Roster Sheet's lock state.
  */
+import { useTranslation } from "react-i18next";
 import type { GenerateMonthResult, MonthState } from "../types";
 import type { GenerateMonthConfig } from "../schedulingEngine";
 import { appendLog } from "../lockMachine";
@@ -29,7 +30,8 @@ export interface RosterCalendarProps {
 const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function RosterCalendar({ y, m, config, ms, result, onPersist }: RosterCalendarProps) {
-  const layout = buildCalendarDays(y, m, config, ms, result);
+  const { t } = useTranslation();
+  const layout = buildCalendarDays(y, m, config, ms, result, t);
 
   const handleSlotChange = (overrideKey: string, value: string, logShiftLabel: string) => {
     const outcome = applyCalendarSlotChange(ms, overrideKey, value, logShiftLabel, config);
@@ -68,7 +70,7 @@ export default function RosterCalendar({ y, m, config, ms, result, onPersist }: 
                   className="text-[9.5px] font-semibold rounded px-1.5 py-px whitespace-nowrap"
                   style={{ background: ROSTER_TOKENS.warnSoft, color: ROSTER_TOKENS.warn }}
                 >
-                  {day.leaveCount} leave
+                  {t('dutyRoster.rosterCalendar.leaveCount', { count: day.leaveCount })}
                 </span>
               )}
             </div>
@@ -83,7 +85,7 @@ export default function RosterCalendar({ y, m, config, ms, result, onPersist }: 
               </div>
             ))}
 
-            {!day.covered && <div className="text-[11px]" style={{ color: ROSTER_TOKENS.muted }}>No coverage needed</div>}
+            {!day.covered && <div className="text-[11px]" style={{ color: ROSTER_TOKENS.muted }}>{t('dutyRoster.rosterCalendar.noCoverageNeeded')}</div>}
 
             {day.slots.map((slot, i) =>
               slot.kind === "readonlyExtraGuard" ? (

@@ -4,12 +4,14 @@
  * bar's own status pill/buttons are already covered by useRosterLock.ts — locked/canManage/
  * pendingCount map onto exactly what this function read off currentMonthState() for that).
  */
+import type { TFunction } from "i18next";
 import type { GenerateMonthResult, MonthState } from "./types";
 import type { GenerateMonthConfig } from "./schedulingEngine";
 import { coveringGuardNameFor, leaveEntriesFor } from "./rosterModel";
 import { computeShiftDefsForDay } from "./shiftStructure";
 import { isWeekend, monthLabel, weekdayShort } from "./dateUtils";
 import { leaveAbbrev, shiftColorFor, shiftLetterFor } from "./rosterColors";
+import { leaveReasonKey } from "./leaveData";
 import type { SlotRef } from "./lockMachine";
 
 const FULL_DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -88,12 +90,13 @@ export function buildGridData(
   config: GenerateMonthConfig,
   ms: MonthState,
   result: GenerateMonthResult,
-  dragEnabled: boolean
+  dragEnabled: boolean,
+  t: TFunction
 ): GridData {
   const site = config.site;
   const nDays = result.days.length;
   const firstWeekday = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
-  const titleText = `${monthLabel(y, m)} — ${nDays} days, starting on a ${FULL_DAY_NAMES[firstWeekday]}`;
+  const titleText = t("dutyRoster.rosterGrid.titleText", { month: monthLabel(y, m), days: nDays, weekday: FULL_DAY_NAMES[firstWeekday] });
 
   const dayMaps = result.days.map((day) => {
     const map = new Map<string, { stIdx: number; slot: number; flagged: boolean; flagReason: string | null; label: string; shiftId: string }>();
@@ -137,17 +140,18 @@ export function buildGridData(
       if (!a) {
         const leaveEntry = dayLeaveMaps[dayIdx].get(g.id);
         if (leaveEntry) {
-          const leaveReason = leaveEntry.reason || "Leave";
+          const leaveReason = leaveEntry.reason || "Leave"; // raw, English — fed to leaveAbbrev() below, which keys off it
+          const translatedReason = t(`dutyRoster.leaveReasons.${leaveReasonKey(leaveReason)}`);
           const covering = coveringGuardNameFor(config, ms, leaveEntry);
-          const title = covering ? `${leaveReason} — covered by ${covering}` : leaveReason;
+          const title = covering ? t("dutyRoster.rosterGrid.offLeaveCovered", { reason: translatedReason, covering }) : translatedReason;
           return { kind: "offLeave", abbrev: leaveAbbrev(leaveReason), title, covered: !!covering };
         }
         return { kind: "off" };
       }
       const title =
-        `Shift ${shiftLetterFor(a.stIdx)} (${a.label}), Post ${a.slot + 1}` +
+        t("dutyRoster.rosterGrid.assignedCellTitle", { letter: shiftLetterFor(a.stIdx), label: a.label, post: a.slot + 1 }) +
         (a.flagged ? ` — ${a.flagReason}` : "") +
-        (dragEnabled ? " — drag onto another tile to swap" : "");
+        (dragEnabled ? ` — ${t("dutyRoster.rosterGrid.dragToSwapTitleSuffix")}` : "");
       return {
         kind: "assigned",
         shiftIdx: a.stIdx,
@@ -167,12 +171,15 @@ export function buildGridData(
   const totalSlots = result.days.reduce((s, d) => s + d.assignments.reduce((s2, a) => s2 + a.length, 0), 0);
   let noteText: string;
   if (result.conflicts.length > 0) {
-    noteText = `Short by ${result.conflicts.length} shift slot(s) this month — no guard was available at all (everyone was on leave or already on a shift that day).`;
+    noteText = t("dutyRoster.rosterGrid.shortByConflicts", { count: result.conflicts.length });
   } else {
     const counts = guards.map((g) => result.totalShifts[g.id] || 0);
     const mn = counts.length ? Math.min(...counts) : 0;
     const mx = counts.length ? Math.max(...counts) : 0;
-    noteText = `Coverage met: all ${totalSlots} shift slots filled. Each guard works ${mn === mx ? mn : mn + " to " + mx} shifts this month.`;
+    noteText =
+      mn === mx
+        ? t("dutyRoster.rosterGrid.coverageMetSame", { total: totalSlots, count: mn })
+        : t("dutyRoster.rosterGrid.coverageMetRange", { total: totalSlots, min: mn, max: mx });
   }
 
   return { titleText, legend: buildGridLegend(config), headerDays, rows, noteText };

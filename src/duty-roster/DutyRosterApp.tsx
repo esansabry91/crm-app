@@ -13,6 +13,7 @@
  * with an unlocked roster" guard reported up to AppLayout.
  */
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useBranches } from "../hooks/useBranches";
@@ -56,14 +57,12 @@ function setStoredLastSite(id: string): void {
 }
 
 type TabId = "roster" | "setup" | "adjust" | "report";
-const TABS: { id: TabId; label: string }[] = [
-  { id: "roster", label: "Roster" },
-  { id: "setup", label: "Guards & Shifts" },
-  { id: "adjust", label: "Adjustments" },
-  { id: "report", label: "Summary Report" },
-];
+// Labels are looked up via t('dutyRoster.tabs.<id>') at render time, since this array is
+// module-scope (outside any component) and can't call the translation hook itself.
+const TABS: { id: TabId }[] = [{ id: "roster" }, { id: "setup" }, { id: "adjust" }, { id: "report" }];
 
 export default function DutyRosterApp() {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const { branches } = useBranches();
   const [searchParams] = useSearchParams();
@@ -177,8 +176,8 @@ export default function DutyRosterApp() {
       <div className="h-full overflow-y-auto p-6">
         <DutyRosterHeader viewer={viewer} sites={sites} branches={branches} currentSiteId={currentSiteId} />
         <div className="text-center py-16 text-slate-500">
-          <p className="text-[15px] font-semibold text-slate-700 mb-1">No client sites for this branch yet.</p>
-          <p className="text-sm">Sites are created automatically once a tender for this branch is marked Won and its Duty Roster link is opened.</p>
+          <p className="text-[15px] font-semibold text-slate-700 mb-1">{t('dutyRoster.app.noClientSites')}</p>
+          <p className="text-sm">{t('dutyRoster.app.noClientSitesHint')}</p>
         </div>
       </div>
     );
@@ -206,31 +205,31 @@ export default function DutyRosterApp() {
       />
 
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200">
-        {TABS.map((t) => (
+        {TABS.map((tab) => (
           <button
-            key={t.id}
+            key={tab.id}
             type="button"
-            onClick={() => goToTab(t.id)}
+            onClick={() => goToTab(tab.id)}
             className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              activeTab === t.id ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-700"
+              activeTab === tab.id ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
-            {t.label}
+            {t(`dutyRoster.tabs.${tab.id}`)}
           </button>
         ))}
         <div className="ml-auto flex items-center gap-2 pb-2">
-          <button type="button" onClick={() => setYm((cur) => addMonths(cur.y, cur.m, -1))} className="text-sm text-slate-500 hover:text-slate-800 px-1.5" aria-label="Previous month">
+          <button type="button" onClick={() => setYm((cur) => addMonths(cur.y, cur.m, -1))} className="text-sm text-slate-500 hover:text-slate-800 px-1.5" aria-label={t('dutyRoster.app.previousMonth')}>
             ←
           </button>
           <span className="text-sm font-medium text-slate-700 min-w-[8ch] text-center">{monthLabel(ym.y, ym.m)}</span>
-          <button type="button" onClick={() => setYm((cur) => addMonths(cur.y, cur.m, 1))} className="text-sm text-slate-500 hover:text-slate-800 px-1.5" aria-label="Next month">
+          <button type="button" onClick={() => setYm((cur) => addMonths(cur.y, cur.m, 1))} className="text-sm text-slate-500 hover:text-slate-800 px-1.5" aria-label={t('dutyRoster.app.nextMonth')}>
             →
           </button>
         </div>
       </div>
 
       {!ready ? (
-        <p className="text-sm text-slate-500 py-8 text-center">Loading…</p>
+        <p className="text-sm text-slate-500 py-8 text-center">{t('dutyRoster.app.loadingEllipsis')}</p>
       ) : (
         <>
           {activeTab === "roster" && (
@@ -319,10 +318,11 @@ function DutyRosterHeader({
   branches: Parameters<typeof buildSitePickerView>[2];
   currentSiteId: string | null;
 }) {
-  const view = buildSitePickerView(viewer, sites, branches, currentSiteId, { branchFilterValue: "", clientFilterValue: "", showArchivedSites: false });
+  const { t } = useTranslation();
+  const view = buildSitePickerView(viewer, sites, branches, currentSiteId, { branchFilterValue: "", clientFilterValue: "", showArchivedSites: false }, t);
   return (
     <div>
-      <h1 className="text-lg font-semibold text-slate-900">Duty Roster</h1>
+      <h1 className="text-lg font-semibold text-slate-900">{t('dutyRoster.app.title')}</h1>
       <p className="text-xs text-slate-500 mt-0.5">{view.brandSubtitle}</p>
     </div>
   );

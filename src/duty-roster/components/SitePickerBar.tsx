@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import type { RosterViewer } from "../rosterViewer";
 import { buildSitePickerView, type SiteListEntry, type SitePickerFilters } from "../siteListData";
 
@@ -36,7 +37,8 @@ export interface SitePickerBarProps {
 }
 
 export default function SitePickerBar({ viewer, allSites, branches, currentSiteId, filters, onFiltersChange, onSelectSite }: SitePickerBarProps) {
-  const view = buildSitePickerView(viewer, allSites, branches, currentSiteId, filters);
+  const { t } = useTranslation();
+  const view = buildSitePickerView(viewer, allSites, branches, currentSiteId, filters, t);
 
   // Mirrors renderClientFilterSelect()'s own `state.clientFilterValue = ""` reset: once the
   // branch filter changes out from under a selected client (or the site list itself changes) such
@@ -53,7 +55,7 @@ export default function SitePickerBar({ viewer, allSites, branches, currentSiteI
     <div className="flex flex-wrap items-center gap-3 py-2">
       {view.canFilterBranch && (
         <div className="flex items-center gap-1.5">
-          <label className="text-xs font-medium text-slate-600">Branch</label>
+          <label className="text-xs font-medium text-slate-600">{t('dutyRoster.sitePickerBar.branchLabel')}</label>
           <select
             className="input"
             value={filters.branchFilterValue}
@@ -69,7 +71,7 @@ export default function SitePickerBar({ viewer, allSites, branches, currentSiteI
       )}
 
       <div className="flex items-center gap-1.5">
-        <label className="text-xs font-medium text-slate-600">Client</label>
+        <label className="text-xs font-medium text-slate-600">{t('dutyRoster.sitePickerBar.clientLabel')}</label>
         <select
           className="input min-w-[180px]"
           value={view.effectiveClientFilterValue}
@@ -84,7 +86,7 @@ export default function SitePickerBar({ viewer, allSites, branches, currentSiteI
       </div>
 
       <div className="flex items-center gap-1.5">
-        <label className="text-xs font-medium text-slate-600">Client site</label>
+        <label className="text-xs font-medium text-slate-600">{t('dutyRoster.sitePickerBar.clientSiteLabel')}</label>
         {view.emptyMessage ? (
           <span className="text-xs text-slate-500">{view.emptyMessage}</span>
         ) : (
@@ -106,7 +108,7 @@ export default function SitePickerBar({ viewer, allSites, branches, currentSiteI
             checked={filters.showArchivedSites}
             onChange={(e) => onFiltersChange({ ...filters, showArchivedSites: e.target.checked })}
           />
-          Show archived
+          {t('dutyRoster.sitePickerBar.showArchived')}
         </label>
       )}
 

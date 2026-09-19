@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import type { SiteConfig, MonthState, GenerateMonthResult, TenderRateConfig } from "../types";
 import type { RosterSession } from "../rosterModel";
 import { buildSummaryReportData, invoiceSummaryConfirmControls } from "../summaryReportData";
@@ -23,16 +25,36 @@ export interface SummaryReportPanelProps {
   onUnconfirm: () => void;
 }
 
-const TH = ["Employee ID", "Guard", "Man-hours", "Normal worked days", "Worked rest days", "Worked public holidays", "Normal OT (hrs)", "Rest-day OT (hrs)", "Public holiday OT (hrs)", "MC", "Absent", "Leave", "Unpaid leave", "Rate (RM/manhour)", "Amount (RM)"];
+function tableHeaders(t: TFunction): string[] {
+  return [
+    t('dutyRoster.payrollColumns.employeeId'),
+    t('dutyRoster.payrollColumns.guard'),
+    t('dutyRoster.payrollColumns.manHours'),
+    t('dutyRoster.payrollColumns.normalWorkedDays'),
+    t('dutyRoster.payrollColumns.workedRestDays'),
+    t('dutyRoster.payrollColumns.workedPublicHolidays'),
+    t('dutyRoster.payrollColumns.normalOTHours'),
+    t('dutyRoster.payrollColumns.restOTHours'),
+    t('dutyRoster.payrollColumns.holidayOTHours'),
+    t('dutyRoster.payrollColumns.mc'),
+    t('dutyRoster.payrollColumns.absent'),
+    t('dutyRoster.payrollColumns.leave'),
+    t('dutyRoster.payrollColumns.unpaidLeave'),
+    t('dutyRoster.payrollColumns.rate'),
+    t('dutyRoster.payrollColumns.amount'),
+  ];
+}
 
 export default function SummaryReportPanel({ y, m, config, ms, result, rateConfig, session, onConfirm, onUnconfirm }: SummaryReportPanelProps) {
-  const data = buildSummaryReportData(y, m, config, ms, result, rateConfig);
+  const { t } = useTranslation();
+  const data = buildSummaryReportData(y, m, config, ms, result, rateConfig, t);
   const totals = computeSummaryTotals(y, m, config, ms, result, rateConfig);
-  const controls = invoiceSummaryConfirmControls(ms, session, totals);
+  const controls = invoiceSummaryConfirmControls(ms, session, totals, t);
+  const TH = tableHeaders(t);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h2 className="text-base font-semibold text-slate-900">Summary report - home site view for invoice reference</h2>
+      <h2 className="text-base font-semibold text-slate-900">{t('dutyRoster.summaryReportPanel.panelTitle')}</h2>
       <p className="text-xs text-slate-500 mt-1">{data.subText}</p>
 
       <div className="overflow-x-auto mt-3">
@@ -50,7 +72,7 @@ export default function SummaryReportPanel({ y, m, config, ms, result, rateConfi
             {!data.hasAnyRows && (
               <tr>
                 <td colSpan={15} className="py-3 text-center text-slate-400">
-                  Add guards to see the summary report.
+                  {t('dutyRoster.summaryReportPanel.addGuardsToSeeReport')}
                 </td>
               </tr>
             )}
@@ -92,7 +114,7 @@ export default function SummaryReportPanel({ y, m, config, ms, result, rateConfi
                 return (
                   <tr key={item.id} className="border-t border-slate-100">
                     <td className="py-1.5 pr-3"></td>
-                    <td className="py-1.5 pr-3 font-semibold">Subtotal — Additional Guard (Temporary)</td>
+                    <td className="py-1.5 pr-3 font-semibold">{t('dutyRoster.summaryReportPanel.additionalSubtotalLabel')}</td>
                     <td className="font-mono py-1.5 pr-3 font-semibold">{item.manHours}</td>
                     <td className="font-mono py-1.5 pr-3">—</td>
                     <td className="font-mono py-1.5 pr-3">—</td>
@@ -105,7 +127,9 @@ export default function SummaryReportPanel({ y, m, config, ms, result, rateConfi
                     <td className="font-mono py-1.5 pr-3">—</td>
                     <td className="font-mono py-1.5 pr-3">—</td>
                     <td className="py-1.5 pr-3"></td>
-                    <td className="font-mono py-1.5 pr-3 text-slate-400">see Branch Collection</td>
+                    <td className="font-mono py-1.5 pr-3 text-slate-400">
+                      {t('dutyRoster.summaryReportPanel.seeBranchCollection', { branchCollection: t('nav.sections.branchCollection') })}
+                    </td>
                   </tr>
                 );
               }
@@ -163,12 +187,12 @@ export default function SummaryReportPanel({ y, m, config, ms, result, rateConfi
           disabled={controls.confirmDisabled}
           className="mt-3 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg"
         >
-          Confirm for invoicing
+          {t('dutyRoster.summaryReportPanel.confirmForInvoicing')}
         </button>
       )}
       {controls.showUnconfirm && (
         <button type="button" onClick={onUnconfirm} className="mt-3 px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800">
-          Unconfirm
+          {t('dutyRoster.common.unconfirm')}
         </button>
       )}
       {controls.statusVisible && <p className="text-xs text-slate-500 mt-2">{controls.statusText}</p>}

@@ -1,12 +1,13 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { SiteConfig, MonthState, GenerateMonthResult, TenderRateConfig } from "../types";
 import type { GenerateMonthConfig } from "../schedulingEngine";
 import type { RosterSession } from "../rosterModel";
 import { canConfirmInvoiceSummary, canConfirmCombinedHours } from "../rosterModel";
 import { appendLog } from "../lockMachine";
 import { computeSummaryTotals, computeCategoryBreakdown } from "../payrollMath";
-import { applyConfirmInvoiceSummary, applyUnconfirmInvoiceSummary, UNCONFIRM_INVOICE_MODAL } from "../summaryReportData";
-import { applyConfirmCombinedHours, applyUnconfirmCombinedHours, UNCONFIRM_COMBINED_MODAL, NEED_REFRESH_TOAST } from "../combinedHoursData";
+import { applyConfirmInvoiceSummary, applyUnconfirmInvoiceSummary, getUnconfirmInvoiceModal } from "../summaryReportData";
+import { applyConfirmCombinedHours, applyUnconfirmCombinedHours, getUnconfirmCombinedModal, getNeedRefreshToast } from "../combinedHoursData";
 import { computeIncomingSupportDates } from "../combinedHoursCrossSite";
 import { exportTimeAttendanceToExcel } from "../timeAttendanceExport";
 import type { CombinedHoursCache } from "../hooks/useCombinedHoursCache";
@@ -69,6 +70,7 @@ export default function SummaryReportTab({
   onPersistMonth,
   onToast,
 }: SummaryReportTabProps) {
+  const { t } = useTranslation();
   const [refreshing, setRefreshing] = useState(false);
   const [unconfirmInvoiceOpen, setUnconfirmInvoiceOpen] = useState(false);
   const [unconfirmCombinedOpen, setUnconfirmCombinedOpen] = useState(false);
@@ -80,7 +82,7 @@ export default function SummaryReportTab({
     if (!canConfirmInvoiceSummary(session)) return;
     const totals = computeSummaryTotals(y, m, config, ms, result, rateConfig);
     const categories = computeCategoryBreakdown(y, m, config, ms, result, rateConfig);
-    const outcome = applyConfirmInvoiceSummary(ms, totals, actorUid, actorName, categories);
+    const outcome = applyConfirmInvoiceSummary(ms, totals, actorUid, actorName, categories, t);
     if ("error" in outcome) {
       onToast(outcome.error);
       return;
@@ -96,7 +98,7 @@ export default function SummaryReportTab({
 
   function handleConfirmUnconfirmInvoice() {
     setUnconfirmInvoiceOpen(false);
-    const outcome = applyUnconfirmInvoiceSummary(ms);
+    const outcome = applyUnconfirmInvoiceSummary(ms, t);
     onPersistMonth(outcome.ms, { suppressConfirmRevoke: outcome.suppressConfirmRevoke });
     onToast(outcome.toast);
   }
@@ -108,7 +110,7 @@ export default function SummaryReportTab({
     try {
       const map = await computeIncomingSupportDates(config.id, currentMonthKey, allSites, siteConfigsCache);
       combinedCache.set(config.id, currentMonthKey, map);
-      onToast("Combined hours refreshed.");
+      onToast(t("dutyRoster.combinedHoursPanel.toastRefreshed"));
     } finally {
       setRefreshing(false);
     }
@@ -117,10 +119,10 @@ export default function SummaryReportTab({
   function handleConfirmCombined() {
     if (!canConfirmCombinedHours(session)) return;
     if (!liveIncoming) {
-      onToast(NEED_REFRESH_TOAST);
+      onToast(getNeedRefreshToast(t));
       return;
     }
-    const outcome = applyConfirmCombinedHours(ms, liveIncoming, actorUid, actorName);
+    const outcome = applyConfirmCombinedHours(ms, liveIncoming, actorUid, actorName, t);
     onPersistMonth(outcome.ms, { suppressConfirmRevoke: outcome.suppressConfirmRevoke });
     onToast(outcome.toast);
   }
@@ -132,14 +134,14 @@ export default function SummaryReportTab({
 
   function handleConfirmUnconfirmCombined() {
     setUnconfirmCombinedOpen(false);
-    const outcome = applyUnconfirmCombinedHours(ms);
+    const outcome = applyUnconfirmCombinedHours(ms, t);
     onPersistMonth(outcome.ms, { suppressConfirmRevoke: outcome.suppressConfirmRevoke });
     onToast(outcome.toast);
   }
 
   function handleExport() {
     if (!liveIncoming) {
-      onToast(NEED_REFRESH_TOAST);
+      onToast(getNeedRefreshToast(t));
       return;
     }
     const { logText } = exportTimeAttendanceToExcel(y, m, config, ms, result, liveIncoming, config.name, currentMonthKey);
@@ -181,18 +183,18 @@ export default function SummaryReportTab({
 
       <ConfirmModal
         open={unconfirmInvoiceOpen}
-        title={UNCONFIRM_INVOICE_MODAL.title}
-        message={UNCONFIRM_INVOICE_MODAL.message}
-        okLabel={UNCONFIRM_INVOICE_MODAL.okLabel}
+        title={getUnconfirmInvoiceModal(t).title}
+        message={getUnconfirmInvoiceModal(t).message}
+        okLabel={getUnconfirmInvoiceModal(t).okLabel}
         danger
         onConfirm={handleConfirmUnconfirmInvoice}
         onCancel={() => setUnconfirmInvoiceOpen(false)}
       />
       <ConfirmModal
         open={unconfirmCombinedOpen}
-        title={UNCONFIRM_COMBINED_MODAL.title}
-        message={UNCONFIRM_COMBINED_MODAL.message}
-        okLabel={UNCONFIRM_COMBINED_MODAL.okLabel}
+        title={getUnconfirmCombinedModal(t).title}
+        message={getUnconfirmCombinedModal(t).message}
+        okLabel={getUnconfirmCombinedModal(t).okLabel}
         danger
         onConfirm={handleConfirmUnconfirmCombined}
         onCancel={() => setUnconfirmCombinedOpen(false)}

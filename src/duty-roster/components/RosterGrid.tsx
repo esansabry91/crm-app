@@ -13,6 +13,7 @@
  * lockMachine.ts's computeDragSwap()).
  */
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { GenerateMonthResult, MonthState } from "../types";
 import type { GenerateMonthConfig } from "../schedulingEngine";
 import { buildGridData, type GridCell } from "../rosterGridData";
@@ -49,8 +50,9 @@ export default function RosterGrid({
   onDiscard,
   onDragSwap,
 }: RosterGridProps) {
+  const { t } = useTranslation();
   const dragEnabled = canManage && !locked;
-  const data = buildGridData(y, m, config, ms, result, dragEnabled);
+  const data = buildGridData(y, m, config, ms, result, dragEnabled, t);
   const [dragSrc, setDragSrc] = useState<SlotRef | null>(null);
 
   const cellRef = (dateStr: string, cell: GridCell): SlotRef | null =>
@@ -73,11 +75,15 @@ export default function RosterGrid({
               color: locked ? ROSTER_TOKENS.accent : ROSTER_TOKENS.warn,
             }}
           >
-            {locked ? "🔒 Locked" : `🔓 Unlocked${pendingCount ? ` — ${pendingCount} pending change${pendingCount === 1 ? "" : "s"}` : " — rearranging"}`}
+            {locked
+              ? t('dutyRoster.rosterGrid.lockedBadge')
+              : pendingCount
+                ? t('dutyRoster.rosterGrid.unlockedPending', { count: pendingCount })
+                : t('dutyRoster.rosterGrid.unlockedRearranging')}
           </span>
           {!locked && canManage && (
             <span className="text-xs" style={{ color: ROSTER_TOKENS.muted }}>
-              Drag a tile onto another to swap, then Lock roster to apply.
+              {t('dutyRoster.rosterGrid.dragToSwapHint', { lockLabel: t('dutyRoster.rosterGrid.lockRoster') })}
             </span>
           )}
         </div>
@@ -90,7 +96,7 @@ export default function RosterGrid({
                 className="text-xs font-medium rounded-md px-2.5 py-1.5 border"
                 style={{ borderColor: ROSTER_TOKENS.critical, color: ROSTER_TOKENS.critical }}
               >
-                Discard changes
+                {t('dutyRoster.rosterGrid.discardChanges')}
               </button>
             )}
             <button
@@ -99,7 +105,7 @@ export default function RosterGrid({
               className="text-xs font-medium rounded-md px-2.5 py-1.5 border"
               style={{ borderColor: ROSTER_TOKENS.line, background: ROSTER_TOKENS.surface }}
             >
-              {locked ? "Unlock to rearrange" : "Lock roster"}
+              {locked ? t('dutyRoster.rosterGrid.unlockToRearrange') : t('dutyRoster.rosterGrid.lockRoster')}
             </button>
           </div>
         )}
@@ -115,13 +121,20 @@ export default function RosterGrid({
               <div key={i} className="flex items-center gap-1.5">
                 <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: color.bg }} />
                 <span style={{ color: ROSTER_TOKENS.muted }}>
-                  Shift {shiftLetterFor(entry.shiftIdx)} ({entry.label}){entry.tag ? ` — ${entry.tag}` : ""} {entry.windowText}
+                  {t('dutyRoster.rosterGrid.legendEntry', {
+                    letter: shiftLetterFor(entry.shiftIdx),
+                    label: entry.label,
+                    tagSuffix: entry.tag ? ` — ${entry.tag === 'Weekday' ? t('dutyRoster.rosterGrid.tagWeekday') : t('dutyRoster.rosterGrid.tagWeekend')}` : '',
+                    windowText: entry.windowText,
+                  })}
                 </span>
               </div>
             );
           })
         ) : (
-          <span style={{ color: ROSTER_TOKENS.muted }}>No shifts defined — check Client Site Requirement.</span>
+          <span style={{ color: ROSTER_TOKENS.muted }}>
+            {t('dutyRoster.rosterGrid.noShiftsDefined', { panel: t('dutyRoster.siteRequirementPanel.title') })}
+          </span>
         )}
       </div>
 
@@ -133,7 +146,7 @@ export default function RosterGrid({
                 className="sticky left-0 z-[3] text-left font-semibold px-2 py-1.5"
                 style={{ ...cellBorder, background: ROSTER_TOKENS.surface }}
               >
-                Guard
+                {t('dutyRoster.rosterGrid.guardColumn')}
               </th>
               {data.headerDays.map((d) => (
                 <th
@@ -151,10 +164,10 @@ export default function RosterGrid({
                 </th>
               ))}
               <th className="px-2 py-1.5" style={cellBorder}>
-                Shifts
+                {t('dutyRoster.rosterGrid.shiftsColumn')}
               </th>
               <th className="px-2 py-1.5" style={cellBorder}>
-                Rest days
+                {t('dutyRoster.rosterGrid.restDaysColumn')}
               </th>
             </tr>
           </thead>
@@ -165,7 +178,7 @@ export default function RosterGrid({
                   —
                 </td>
                 <td colSpan={data.headerDays.length + 2} className="px-2 py-2 text-center" style={{ ...cellBorder, color: ROSTER_TOKENS.muted }}>
-                  Add guards to see the roster sheet.
+                  {t('dutyRoster.rosterGrid.addGuardsToSeeSheet')}
                 </td>
               </tr>
             ) : (
@@ -181,6 +194,9 @@ export default function RosterGrid({
                     const dateStr = data.headerDays[dayIdx].dateStr;
                     const ref = cellRef(dateStr, cell);
                     if (cell.kind === "off") {
+                      // "OFF" is a fixed grid abbreviation code, same treatment as the shift
+                      // letters (A/B) and "P{n}" post numbers below and leaveAbbrev()'s ABS/MC/
+                      // UPL/SUP/LV codes — kept in English as a compact code, not natural language.
                       return (
                         <td key={dayIdx} className="px-1.5 py-1.5 text-center" style={{ ...cellBorder, color: ROSTER_TOKENS.muted }}>
                           OFF
