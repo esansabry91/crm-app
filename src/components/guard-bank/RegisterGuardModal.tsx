@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { registerGuard } from '../../services/guards';
 import { formatMykadInput, formatPhoneInput, isValidMykad, isValidPhone } from '../../utils/format';
 
@@ -17,6 +18,7 @@ export default function RegisterGuardModal({
   onClose: () => void;
   onRegistered: (message: string) => void;
 }) {
+  const { t } = useTranslation();
   const [category, setCategory] = useState<'local' | 'nepal'>('local');
   const [employeeId, setEmployeeId] = useState('');
   const [name, setName] = useState('');
@@ -53,17 +55,17 @@ export default function RegisterGuardModal({
     const s = stateVal.trim();
     const c = city.trim();
     const ageNum = Number(age);
-    if (!empId) return setError('Employee ID is required.');
-    if (!fullName) return setError('Full name is required.');
-    if (!s) return setError('State is required.');
-    if (!c) return setError('City is required.');
-    if (age.trim() === '' || !Number.isFinite(ageNum) || ageNum <= 0) return setError('Enter a valid age.');
+    if (!empId) return setError(t('guardBank.registerGuardModal.errorEmployeeIdRequired'));
+    if (!fullName) return setError(t('guardBank.registerGuardModal.errorFullNameRequired'));
+    if (!s) return setError(t('guardBank.registerGuardModal.errorStateRequired'));
+    if (!c) return setError(t('guardBank.registerGuardModal.errorCityRequired'));
+    if (age.trim() === '' || !Number.isFinite(ageNum) || ageNum <= 0) return setError(t('guardBank.registerGuardModal.errorValidAge'));
     if (category === 'nepal') {
-      if (!passportNumber.trim()) return setError('Passport number is required.');
-      if (!permitExpiryDate) return setError('Permit expiry date is required.');
+      if (!passportNumber.trim()) return setError(t('guardBank.registerGuardModal.errorPassportRequired'));
+      if (!permitExpiryDate) return setError(t('guardBank.registerGuardModal.errorPermitExpiryRequired'));
     } else {
-      if (!isValidMykad(mykadNumber.trim())) return setError('Enter a valid 12-digit MyKad number (e.g. 901231-14-5678).');
-      if (!isValidPhone(phoneNumber.trim())) return setError('Enter a valid phone number (e.g. 012-3456789).');
+      if (!isValidMykad(mykadNumber.trim())) return setError(t('guardBank.registerGuardModal.errorValidMykad'));
+      if (!isValidPhone(phoneNumber.trim())) return setError(t('guardBank.registerGuardModal.errorValidPhone'));
     }
 
     setSaving(true);
@@ -80,10 +82,10 @@ export default function RegisterGuardModal({
           ? { passportNumber: passportNumber.trim(), permitExpiryDate }
           : { mykadNumber: mykadNumber.trim(), phoneNumber: phoneNumber.trim() }),
       });
-      onRegistered(`Registered ${fullName} into the Guard Pool.`);
+      onRegistered(t('guardBank.registerGuardModal.toastRegistered', { name: fullName }));
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not register this guard.');
+      setError(err instanceof Error ? err.message : t('guardBank.registerGuardModal.errorCouldNotRegister'));
     } finally {
       setSaving(false);
     }
@@ -92,46 +94,45 @@ export default function RegisterGuardModal({
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-base font-semibold text-slate-900">Register guard</h2>
+        <h2 className="text-base font-semibold text-slate-900">{t('guardBank.registerGuardModal.title')}</h2>
         <p className="text-sm text-slate-500 mt-1">
-          Adds a new guard to the Guard Pool, unassigned to any site. Assign them to a client site
-          afterwards from the Guard Pool tab.
+          {t('guardBank.registerGuardModal.description')}
         </p>
 
         <div className="mt-4 space-y-3">
           <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Guard category</label>
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('guardBank.registerGuardModal.guardCategoryLabel')}</label>
             <select className="input" value={category} onChange={(e) => setCategory(e.target.value as 'local' | 'nepal')}>
-              <option value="local">Local</option>
-              <option value="nepal">Nepal</option>
+              <option value="local">{t('guardBank.categoryLocal')}</option>
+              <option value="nepal">{t('guardBank.categoryNepal')}</option>
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Employee ID</label>
-            <input className="input" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} placeholder="e.g. EMP-1023" />
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('guardBank.registerGuardModal.employeeIdLabel')}</label>
+            <input className="input" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} placeholder={t('guardBank.registerGuardModal.employeeIdPlaceholder')} />
           </div>
           <div>
             <label className="text-xs font-medium text-slate-600 block mb-1">
-              {category === 'nepal' ? 'Full name' : 'Full name (as per MyKad)'}
+              {category === 'nepal' ? t('guardBank.registerGuardModal.fullNameLabel') : t('guardBank.registerGuardModal.fullNameMykadLabel')}
             </label>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ahmad Faiz" />
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('guardBank.registerGuardModal.fullNamePlaceholder')} />
           </div>
 
           {category === 'nepal' ? (
             <>
               <div>
-                <label className="text-xs font-medium text-slate-600 block mb-1">Passport number</label>
+                <label className="text-xs font-medium text-slate-600 block mb-1">{t('guardBank.registerGuardModal.passportNumberLabel')}</label>
                 <input className="input" value={passportNumber} onChange={(e) => setPassportNumber(e.target.value)} />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-600 block mb-1">Permit expiry date</label>
+                <label className="text-xs font-medium text-slate-600 block mb-1">{t('guardBank.registerGuardModal.permitExpiryDateLabel')}</label>
                 <input type="date" className="input" value={permitExpiryDate} onChange={(e) => setPermitExpiryDate(e.target.value)} />
               </div>
             </>
           ) : (
             <>
               <div>
-                <label className="text-xs font-medium text-slate-600 block mb-1">MyKad number</label>
+                <label className="text-xs font-medium text-slate-600 block mb-1">{t('guardBank.registerGuardModal.mykadNumberLabel')}</label>
                 <input
                   className="input"
                   value={mykadNumber}
@@ -141,12 +142,12 @@ export default function RegisterGuardModal({
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-600 block mb-1">Phone number</label>
+                <label className="text-xs font-medium text-slate-600 block mb-1">{t('guardBank.registerGuardModal.phoneNumberLabel')}</label>
                 <input
                   className="input"
                   value={phoneNumber}
                   onChange={(e) => setPhoneNumber(formatPhoneInput(e.target.value))}
-                  placeholder="e.g. 012-3456789"
+                  placeholder={t('guardBank.registerGuardModal.phoneNumberPlaceholder')}
                 />
               </div>
             </>
@@ -154,16 +155,16 @@ export default function RegisterGuardModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1">State</label>
-              <input className="input" value={stateVal} onChange={(e) => setStateVal(e.target.value)} placeholder="e.g. Selangor" />
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t('guardBank.registerGuardModal.stateLabel')}</label>
+              <input className="input" value={stateVal} onChange={(e) => setStateVal(e.target.value)} placeholder={t('guardBank.registerGuardModal.statePlaceholder')} />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1">City</label>
-              <input className="input" value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Petaling Jaya" />
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t('guardBank.registerGuardModal.cityLabel')}</label>
+              <input className="input" value={city} onChange={(e) => setCity(e.target.value)} placeholder={t('guardBank.registerGuardModal.cityPlaceholder')} />
             </div>
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Age</label>
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('guardBank.registerGuardModal.ageLabel')}</label>
             <input type="number" min={16} max={80} className="input" value={age} onChange={(e) => setAge(e.target.value)} />
           </div>
         </div>
@@ -172,7 +173,7 @@ export default function RegisterGuardModal({
 
         <div className="flex justify-end gap-2 mt-5">
           <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800">
-            Cancel
+            {t('guardBank.cancel')}
           </button>
           <button
             type="button"
@@ -180,7 +181,7 @@ export default function RegisterGuardModal({
             onClick={submit}
             className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg"
           >
-            {saving ? 'Registering…' : 'Register guard'}
+            {saving ? t('guardBank.registerGuardModal.registeringEllipsis') : t('guardBank.registerGuardModal.title')}
           </button>
         </div>
       </div>

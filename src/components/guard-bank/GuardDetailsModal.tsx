@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Guard } from '../../types';
 import { updateGuardPermitExpiry } from '../../services/guards';
 import { formatDate, formatDateTime } from '../../utils/format';
@@ -26,6 +27,7 @@ export default function GuardDetailsModal({
   onClose: () => void;
   onUpdated?: (message: string) => void;
 }) {
+  const { t } = useTranslation();
   const [editingPermit, setEditingPermit] = useState(false);
   const [permitDraft, setPermitDraft] = useState('');
   const [saving, setSaving] = useState(false);
@@ -50,66 +52,77 @@ export default function GuardDetailsModal({
   async function savePermit() {
     if (!guard) return;
     if (!permitDraft) {
-      setPermitError('Pick the new expiry date.');
+      setPermitError(t('guardBank.guardDetailsModal.errorPickExpiryDate'));
       return;
     }
     setSaving(true);
     setPermitError(null);
     try {
       await updateGuardPermitExpiry(guard.id, permitDraft);
-      onUpdated?.(`Updated ${guard.name}'s permit expiry to ${formatDate(permitDraft)}.`);
+      onUpdated?.(t('guardBank.guardDetailsModal.toastPermitUpdated', { name: guard.name, date: formatDate(permitDraft) }));
       setEditingPermit(false);
     } catch (err) {
-      setPermitError(err instanceof Error ? err.message : 'Could not update the permit expiry date.');
+      setPermitError(err instanceof Error ? err.message : t('guardBank.guardDetailsModal.errorCouldNotUpdatePermit'));
     } finally {
       setSaving(false);
     }
   }
 
   const topRows: { label: string; value: string }[] = [
-    { label: 'Full name', value: guard.name },
-    { label: 'Employee ID', value: guard.employeeId },
-    { label: 'Category', value: guard.category === 'nepal' ? 'Nepal' : 'Local' },
-    { label: 'Age', value: guard.age != null ? String(guard.age) : '-' },
-    { label: 'State', value: guard.state || '-' },
-    { label: 'City', value: guard.city || '-' },
+    { label: t('guardBank.guardDetailsModal.fullNameLabel'), value: guard.name },
+    { label: t('guardBank.colEmployeeId'), value: guard.employeeId },
+    { label: t('guardBank.colCategory'), value: guard.category === 'nepal' ? t('guardBank.categoryNepal') : t('guardBank.categoryLocal') },
+    { label: t('guardBank.guardDetailsModal.ageLabel'), value: guard.age != null ? String(guard.age) : '-' },
+    { label: t('guardBank.guardDetailsModal.stateLabel'), value: guard.state || '-' },
+    { label: t('guardBank.guardDetailsModal.cityLabel'), value: guard.city || '-' },
   ];
 
   if (guard.category === 'nepal') {
-    topRows.push({ label: 'Passport number', value: guard.passportNumber || '-' });
+    topRows.push({ label: t('guardBank.guardDetailsModal.passportNumberLabel'), value: guard.passportNumber || '-' });
   } else {
-    topRows.push({ label: 'MyKad number', value: guard.mykadNumber || '-' }, { label: 'Phone number', value: guard.phoneNumber || '-' });
+    topRows.push(
+      { label: t('guardBank.guardDetailsModal.mykadNumberLabel'), value: guard.mykadNumber || '-' },
+      { label: t('guardBank.guardDetailsModal.phoneNumberLabel'), value: guard.phoneNumber || '-' }
+    );
   }
 
   const bottomRows: { label: string; value: string }[] = [
     {
-      label: 'Status',
-      value: guard.status === 'pool' ? 'Guard Pool (unassigned)' : guard.status === 'deployed' ? 'Deployed' : 'Dismissed',
+      label: t('guardBank.guardDetailsModal.statusLabel'),
+      value:
+        guard.status === 'pool'
+          ? t('guardBank.guardDetailsModal.statusPool')
+          : guard.status === 'deployed'
+            ? t('guardBank.guardDetailsModal.statusDeployed')
+            : t('guardBank.guardDetailsModal.statusDismissed'),
     },
   ];
 
   if (guard.status !== 'pool') {
     bottomRows.push(
-      { label: 'Site', value: guard.siteName || '-' },
-      { label: 'Branch', value: guard.branch || 'Unassigned' },
-      { label: 'Brand', value: guard.brandName || '-' }
+      { label: t('guardBank.colSite'), value: guard.siteName || '-' },
+      { label: t('guardBank.colBranch'), value: guard.branch || t('guardBank.unassignedBranch') },
+      { label: t('guardBank.colBrand'), value: guard.brandName || '-' }
     );
   }
 
   if (guard.status === 'dismissed') {
     bottomRows.push(
-      { label: 'Dismissal reason', value: guard.dismissalReason || 'Unspecified' },
-      { label: 'Dismissed on', value: guard.dismissedAt ? formatDateTime(guard.dismissedAt) : '-' }
+      { label: t('guardBank.guardDetailsModal.dismissalReasonLabel'), value: guard.dismissalReason || t('guardBank.unspecified') },
+      { label: t('guardBank.guardDetailsModal.dismissedOnLabel'), value: guard.dismissedAt ? formatDateTime(guard.dismissedAt) : '-' }
     );
   }
 
-  bottomRows.push({ label: 'Registered', value: formatDateTime(guard.createdAt) }, { label: 'Last updated', value: formatDateTime(guard.updatedAt) });
+  bottomRows.push(
+    { label: t('guardBank.colRegistered'), value: formatDateTime(guard.createdAt) },
+    { label: t('guardBank.guardDetailsModal.lastUpdatedLabel'), value: formatDateTime(guard.updatedAt) }
+  );
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 max-h-[90vh] overflow-y-auto">
         <h2 className="text-base font-semibold text-slate-900">{guard.name}</h2>
-        <p className="text-sm text-slate-500 mt-0.5">Full Guard Bank record</p>
+        <p className="text-sm text-slate-500 mt-0.5">{t('guardBank.guardDetailsModal.subtitle')}</p>
         <dl className="mt-4 divide-y divide-slate-50">
           {topRows.map((r) => (
             <div key={r.label} className="flex items-start justify-between gap-4 py-1.5 text-sm">
@@ -120,7 +133,7 @@ export default function GuardDetailsModal({
 
           {guard.category === 'nepal' && (
             <div className="flex items-start justify-between gap-4 py-1.5 text-sm">
-              <dt className="text-slate-500 shrink-0 pt-1">Permit expiry date</dt>
+              <dt className="text-slate-500 shrink-0 pt-1">{t('guardBank.registerGuardModal.permitExpiryDateLabel')}</dt>
               <dd className="text-slate-800 text-right">
                 {editingPermit ? (
                   <div className="flex items-center gap-2 justify-end flex-wrap">
@@ -136,7 +149,7 @@ export default function GuardDetailsModal({
                       disabled={saving}
                       className="text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-60"
                     >
-                      {saving ? 'Saving…' : 'Save'}
+                      {saving ? t('guardBank.guardDetailsModal.savingEllipsis') : t('guardBank.save')}
                     </button>
                     <button
                       type="button"
@@ -144,7 +157,7 @@ export default function GuardDetailsModal({
                       disabled={saving}
                       className="text-xs font-medium text-slate-400 hover:text-slate-600 disabled:opacity-60"
                     >
-                      Cancel
+                      {t('guardBank.cancel')}
                     </button>
                   </div>
                 ) : (
@@ -155,7 +168,7 @@ export default function GuardDetailsModal({
                       onClick={startEditPermit}
                       className="text-xs font-medium text-blue-600 hover:text-blue-700 underline underline-offset-2"
                     >
-                      Update
+                      {t('guardBank.guardDetailsModal.updateLink')}
                     </button>
                   </div>
                 )}
@@ -177,7 +190,7 @@ export default function GuardDetailsModal({
             onClick={onClose}
             className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
           >
-            Close
+            {t('guardBank.guardDetailsModal.closeButton')}
           </button>
         </div>
       </div>

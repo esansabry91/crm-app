@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import clsx from 'clsx';
 import StatCard from '../components/analytics/StatCard';
 import RegisterGuardModal from '../components/guard-bank/RegisterGuardModal';
@@ -24,19 +26,27 @@ import { VIZ } from '../utils/vizColors';
 import type { BufferGuard, Guard } from '../types';
 import { isAdminRole } from '../types';
 
+// Tab itself stays the fixed English literal (internal state) — only the displayed label is
+// translated, via TAB_LABEL_KEYS.
 const TABS = ['Guard Pool', 'Deployed Guards', 'Dismissed Guards', 'Buffer Guards'] as const;
 type Tab = (typeof TABS)[number];
+const TAB_LABEL_KEYS: Record<Tab, string> = {
+  'Guard Pool': 'guardBank.tabs.guardPool',
+  'Deployed Guards': 'guardBank.tabs.deployedGuards',
+  'Dismissed Guards': 'guardBank.tabs.dismissedGuards',
+  'Buffer Guards': 'guardBank.tabs.bufferGuards',
+};
 
 const ALL = '__all__';
 const UNASSIGNED_BRANCH = '__unassigned__';
 type CategoryFilter = 'all' | 'local' | 'nepal';
-const CATEGORY_OPTIONS: { value: CategoryFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'local', label: 'Local' },
-  { value: 'nepal', label: 'Nepal' },
+const CATEGORY_OPTIONS: { value: CategoryFilter; labelKey: string }[] = [
+  { value: 'all', labelKey: 'guardBank.categoryAll' },
+  { value: 'local', labelKey: 'guardBank.categoryLocal' },
+  { value: 'nepal', labelKey: 'guardBank.categoryNepal' },
 ];
 
-function CategoryPill({ category }: { category: Guard['category'] }) {
+function CategoryPill({ category, t }: { category: Guard['category']; t: TFunction }) {
   return (
     <span
       className={clsx(
@@ -44,7 +54,7 @@ function CategoryPill({ category }: { category: Guard['category'] }) {
         category === 'nepal' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500'
       )}
     >
-      {category === 'nepal' ? 'Nepal' : 'Local'}
+      {category === 'nepal' ? t('guardBank.categoryNepal') : t('guardBank.categoryLocal')}
     </span>
   );
 }
@@ -55,6 +65,7 @@ function isPermitSoon(g: Guard): boolean {
 }
 
 export default function GuardBankPage() {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const { guards, loading: guardsLoading } = useGuards();
   const { bufferGuards, loading: bufferLoading } = useBufferGuards();
@@ -193,13 +204,17 @@ export default function GuardBankPage() {
     try {
       const result = await backfillGuardsFromDutyRoster();
       flash(
-        `Synced ${result.guardsScanned} guard(s) across ${result.sitesScanned} site(s): ` +
-          `${result.created} added, ${result.updated} updated` +
-          (result.skippedNoEmployeeId ? `, ${result.skippedNoEmployeeId} skipped (no Employee ID)` : '') +
+        t('guardBank.syncResultBase', {
+          guardsScanned: result.guardsScanned,
+          sitesScanned: result.sitesScanned,
+          created: result.created,
+          updated: result.updated,
+        }) +
+          (result.skippedNoEmployeeId ? t('guardBank.syncResultSkipped', { count: result.skippedNoEmployeeId }) : '') +
           '.'
       );
     } catch (err) {
-      flash(err instanceof Error ? err.message : 'Could not sync from Duty Roster.');
+      flash(err instanceof Error ? err.message : t('guardBank.errorCouldNotSync'));
     } finally {
       setBackfilling(false);
     }
@@ -208,22 +223,22 @@ export default function GuardBankPage() {
   async function saveBufferContact(id: string) {
     try {
       await updateBufferGuardContact(id, { phoneNumber: editPhone.trim() });
-      flash('Updated contact number.');
+      flash(t('guardBank.updatedContactNumber'));
     } catch {
-      flash('Could not save that contact number.');
+      flash(t('guardBank.errorCouldNotSaveContact'));
     } finally {
       setEditingBufferId(null);
     }
   }
 
   async function removeBuffer(bg: BufferGuard) {
-    if (!window.confirm(`Remove ${bg.name} from the Buffer Guards list? This cannot be undone.`)) return;
+    if (!window.confirm(t('guardBank.confirmRemoveBuffer', { name: bg.name }))) return;
     setRemovingBufferId(bg.id);
     try {
       await removeBufferGuard(bg.id);
-      flash(`Removed ${bg.name} from the Buffer Guards list.`);
+      flash(t('guardBank.removedBufferFlash', { name: bg.name }));
     } catch (err) {
-      flash(err instanceof Error ? err.message : 'Could not remove this buffer guard.');
+      flash(err instanceof Error ? err.message : t('guardBank.errorCouldNotRemoveBuffer'));
     } finally {
       setRemovingBufferId(null);
     }
@@ -231,31 +246,26 @@ export default function GuardBankPage() {
 
   /** Guard Pool only — see removeGuard()'s own doc comment for why Deployed/Dismissed don't offer this. */
   async function removeFromPool(g: Guard) {
-    if (!window.confirm(`Remove ${g.name} from Guard Bank? This permanently deletes their record and cannot be undone.`)) return;
+    if (!window.confirm(t('guardBank.confirmRemoveFromPool', { name: g.name }))) return;
     setRemovingGuardId(g.id);
     try {
       await removeGuard(g.id);
-      flash(`Removed ${g.name} from Guard Bank.`);
+      flash(t('guardBank.removedFromPoolFlash', { name: g.name }));
     } catch (err) {
-      flash(err instanceof Error ? err.message : 'Could not remove this guard.');
+      flash(err instanceof Error ? err.message : t('guardBank.errorCouldNotRemoveGuard'));
     } finally {
       setRemovingGuardId(null);
     }
   }
 
   async function archiveDismissed(g: Guard) {
-    if (
-      !window.confirm(
-        `Archive ${g.name}? They'll drop off the Dismissed Guards list, but their record is kept — the turnover rate above still counts them.`
-      )
-    )
-      return;
+    if (!window.confirm(t('guardBank.confirmArchiveDismissed', { name: g.name }))) return;
     setArchivingGuardId(g.id);
     try {
       await archiveDismissedGuard(g.id);
-      flash(`Archived ${g.name}.`);
+      flash(t('guardBank.archivedFlash', { name: g.name }));
     } catch (err) {
-      flash(err instanceof Error ? err.message : 'Could not archive this guard.');
+      flash(err instanceof Error ? err.message : t('guardBank.errorCouldNotArchive'));
     } finally {
       setArchivingGuardId(null);
     }
@@ -269,12 +279,12 @@ export default function GuardBankPage() {
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-semibold text-slate-900">Guard Bank</h1>
+              <h1 className="text-lg font-semibold text-slate-900">{t('nav.links.guardBank')}</h1>
               <HeaderCollapseToggle expanded={headerExpanded} onToggle={() => setHeaderExpanded((v) => !v)} />
             </div>
             {headerExpanded && (
               <p className="text-sm text-slate-500 mt-0.5">
-                Every registered guard across all branches — unassigned, deployed, dismissed and buffer.
+                {t('guardBank.pageSubtitle')}
               </p>
             )}
           </div>
@@ -283,11 +293,11 @@ export default function GuardBankPage() {
               <button
                 onClick={runDutyRosterSync}
                 disabled={backfilling}
-                title="Reconcile Guard Bank against every site's live roster in Duty Roster — safe to use anytime, not just once"
+                title={t('guardBank.refreshFromDutyRosterTitle')}
                 className="px-3.5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-60 rounded-lg border border-slate-200 inline-flex items-center gap-1.5"
               >
                 <span aria-hidden className={backfilling ? 'animate-spin' : ''}>↻</span>
-                {backfilling ? 'Syncing…' : 'Refresh from Duty Roster'}
+                {backfilling ? t('guardBank.syncingEllipsis') : t('guardBank.refreshFromDutyRoster')}
               </button>
             )}
             {tab === 'Guard Pool' && (
@@ -295,7 +305,7 @@ export default function GuardBankPage() {
                 onClick={() => setRegisterOpen(true)}
                 className="px-3.5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
               >
-                + Register guard
+                {t('guardBank.registerGuardButton')}
               </button>
             )}
             {tab === 'Buffer Guards' && (
@@ -303,7 +313,7 @@ export default function GuardBankPage() {
                 onClick={() => setRegisterBufferOpen(true)}
                 className="px-3.5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
               >
-                + Register buffer guard
+                {t('guardBank.registerBufferGuardButton')}
               </button>
             )}
           </div>
@@ -316,53 +326,53 @@ export default function GuardBankPage() {
       <div className="px-6 pb-4 bg-white border-b border-slate-200">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
           <StatCard
-            label="Total permanent hired"
+            label={t('guardBank.statTotalPermanentHired')}
             value={String(poolGuards.length + deployedGuards.length)}
-            sub="Unassigned + Deployed"
+            sub={t('guardBank.statUnassignedPlusDeployed')}
             accent={VIZ.status.good}
           />
-          <StatCard label="Unassigned guards" value={String(poolGuards.length)} sub="Guard Pool" />
-          <StatCard label="Dismissed guards" value={String(dismissedGuards.length)} accent={VIZ.status.critical} />
-          <StatCard label="Buffer guards" value={String(bufferGuards.length)} />
+          <StatCard label={t('guardBank.statUnassignedGuards')} value={String(poolGuards.length)} sub={t('guardBank.tabs.guardPool')} />
+          <StatCard label={t('guardBank.statDismissedGuards')} value={String(dismissedGuards.length)} accent={VIZ.status.critical} />
+          <StatCard label={t('guardBank.statBufferGuards')} value={String(bufferGuards.length)} />
           <StatCard
-            label="Permit expiring ≤ 2 months"
+            label={t('guardBank.statPermitExpiring')}
             value={String(permitSoon.length)}
-            sub="Nepal category"
+            sub={t('guardBank.statNepalCategory')}
             accent={permitSoon.length > 0 ? VIZ.status.warning : undefined}
             action={{
-              label: 'Go to list',
+              label: t('guardBank.goToList'),
               onClick: goToPermitExpiringList,
               disabled: permitSoon.length === 0,
             }}
           />
           <StatCard
-            label="Turnover rate (12mo)"
+            label={t('guardBank.statTurnoverRate')}
             value={`${turnover.rate.toFixed(1)}%`}
-            sub={`${turnover.dismissedLast12mo} dismissed / avg ${turnover.avgHeadcount.toFixed(1)} active`}
+            sub={t('guardBank.turnoverSub', { dismissed: turnover.dismissedLast12mo, avg: turnover.avgHeadcount.toFixed(1) })}
           />
         </div>
 
         <div className="flex gap-1 mt-4 overflow-x-auto">
-          {TABS.map((t) => (
+          {TABS.map((tabName) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              key={tabName}
+              onClick={() => setTab(tabName)}
               className={clsx(
                 'px-3 py-1.5 text-sm font-medium rounded-lg transition whitespace-nowrap',
-                tab === t ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-100'
+                tab === tabName ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-100'
               )}
             >
-              {t}
-              {t === 'Guard Pool' && poolGuards.length > 0 && (
+              {t(TAB_LABEL_KEYS[tabName])}
+              {tabName === 'Guard Pool' && poolGuards.length > 0 && (
                 <span className="ml-1.5 text-xs text-slate-400">{poolGuards.length}</span>
               )}
-              {t === 'Deployed Guards' && deployedGuards.length > 0 && (
+              {tabName === 'Deployed Guards' && deployedGuards.length > 0 && (
                 <span className="ml-1.5 text-xs text-slate-400">{deployedGuards.length}</span>
               )}
-              {t === 'Dismissed Guards' && dismissedGuards.length > 0 && (
+              {tabName === 'Dismissed Guards' && dismissedGuards.length > 0 && (
                 <span className="ml-1.5 text-xs text-slate-400">{dismissedGuards.length}</span>
               )}
-              {t === 'Buffer Guards' && bufferGuards.length > 0 && (
+              {tabName === 'Buffer Guards' && bufferGuards.length > 0 && (
                 <span className="ml-1.5 text-xs text-slate-400">{bufferGuards.length}</span>
               )}
             </button>
@@ -383,7 +393,7 @@ export default function GuardBankPage() {
                     : 'bg-white text-slate-500 hover:bg-slate-50'
                 )}
               >
-                {opt.label}
+                {t(opt.labelKey)}
               </button>
             ))}
           </div>
@@ -393,8 +403,8 @@ export default function GuardBankPage() {
             value={branchFilter}
             onChange={(e) => setBranchFilter(e.target.value)}
           >
-            <option value={ALL}>All branches</option>
-            <option value={UNASSIGNED_BRANCH}>Unassigned</option>
+            <option value={ALL}>{t('guardBank.allBranches')}</option>
+            <option value={UNASSIGNED_BRANCH}>{t('guardBank.unassignedBranch')}</option>
             {branches.map((b) => (
               <option key={b.id} value={b.name}>
                 {b.name}
@@ -407,7 +417,7 @@ export default function GuardBankPage() {
             value={stateFilter}
             onChange={(e) => setStateFilter(e.target.value)}
           >
-            <option value={ALL}>All states</option>
+            <option value={ALL}>{t('guardBank.allStates')}</option>
             {stateOptions.map((s) => (
               <option key={s} value={s}>
                 {s}
@@ -420,7 +430,7 @@ export default function GuardBankPage() {
             value={cityFilter}
             onChange={(e) => setCityFilter(e.target.value)}
           >
-            <option value={ALL}>All cities</option>
+            <option value={ALL}>{t('guardBank.allCities')}</option>
             {cityOptions.map((c) => (
               <option key={c} value={c}>
                 {c}
@@ -434,7 +444,7 @@ export default function GuardBankPage() {
             value={brandFilter}
             onChange={(e) => setBrandFilter(e.target.value)}
           >
-            <option value={ALL}>All brands</option>
+            <option value={ALL}>{t('guardBank.allBrands')}</option>
             {brandOptions.map((b) => (
               <option key={b} value={b}>
                 {b}
@@ -444,7 +454,7 @@ export default function GuardBankPage() {
 
           {filtersActive && (
             <button onClick={clearFilters} className="text-xs font-medium text-slate-400 hover:text-slate-600 underline">
-              Clear filters
+              {t('guardBank.clearFilters')}
             </button>
           )}
         </div>
@@ -456,25 +466,25 @@ export default function GuardBankPage() {
 
       <div className="px-6 py-6">
         {loading ? (
-          <p className="text-sm text-slate-400">Loading…</p>
+          <p className="text-sm text-slate-400">{t('guardBank.loadingEllipsis')}</p>
         ) : tab === 'Guard Pool' ? (
           filteredPool.length === 0 ? (
             <p className="text-sm text-slate-400">
               {poolGuards.length === 0
-                ? 'No unassigned guards. New batches get registered here first, via "+ Register guard" above, or automatically whenever Duty Roster adds a guard whose Employee ID isn\'t in Guard Bank yet.'
-                : 'No unassigned guards match these filters.'}
+                ? t('guardBank.noUnassignedGuardsEmpty')
+                : t('guardBank.noUnassignedGuardsFiltered')}
             </p>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs font-medium text-slate-500 border-b border-slate-100">
-                    <th className="px-4 py-2.5">Name</th>
-                    <th className="px-4 py-2.5">Employee ID</th>
-                    <th className="px-4 py-2.5">Category</th>
-                    <th className="px-4 py-2.5">Location</th>
-                    <th className="px-4 py-2.5">Permit expiry</th>
-                    <th className="px-4 py-2.5">Registered</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colName')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colEmployeeId')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colCategory')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colLocation')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colPermitExpiry')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colRegistered')}</th>
                     <th className="px-4 py-2.5" />
                   </tr>
                 </thead>
@@ -484,7 +494,7 @@ export default function GuardBankPage() {
                       <td className="px-4 py-2.5 font-medium text-slate-800">{g.name}</td>
                       <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{g.employeeId}</td>
                       <td className="px-4 py-2.5">
-                        <CategoryPill category={g.category} />
+                        <CategoryPill category={g.category} t={t} />
                       </td>
                       <td className="px-4 py-2.5 text-slate-500">{[g.city, g.state].filter(Boolean).join(', ') || '-'}</td>
                       <td className="px-4 py-2.5">
@@ -505,13 +515,13 @@ export default function GuardBankPage() {
                           onClick={() => setViewGuardId(g.id)}
                           className="px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-md"
                         >
-                          View
+                          {t('guardBank.view')}
                         </button>
                         <button
                           onClick={() => setAssignGuard(g)}
                           className="px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-md"
                         >
-                          Assign to site
+                          {t('guardBank.assignToSite')}
                         </button>
                         {isAdminRole(profile?.role) && (
                           <button
@@ -519,7 +529,7 @@ export default function GuardBankPage() {
                             disabled={removingGuardId === g.id}
                             className="px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-60 rounded-md"
                           >
-                            {removingGuardId === g.id ? 'Removing…' : 'Remove'}
+                            {removingGuardId === g.id ? t('guardBank.removingEllipsis') : t('guardBank.remove')}
                           </button>
                         )}
                       </td>
@@ -532,20 +542,20 @@ export default function GuardBankPage() {
         ) : tab === 'Deployed Guards' ? (
           filteredDeployed.length === 0 ? (
             <p className="text-sm text-slate-400">
-              {deployedGuards.length === 0 ? 'No guards currently deployed.' : 'No deployed guards match these filters.'}
+              {deployedGuards.length === 0 ? t('guardBank.noDeployedGuards') : t('guardBank.noDeployedGuardsFiltered')}
             </p>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs font-medium text-slate-500 border-b border-slate-100">
-                    <th className="px-4 py-2.5">Name</th>
-                    <th className="px-4 py-2.5">Employee ID</th>
-                    <th className="px-4 py-2.5">Category</th>
-                    <th className="px-4 py-2.5">Site</th>
-                    <th className="px-4 py-2.5">Branch</th>
-                    <th className="px-4 py-2.5">Brand</th>
-                    <th className="px-4 py-2.5">Permit expiry</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colName')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colEmployeeId')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colCategory')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colSite')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colBranch')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colBrand')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colPermitExpiry')}</th>
                     <th className="px-4 py-2.5" />
                   </tr>
                 </thead>
@@ -555,10 +565,10 @@ export default function GuardBankPage() {
                       <td className="px-4 py-2.5 font-medium text-slate-800">{g.name}</td>
                       <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{g.employeeId}</td>
                       <td className="px-4 py-2.5">
-                        <CategoryPill category={g.category} />
+                        <CategoryPill category={g.category} t={t} />
                       </td>
                       <td className="px-4 py-2.5 text-slate-600">{g.siteName || '-'}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{g.branch || 'Unassigned'}</td>
+                      <td className="px-4 py-2.5 text-slate-500">{g.branch || t('guardBank.unassignedBranch')}</td>
                       <td className="px-4 py-2.5 text-slate-500">{g.brandName || '-'}</td>
                       <td className="px-4 py-2.5">
                         {g.category === 'nepal' && g.permitExpiryDate ? (
@@ -580,7 +590,7 @@ export default function GuardBankPage() {
                           onClick={() => setViewGuardId(g.id)}
                           className="px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-md"
                         >
-                          View
+                          {t('guardBank.view')}
                         </button>
                       </td>
                     </tr>
@@ -592,19 +602,19 @@ export default function GuardBankPage() {
         ) : tab === 'Dismissed Guards' ? (
           filteredDismissed.length === 0 ? (
             <p className="text-sm text-slate-400">
-              {dismissedGuards.length === 0 ? 'No dismissed guards.' : 'No dismissed guards match these filters.'}
+              {dismissedGuards.length === 0 ? t('guardBank.noDismissedGuards') : t('guardBank.noDismissedGuardsFiltered')}
             </p>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs font-medium text-slate-500 border-b border-slate-100">
-                    <th className="px-4 py-2.5">Name</th>
-                    <th className="px-4 py-2.5">Employee ID</th>
-                    <th className="px-4 py-2.5">Last site</th>
-                    <th className="px-4 py-2.5">Brand</th>
-                    <th className="px-4 py-2.5">Reason</th>
-                    <th className="px-4 py-2.5">Dismissed</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colName')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colEmployeeId')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colLastSite')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colBrand')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colReason')}</th>
+                    <th className="px-4 py-2.5">{t('guardBank.colDismissed')}</th>
                     <th className="px-4 py-2.5" />
                   </tr>
                 </thead>
@@ -620,7 +630,7 @@ export default function GuardBankPage() {
                           className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
                           style={{ backgroundColor: `${VIZ.status.critical}1a`, color: VIZ.status.critical }}
                         >
-                          {g.dismissalReason || 'Unspecified'}
+                          {g.dismissalReason || t('guardBank.unspecified')}
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-slate-400">{g.dismissedAt ? formatDateTime(g.dismissedAt) : '-'}</td>
@@ -629,7 +639,7 @@ export default function GuardBankPage() {
                           onClick={() => setViewGuardId(g.id)}
                           className="px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-md"
                         >
-                          View
+                          {t('guardBank.view')}
                         </button>
                         {isAdminRole(profile?.role) && (
                           <button
@@ -637,7 +647,7 @@ export default function GuardBankPage() {
                             disabled={archivingGuardId === g.id}
                             className="px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-60 rounded-md"
                           >
-                            {archivingGuardId === g.id ? 'Archiving…' : 'Archive'}
+                            {archivingGuardId === g.id ? t('guardBank.archivingEllipsis') : t('guardBank.archive')}
                           </button>
                         )}
                       </td>
@@ -650,21 +660,21 @@ export default function GuardBankPage() {
         ) : filteredBuffer.length === 0 ? (
           <p className="text-sm text-slate-400">
             {bufferGuards.length === 0
-              ? 'No buffer guards yet. Add one via "+ Register buffer guard" above, or they\'re recorded automatically whenever Duty Roster assigns a temporary guard to cover a shift.'
-              : 'No buffer guards match these filters.'}
+              ? t('guardBank.noBufferGuardsEmpty')
+              : t('guardBank.noBufferGuardsFiltered')}
           </p>
         ) : (
           <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs font-medium text-slate-500 border-b border-slate-100">
-                  <th className="px-4 py-2.5">Name</th>
-                  <th className="px-4 py-2.5">Rate</th>
-                  <th className="px-4 py-2.5">Phone</th>
-                  <th className="px-4 py-2.5">Location</th>
-                  <th className="px-4 py-2.5">Last site</th>
-                  <th className="px-4 py-2.5">Last used at</th>
-                  <th className="px-4 py-2.5">Times used</th>
+                  <th className="px-4 py-2.5">{t('guardBank.colName')}</th>
+                  <th className="px-4 py-2.5">{t('guardBank.colRate')}</th>
+                  <th className="px-4 py-2.5">{t('guardBank.colPhone')}</th>
+                  <th className="px-4 py-2.5">{t('guardBank.colLocation')}</th>
+                  <th className="px-4 py-2.5">{t('guardBank.colLastSite')}</th>
+                  <th className="px-4 py-2.5">{t('guardBank.colLastUsedAt')}</th>
+                  <th className="px-4 py-2.5">{t('guardBank.colTimesUsed')}</th>
                   <th className="px-4 py-2.5" />
                 </tr>
               </thead>
@@ -689,13 +699,13 @@ export default function GuardBankPage() {
                               onClick={() => saveBufferContact(bg.id)}
                               className="text-xs font-medium text-blue-600 hover:underline"
                             >
-                              Save
+                              {t('guardBank.save')}
                             </button>
                             <button
                               onClick={() => setEditingBufferId(null)}
                               className="text-xs text-slate-400 hover:underline"
                             >
-                              Cancel
+                              {t('guardBank.cancel')}
                             </button>
                           </div>
                         ) : (
@@ -706,7 +716,7 @@ export default function GuardBankPage() {
                             }}
                             className="text-slate-600 hover:text-blue-600"
                           >
-                            {bg.phoneNumber || <span className="text-slate-300">Add phone</span>}
+                            {bg.phoneNumber || <span className="text-slate-300">{t('guardBank.addPhone')}</span>}
                           </button>
                         )}
                       </td>
@@ -719,7 +729,7 @@ export default function GuardBankPage() {
                           onClick={() => setViewBuffer(bg)}
                           className="px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-md"
                         >
-                          View
+                          {t('guardBank.view')}
                         </button>
                         {isAdminRole(profile?.role) && (
                           <button
@@ -727,7 +737,7 @@ export default function GuardBankPage() {
                             disabled={removingBufferId === bg.id}
                             className="px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-60 rounded-md"
                           >
-                            {removingBufferId === bg.id ? 'Removing…' : 'Remove'}
+                            {removingBufferId === bg.id ? t('guardBank.removingEllipsis') : t('guardBank.remove')}
                           </button>
                         )}
                       </td>
