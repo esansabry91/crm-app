@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getTenderSiteDetails } from '../../services/tenders';
@@ -67,6 +68,7 @@ interface InvoiceSiteSectionProps {
  * invoice.
  */
 export default function InvoiceSiteSection({ site, billingMonthValue, billingMonth, onChange, onRemove }: InvoiceSiteSectionProps) {
+  const { t } = useTranslation();
   const [rateCatalog, setRateCatalog] = useState<SiteBillingRate[]>(site.billingRates || []);
   const [rateSourceIsOwnSite, setRateSourceIsOwnSite] = useState(false);
   const [equipmentCatalog, setEquipmentCatalog] = useState<SiteEquipmentRate[]>(site.equipmentRates || []);
@@ -104,7 +106,7 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
     const siteDetailsPromise = getTenderSiteDetails(tenderId, site.id).catch(() => null);
     Promise.all([tenderPromise, siteDetailsPromise]).then(([snap, siteDetails]) => {
       if (cancelled) return;
-      const t = snap && snap.exists()
+      const tenderData = snap && snap.exists()
         ? (snap.data() as {
             guardRateMode?: 'same' | 'multiple';
             guardRate?: number;
@@ -112,7 +114,7 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
             additionalEquipment?: TenderEquipmentItem[];
           })
         : null;
-      const rateSource = siteDetails ?? t;
+      const rateSource = siteDetails ?? tenderData;
       if (rateSource) {
         const derived = deriveRateCategoriesFromGuardRate(rateSource);
         if (derived) {
@@ -120,7 +122,7 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
           setRateSourceIsOwnSite(!!siteDetails);
         }
       }
-      setTenderEquipment((siteDetails ? siteDetails.additionalEquipment : t?.additionalEquipment) || []);
+      setTenderEquipment((siteDetails ? siteDetails.additionalEquipment : tenderData?.additionalEquipment) || []);
     });
     return () => {
       cancelled = true;
@@ -321,49 +323,49 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
       <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3">
         <div>
           <h3 className="text-sm font-semibold text-slate-800">{site.name}</h3>
-          <p className="text-xs text-slate-400 mt-0.5">Additional site combined onto this invoice.</p>
+          <p className="text-xs text-slate-400 mt-0.5">{t('branchCollection.invoiceSiteSection.additionalSiteNote')}</p>
         </div>
         <button
           onClick={onRemove}
           className="shrink-0 text-xs font-medium text-rose-600 hover:bg-rose-50 rounded px-2.5 py-1 border border-rose-200"
         >
-          Remove site
+          {t('branchCollection.invoiceSiteSection.removeSite')}
         </button>
       </div>
 
       <div>
-        <p className="text-xs font-medium text-slate-500 mb-1">Billing rate categories</p>
+        <p className="text-xs font-medium text-slate-500 mb-1">{t('branchCollection.invoiceSiteSection.billingRateCategories')}</p>
         <p className="text-xs text-slate-400 mb-2">
           {rateSourceIsOwnSite
-            ? "Pulled from this site's own Guard Rate (Active Projects > Project Details > this site's card) — edit it there to change these."
-            : "Pulled from this project's Guard Rate, or this site's own saved Duty Roster rates if not — edit those there to change these."}
+            ? t('branchCollection.invoiceSiteSection.rateSourceOwnSite')
+            : t('branchCollection.invoiceSiteSection.rateSourceProject')}
         </p>
         <div className="space-y-1">
           {rateCatalog.map((r, i) => (
             <div key={i} className="flex items-center gap-2 text-sm">
               <span className="flex-1 text-slate-700">{r.category}</span>
-              <span className="text-slate-500">RM {r.hourlyRate.toFixed(2)} / hour</span>
+              <span className="text-slate-500">{t('branchCollection.invoiceSiteSection.perHour', { rate: r.hourlyRate.toFixed(2) })}</span>
             </div>
           ))}
           {rateCatalog.length === 0 && (
-            <p className="text-xs text-slate-400">No rate categories set for this site yet.</p>
+            <p className="text-xs text-slate-400">{t('branchCollection.invoiceSiteSection.noRateCategories')}</p>
           )}
         </div>
       </div>
 
       <div>
-        <p className="text-xs font-medium text-slate-500 mb-1">Equipment / add-on rates</p>
+        <p className="text-xs font-medium text-slate-500 mb-1">{t('branchCollection.invoiceSiteSection.equipmentAddonRates')}</p>
         <div className="space-y-1">
           {equipmentCatalog.map((r, i) => (
             <div key={i} className="flex items-center gap-2 text-sm">
               <span className="flex-1 text-slate-700">{r.item}</span>
               <span className="text-slate-500">
-                RM {r.monthlyRate.toFixed(2)} / month × {r.quantity || 0}
+                {t('branchCollection.invoiceSiteSection.perMonthTimes', { rate: r.monthlyRate.toFixed(2), qty: r.quantity || 0 })}
               </span>
             </div>
           ))}
           {equipmentCatalog.length === 0 && (
-            <p className="text-xs text-slate-400">No equipment declared for this site.</p>
+            <p className="text-xs text-slate-400">{t('branchCollection.invoiceSiteSection.noEquipmentDeclared')}</p>
           )}
         </div>
       </div>
@@ -371,12 +373,20 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
       {confirmedSummary ? (
         <div className={`rounded-lg px-3 py-2 text-sm ${hasDiscrepancy ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>
           <p className="font-medium">
-            Confirmed: {confirmedSummary.manHours.toFixed(1)} man-hours · RM {confirmedSummary.amount.toFixed(2)} for{' '}
-            {billingMonth || billingMonthValue}
+            {t('branchCollection.invoiceSiteSection.confirmedSummaryLine', {
+              manHours: confirmedSummary.manHours.toFixed(1),
+              amount: confirmedSummary.amount.toFixed(2),
+              month: billingMonth || billingMonthValue,
+            })}
           </p>
           <p className="text-xs mt-0.5 opacity-80">
-            Remaining after line items: {remainingManHours!.toFixed(1)} man-hours · RM {remainingAmount!.toFixed(2)}
-            {hasDiscrepancy ? ' — acknowledge below to include this site anyway.' : ' — matches the confirmed roster.'}
+            {t('branchCollection.invoiceSiteSection.remainingAfterLineItems', {
+              manHours: remainingManHours!.toFixed(1),
+              amount: remainingAmount!.toFixed(2),
+            })}
+            {hasDiscrepancy
+              ? t('branchCollection.invoiceSiteSection.discrepancyAcknowledgeSuffix')
+              : t('branchCollection.invoiceSiteSection.matchesConfirmedRoster')}
           </p>
           {hasDiscrepancy && (
             <label className="flex items-start gap-2 mt-2 text-xs">
@@ -386,32 +396,30 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
                 onChange={(e) => setDiscrepancyAcknowledged(e.target.checked)}
                 className="mt-0.5"
               />
-              <span>I acknowledge this discrepancy for {site.name} and want to include it anyway.</span>
+              <span>{t('branchCollection.invoiceSiteSection.acknowledgeDiscrepancyFor', { site: site.name })}</span>
             </label>
           )}
         </div>
       ) : (
         <p className="text-xs text-slate-400">
-          Not yet confirmed on Duty Roster for {billingMonth || billingMonthValue} for this site. Invoicing can still
-          proceed without one.
+          {t('branchCollection.invoiceSiteSection.notYetConfirmed', { month: billingMonth || billingMonthValue })}
         </p>
       )}
 
       {billingMode === 'headcount' && siteGuardCount != null && (
         <div className={`rounded-lg px-3 py-2 text-sm ${headcountExceedsSite ? 'bg-rose-50 text-rose-800' : 'bg-slate-50 text-slate-600'}`}>
           <p className="font-medium">
-            Headcount: {totalHeadcount} / {siteGuardCount} guard post{siteGuardCount === 1 ? '' : 's'} required at this
-            site
+            {t('branchCollection.invoiceSiteSection.headcountRequired', { used: totalHeadcount, count: siteGuardCount })}
           </p>
           {headcountExceedsSite && (
-            <p className="text-xs mt-0.5 opacity-90">Reduce the headcount below before this invoice can be saved.</p>
+            <p className="text-xs mt-0.5 opacity-90">{t('branchCollection.invoiceSiteSection.reduceHeadcountBelow')}</p>
           )}
         </div>
       )}
 
       <div>
         <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-medium text-slate-500">Line items</p>
+          <p className="text-xs font-medium text-slate-500">{t('branchCollection.contentEditor.lineItems')}</p>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 rounded-md border border-slate-200 p-0.5">
               <button
@@ -421,7 +429,7 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
                   billingMode === 'headcount' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
                 }`}
               >
-                Headcount &amp; days
+                {t('branchCollection.contentEditor.headcountAndDays')}
               </button>
               <button
                 type="button"
@@ -430,7 +438,7 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
                   billingMode === 'manhour' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
                 }`}
               >
-                Man-hour
+                {t('branchCollection.contentEditor.manHour')}
               </button>
             </div>
             {billingMode === 'manhour' && !!confirmedSummary?.categories?.length && (
@@ -438,14 +446,14 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
                 onClick={handlePullFromConfirmed}
                 className="text-xs font-medium text-emerald-700 hover:bg-emerald-50 rounded px-2.5 py-1 border border-emerald-200"
               >
-                Pull from confirmed summary
+                {t('branchCollection.invoiceSiteSection.pullFromConfirmedSummary')}
               </button>
             )}
             <button
               onClick={addLineGroup}
               className="text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
             >
-              + Add location
+              {t('branchCollection.contentEditor.addLocation')}
             </button>
           </div>
         </div>
@@ -455,31 +463,31 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
               <input
                 value={group.location}
                 onChange={(e) => updateLineGroup(gi, e.target.value)}
-                placeholder="e.g. MDEC HQ"
+                placeholder={t('branchCollection.invoiceSiteSection.locationExamplePlaceholder')}
                 className="input flex-1 font-medium"
               />
               <button onClick={() => removeLineGroup(gi)} className="text-xs text-rose-500 hover:text-rose-700 shrink-0">
-                Remove location
+                {t('branchCollection.contentEditor.removeLocation')}
               </button>
             </div>
 
             <table className="w-full text-sm mb-2">
               <thead>
                 <tr className="text-left text-xs text-slate-400">
-                  <th className="font-medium pb-1">Category</th>
+                  <th className="font-medium pb-1">{t('branchCollection.contentEditor.colCategory')}</th>
                   {billingMode === 'manhour' ? (
                     <>
-                      <th className="font-medium pb-1 w-28">Man-hours</th>
-                      <th className="font-medium pb-1 w-24">Headcount</th>
+                      <th className="font-medium pb-1 w-28">{t('branchCollection.contentEditor.colManHours')}</th>
+                      <th className="font-medium pb-1 w-24">{t('branchCollection.contentEditor.colHeadcount')}</th>
                     </>
                   ) : (
                     <>
-                      <th className="font-medium pb-1 w-24">Headcount</th>
-                      <th className="font-medium pb-1 w-24">Days</th>
+                      <th className="font-medium pb-1 w-24">{t('branchCollection.contentEditor.colHeadcount')}</th>
+                      <th className="font-medium pb-1 w-24">{t('branchCollection.contentEditor.colDays')}</th>
                     </>
                   )}
-                  <th className="font-medium pb-1 w-24">Rate</th>
-                  <th className="font-medium pb-1 w-28 text-right">Amount</th>
+                  <th className="font-medium pb-1 w-24">{t('branchCollection.contentEditor.colRate')}</th>
+                  <th className="font-medium pb-1 w-28 text-right">{t('branchCollection.contentEditor.colAmount')}</th>
                   <th className="w-16" />
                 </tr>
               </thead>
@@ -492,7 +500,7 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
                         onChange={(e) => handleCategoryChange(gi, ri, e.target.value)}
                         className="input w-full"
                       >
-                        <option value="">Select…</option>
+                        <option value="">{t('branchCollection.invoiceSiteSection.selectPlaceholder')}</option>
                         {rateCatalog.map((r) => (
                           <option key={r.category} value={r.category}>
                             {r.category}
@@ -577,7 +585,7 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
                     <td className="text-right py-1 pr-2">{row.amount.toFixed(2)}</td>
                     <td className="py-1">
                       <button onClick={() => removeRow(gi, ri)} className="text-xs text-rose-500 hover:text-rose-700">
-                        Remove
+                        {t('branchCollection.common.remove')}
                       </button>
                     </td>
                   </tr>
@@ -585,31 +593,31 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
               </tbody>
             </table>
             <button onClick={() => addRow(gi)} className="text-xs font-medium text-blue-700 hover:underline">
-              + Add row
+              {t('branchCollection.contentEditor.addRow')}
             </button>
           </div>
         ))}
-        {lineGroups.length === 0 && <p className="text-xs text-slate-400">No locations added yet.</p>}
+        {lineGroups.length === 0 && <p className="text-xs text-slate-400">{t('branchCollection.invoiceSiteSection.noLocationsAddedYet')}</p>}
       </div>
 
       <div>
         <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-medium text-slate-500">Equipment / add-ons</p>
+          <p className="text-xs font-medium text-slate-500">{t('branchCollection.contentEditor.equipmentAddons')}</p>
           <button
             onClick={addEquipmentRow}
             className="text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
           >
-            + Add equipment
+            {t('branchCollection.contentEditor.addEquipment')}
           </button>
         </div>
         {equipmentRows.length > 0 && (
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-slate-400">
-                <th className="font-medium pb-1">Item</th>
-                <th className="font-medium pb-1 w-24">Quantity</th>
-                <th className="font-medium pb-1 w-28">Rate / month</th>
-                <th className="font-medium pb-1 w-28 text-right">Amount</th>
+                <th className="font-medium pb-1">{t('branchCollection.contentEditor.colItem')}</th>
+                <th className="font-medium pb-1 w-24">{t('branchCollection.contentEditor.colQuantity')}</th>
+                <th className="font-medium pb-1 w-28">{t('branchCollection.contentEditor.colRatePerMonth')}</th>
+                <th className="font-medium pb-1 w-28 text-right">{t('branchCollection.contentEditor.colAmount')}</th>
                 <th className="w-16" />
               </tr>
             </thead>
@@ -622,7 +630,7 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
                       onChange={(e) => handleEquipmentItemChange(i, e.target.value)}
                       className="input w-full"
                     >
-                      <option value="">Select…</option>
+                      <option value="">{t('branchCollection.invoiceSiteSection.selectPlaceholder')}</option>
                       {equipmentCatalog.map((r) => (
                         <option key={r.item} value={r.item}>
                           {r.item}
@@ -658,7 +666,7 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
                   <td className="text-right py-1 pr-2">{row.amount.toFixed(2)}</td>
                   <td className="py-1">
                     <button onClick={() => removeEquipmentRow(i)} className="text-xs text-rose-500 hover:text-rose-700">
-                      Remove
+                      {t('branchCollection.common.remove')}
                     </button>
                   </td>
                 </tr>
@@ -666,12 +674,12 @@ export default function InvoiceSiteSection({ site, billingMonthValue, billingMon
             </tbody>
           </table>
         )}
-        {equipmentRows.length === 0 && <p className="text-xs text-slate-400">No equipment added yet.</p>}
+        {equipmentRows.length === 0 && <p className="text-xs text-slate-400">{t('branchCollection.invoiceSiteSection.noEquipmentAddedYet')}</p>}
       </div>
 
       <div className="flex justify-end border-t border-slate-100 pt-3">
         <p className="text-sm font-semibold text-slate-700">
-          Subtotal for {site.name}: RM {subTotal.toFixed(2)}
+          {t('branchCollection.invoiceSiteSection.subtotalFor', { site: site.name, amount: subTotal.toFixed(2) })}
         </p>
       </div>
     </div>

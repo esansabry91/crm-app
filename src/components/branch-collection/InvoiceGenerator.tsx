@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -22,6 +23,9 @@ import InvoicePrintView from './InvoicePrintView';
 import InvoiceSiteSection, { type InvoiceSiteSectionData } from './InvoiceSiteSection';
 import type { InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, SiteBillingRate, SiteEquipmentRate, TenderEquipmentItem } from '../../types';
 
+// Kept in English regardless of app language — this feeds the printed/PDF invoice's own billing-
+// month line (see InvoicePrintView), a formal client-facing business document, not app UI. Same
+// scope boundary as MigrateInvoiceForm's own identical helper.
 const MONTH_NAMES = [
   'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
   'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
@@ -59,6 +63,7 @@ function currentMonthValue(): string {
  * source data isn't set up yet or this particular invoice needs a one-off correction.
  */
 export default function InvoiceGenerator() {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const { brands } = useBrands();
   const { branches } = useBranches();
@@ -205,7 +210,7 @@ export default function InvoiceGenerator() {
       // ever has one, and only once its Guard Rate/Equipment have actually been saved there.
       const siteDetailsPromise = getTenderSiteDetails(tenderId, thisSiteId).catch(() => null);
       Promise.all([tenderPromise, siteDetailsPromise]).then(([snap, siteDetails]) => {
-        const t = snap && snap.exists()
+        const tenderData = snap && snap.exists()
           ? (snap.data() as {
               brandId?: string;
               clientName?: string;
@@ -218,14 +223,14 @@ export default function InvoiceGenerator() {
               additionalEquipment?: TenderEquipmentItem[];
             })
           : null;
-        if (!t && !siteDetails) return;
-        const brandId = t?.brandId || siteDetails?.brandId;
-        const clientNameValue = t?.clientName || siteDetails?.clientName;
+        if (!tenderData && !siteDetails) return;
+        const brandId = tenderData?.brandId || siteDetails?.brandId;
+        const clientNameValue = tenderData?.clientName || siteDetails?.clientName;
         if (brandId) setBrandId(brandId);
         if (clientNameValue) setClientName(clientNameValue);
-        setClientAlias(t?.clientAlias || siteDetails?.clientAlias || '');
-        setClientAddress(t?.clientAddress || siteDetails?.clientAddress || '');
-        setContractRef(t?.tenderDocNumber || siteDetails?.tenderDocNumber || '');
+        setClientAlias(tenderData?.clientAlias || siteDetails?.clientAlias || '');
+        setClientAddress(tenderData?.clientAddress || siteDetails?.clientAddress || '');
+        setContractRef(tenderData?.tenderDocNumber || siteDetails?.tenderDocNumber || '');
 
         // Billing rate categories mirror this project's own Guard Rate (Active Projects >
         // Project Details) whenever one's been configured there, instead of being retyped a
@@ -238,7 +243,7 @@ export default function InvoiceGenerator() {
         // (same as before this distinction existed) for the primary site itself, or for an
         // additional site that hasn't had its own rate/equipment saved yet — and, when the
         // tender doc itself is unreadable, to whatever siteDetails alone has.
-        const rateSource = siteDetails ?? t;
+        const rateSource = siteDetails ?? tenderData;
         if (rateSource) {
           const derived = deriveRateCategoriesFromGuardRate(rateSource);
           if (derived) {
@@ -247,7 +252,7 @@ export default function InvoiceGenerator() {
             setRateSourceIsOwnSite(!!siteDetails);
           }
         }
-        setTenderEquipment((siteDetails ? siteDetails.additionalEquipment : t?.additionalEquipment) || []);
+        setTenderEquipment((siteDetails ? siteDetails.additionalEquipment : tenderData?.additionalEquipment) || []);
       });
     } else {
       setClientAlias('');
@@ -660,7 +665,10 @@ export default function InvoiceGenerator() {
           actor
         );
         setSaveMessage({
-          text: `Invoices ${guardResult.invoiceNo} (guard hours) and ${equipmentResult.invoiceNo} (equipment) saved — find them in the Invoices tab.`,
+          text: t('branchCollection.invoiceGenerator.splitSaveSuccess', {
+            guardNo: guardResult.invoiceNo,
+            equipmentNo: equipmentResult.invoiceNo,
+          }),
           isError: false,
         });
       } else {
@@ -675,7 +683,7 @@ export default function InvoiceGenerator() {
           },
           actor
         );
-        setSaveMessage({ text: `Invoice ${result.invoiceNo} saved — find it in the Invoices tab.`, isError: false });
+        setSaveMessage({ text: t('branchCollection.invoiceGenerator.saveSuccess', { invoiceNo: result.invoiceNo }), isError: false });
       }
       setLineGroups([]);
       setEquipmentRows([]);
@@ -683,7 +691,7 @@ export default function InvoiceGenerator() {
       setAdditionalBillsById({});
       setPreviewNonce((n) => n + 1);
     } catch (err) {
-      setSaveMessage({ text: err instanceof Error ? err.message : 'Could not save invoice.', isError: true });
+      setSaveMessage({ text: err instanceof Error ? err.message : t('branchCollection.migrateInvoiceForm.errorCouldNotSave'), isError: true });
     } finally {
       setSaving(false);
     }
@@ -697,7 +705,7 @@ export default function InvoiceGenerator() {
             onClick={() => setShowPreview(false)}
             className="px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200"
           >
-            ← Back to editing
+            {t('branchCollection.invoiceGenerator.backToEditing')}
           </button>
           <button
             onClick={() => {
@@ -713,14 +721,14 @@ export default function InvoiceGenerator() {
             }}
             className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
           >
-            Print / Save as PDF
+            {t('branchCollection.invoiceList.printSaveAsPdf')}
           </button>
         </div>
         {brand && (
           <InvoicePrintView
             data={{
               brand,
-              invoiceNo: previewInvoiceNo || '(assigned when saved)',
+              invoiceNo: previewInvoiceNo || t('branchCollection.invoiceGenerator.assignedWhenSaved'),
               invoiceDate,
               clientName,
               clientAddress,
@@ -750,12 +758,12 @@ export default function InvoiceGenerator() {
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 className="text-sm font-semibold text-slate-800 mb-3">Invoice details</h3>
+        <h3 className="text-sm font-semibold text-slate-800 mb-3">{t('branchCollection.migrateInvoiceForm.sectionInvoiceDetails')}</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Duty Roster site</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.invoiceGenerator.dutyRosterSiteLabel')}</label>
             <select value={siteId} onChange={(e) => setSiteId(e.target.value)} className="input w-full">
-              <option value="">Select a site…</option>
+              <option value="">{t('branchCollection.invoiceGenerator.selectSitePlaceholder')}</option>
               {sites
                 .filter((s) => !s.archived)
                 .map((s) => (
@@ -766,9 +774,9 @@ export default function InvoiceGenerator() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Brand (issuing company)</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.invoiceGenerator.brandIssuingCompanyLabel')}</label>
             <select value={brandId} onChange={(e) => setBrandId(e.target.value)} className="input w-full">
-              <option value="">Select a brand…</option>
+              <option value="">{t('branchCollection.migrateInvoiceForm.selectBrandPlaceholder')}</option>
               {brands.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
@@ -777,67 +785,69 @@ export default function InvoiceGenerator() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Client name</label>
-            <input value={clientName} onChange={(e) => setClientName(e.target.value)} className="input w-full" placeholder="e.g. Malaysia Digital Economy Corporation Sdn Bhd" />
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.clientNameLabel')}</label>
+            <input value={clientName} onChange={(e) => setClientName(e.target.value)} className="input w-full" placeholder={t('branchCollection.invoiceGenerator.clientNameExamplePlaceholder')} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Attn.</label>
-            <input value={attnName} onChange={(e) => setAttnName(e.target.value)} className="input w-full" placeholder="e.g. En. Farul Izzat bin Kamarudin" />
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.attnLabel')}</label>
+            <input value={attnName} onChange={(e) => setAttnName(e.target.value)} className="input w-full" placeholder={t('branchCollection.invoiceGenerator.attnExamplePlaceholder')} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Client address</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.clientAddressLabel')}</label>
             <textarea value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} className="input w-full" rows={2} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Invoice no.</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.invoiceNoLabel')}</label>
             <div className="input w-full bg-slate-50 text-slate-600 flex items-center justify-between gap-2">
-              <span className="font-medium">{previewInvoiceNo || 'Select a site, brand and client first'}</span>
-              {previewInvoiceNo && <span className="text-[11px] text-slate-400 whitespace-nowrap">Auto-generated</span>}
+              <span className="font-medium">{previewInvoiceNo || t('branchCollection.invoiceGenerator.selectSiteBrandClientFirst')}</span>
+              {previewInvoiceNo && <span className="text-[11px] text-slate-400 whitespace-nowrap">{t('branchCollection.invoiceGenerator.autoGenerated')}</span>}
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Format: BRAND/BRANCH/CLIENT/YEAR/RUNNING NO. — finalized when you save (shown here is a preview).
+              {t('branchCollection.invoiceGenerator.invoiceNoFormatHint')}
             </p>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Invoice date</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.invoiceDateLabel')}</label>
             <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className="input w-full" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Billing month (for the description line)</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.invoiceGenerator.billingMonthForDescriptionLabel')}</label>
             <input type="month" value={billingMonthValue} onChange={(e) => setBillingMonthValue(e.target.value)} className="input w-full" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Payment terms (days)</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.paymentTermsLabel')}</label>
             <input type="number" value={paymentTermsDays} onChange={(e) => setPaymentTermsDays(Number(e.target.value) || 0)} className="input w-full" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Quotation no.</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.quotationNoLabel')}</label>
             <input value={quotationNo} onChange={(e) => setQuotationNo(e.target.value)} className="input w-full" placeholder="-" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Contract / Letter of Award / PO No.</label>
-            <input value={contractRef} onChange={(e) => setContractRef(e.target.value)} className="input w-full" placeholder="Auto-filled from the project's Tender Document No." />
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.invoiceGenerator.contractRefFullLabel')}</label>
+            <input value={contractRef} onChange={(e) => setContractRef(e.target.value)} className="input w-full" placeholder={t('branchCollection.invoiceGenerator.contractRefAutoFilledPlaceholder')} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">SST rate</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.sstRateLabel')}</label>
             <select value={sstRate} onChange={(e) => setSstRate(Number(e.target.value))} className="input w-full">
               <option value={0.08}>8%</option>
               <option value={0.06}>6%</option>
-              <option value={0}>0% (exempt)</option>
+              <option value={0}>{t('branchCollection.migrateInvoiceForm.sstExempt')}</option>
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Authorised signatory name</label>
-            <input value={signatoryName} onChange={(e) => setSignatoryName(e.target.value)} className="input w-full" placeholder="e.g. MASITA ARBI" />
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.invoiceGenerator.signatoryNameLabel')}</label>
+            <input value={signatoryName} onChange={(e) => setSignatoryName(e.target.value)} className="input w-full" placeholder={t('branchCollection.invoiceGenerator.signatoryNameExamplePlaceholder')} />
             {site && !matchedBranch && (
               <p className="text-xs text-slate-400 mt-1">
-                No saved signatory for "{site.branch || 'this site\'s branch'}" yet — set one in Admin Settings &gt; Branches &amp; Brands, or type it in here just for this invoice.
+                {t('branchCollection.invoiceGenerator.noSavedSignatory', {
+                  branch: site.branch || t('branchCollection.invoiceGenerator.thisSitesBranchFallback'),
+                })}
               </p>
             )}
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Signatory title</label>
-            <input value={signatoryTitle} onChange={(e) => setSignatoryTitle(e.target.value)} className="input w-full" placeholder="e.g. Branch Manager" />
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.invoiceGenerator.signatoryTitleLabel')}</label>
+            <input value={signatoryTitle} onChange={(e) => setSignatoryTitle(e.target.value)} className="input w-full" placeholder={t('branchCollection.invoiceGenerator.signatoryTitleExamplePlaceholder')} />
           </div>
         </div>
       </div>
@@ -846,17 +856,14 @@ export default function InvoiceGenerator() {
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-sm font-semibold text-slate-800">Billing rate categories for {site.name}</h3>
+              <h3 className="text-sm font-semibold text-slate-800">{t('branchCollection.invoiceGenerator.billingRateCategoriesFor', { site: site.name })}</h3>
               <p className="text-xs text-slate-400 mt-0.5 mb-3">
                 {ratesFromGuardRate
                   ? rateSourceIsOwnSite
-                    ? "Pulled from this site's own Guard Rate (Active Projects > Project Details > this site's card) — edit it there to change these."
-                    : "Pulled from this project's Guard Rate (Active Projects > Project Details) — edit it there to change these."
-                  : 'Set once, reused every month — each line row below picks from this list.'}
-                {' '}The "Additional Guard (Temporary)" category is exempt from the guard-post
-                cap below — use it for an extra post the client asked for beyond this site's
-                normal Client Site Requirement, sourced via Duty Roster the same way a
-                replacement is (rest-day guard, support guard, or a fresh temporary guard).
+                    ? t('branchCollection.invoiceSiteSection.rateSourceOwnSite')
+                    : t('branchCollection.invoiceGenerator.rateSourceProjectOnly')
+                  : t('branchCollection.invoiceGenerator.setOnceReusedEveryMonth')}
+                {' '}{t('branchCollection.invoiceGenerator.additionalGuardCategoryNote')}
               </p>
             </div>
             {/* Guard Rate is the source of truth once it's configured (see
@@ -868,7 +875,7 @@ export default function InvoiceGenerator() {
                   onClick={() => setRateDraft((prev) => [...prev, { category: '', hourlyRate: 0 }])}
                   className="text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
                 >
-                  + Add category
+                  {t('branchCollection.invoiceGenerator.addCategory')}
                 </button>
                 {/* A client sometimes needs an extra guard post beyond this site's contracted
                     Client Site Requirement count for a period — see ADDITIONAL_GUARD_CATEGORY's
@@ -882,7 +889,7 @@ export default function InvoiceGenerator() {
                     }
                     className="text-xs font-medium text-violet-700 hover:bg-violet-50 rounded px-2.5 py-1 border border-violet-200"
                   >
-                    + Additional Guard (Temporary)
+                    {t('branchCollection.invoiceGenerator.addAdditionalGuardTemporary')}
                   </button>
                 )}
               </div>
@@ -893,7 +900,7 @@ export default function InvoiceGenerator() {
               ratesFromGuardRate ? (
                 <div key={i} className="flex items-center gap-2 text-sm">
                   <span className="flex-1 text-slate-700">{r.category}</span>
-                  <span className="text-slate-500">RM {r.hourlyRate.toFixed(2)} / hour</span>
+                  <span className="text-slate-500">{t('branchCollection.invoiceSiteSection.perHour', { rate: r.hourlyRate.toFixed(2) })}</span>
                 </div>
               ) : (
                 <div key={i} className="flex items-center gap-2">
@@ -902,7 +909,7 @@ export default function InvoiceGenerator() {
                     onChange={(e) =>
                       setRateDraft((prev) => prev.map((row, j) => (j === i ? { ...row, category: e.target.value } : row)))
                     }
-                    placeholder="e.g. Security Officer"
+                    placeholder={t('branchCollection.invoiceGenerator.categoryExamplePlaceholder')}
                     className="input flex-1"
                   />
                   <span className="text-xs text-slate-400">RM</span>
@@ -920,17 +927,17 @@ export default function InvoiceGenerator() {
                     placeholder="0.00"
                     className="input w-28"
                   />
-                  <span className="text-xs text-slate-400">/ hour</span>
+                  <span className="text-xs text-slate-400">{t('branchCollection.invoiceGenerator.perHourSuffix')}</span>
                   <button
                     onClick={() => setRateDraft((prev) => prev.filter((_, j) => j !== i))}
                     className="text-xs text-rose-500 hover:text-rose-700 shrink-0"
                   >
-                    Remove
+                    {t('branchCollection.common.remove')}
                   </button>
                 </div>
               )
             )}
-            {rateDraft.length === 0 && <p className="text-xs text-slate-400">No categories yet — add one above.</p>}
+            {rateDraft.length === 0 && <p className="text-xs text-slate-400">{t('branchCollection.invoiceGenerator.noCategoriesYet')}</p>}
           </div>
           {!ratesFromGuardRate && (
             <div className="flex items-center gap-3 mt-3">
@@ -939,9 +946,9 @@ export default function InvoiceGenerator() {
                 disabled={ratesSaving}
                 className="px-3 py-2 text-sm font-medium text-white bg-slate-700 hover:bg-slate-800 disabled:opacity-60 rounded-lg"
               >
-                {ratesSaving ? 'Saving…' : 'Save categories & rates'}
+                {ratesSaving ? t('branchCollection.common.savingEllipsis') : t('branchCollection.invoiceGenerator.saveCategoriesRates')}
               </button>
-              {ratesSaved && <span className="text-xs text-emerald-600">Saved.</span>}
+              {ratesSaved && <span className="text-xs text-emerald-600">{t('branchCollection.invoiceGenerator.savedConfirmation')}</span>}
             </div>
           )}
         </div>
@@ -951,13 +958,13 @@ export default function InvoiceGenerator() {
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-sm font-semibold text-slate-800">Equipment / add-on rates for {site.name}</h3>
+              <h3 className="text-sm font-semibold text-slate-800">{t('branchCollection.invoiceGenerator.equipmentAddonRatesFor', { site: site.name })}</h3>
               <p className="text-xs text-slate-400 mt-0.5 mb-3">
                 {equipmentFromTender
                   ? rateSourceIsOwnSite
-                    ? "Declared on this site's own card in Project Details (each with its own start date) — manage items there, not here. Shown below for the billing month selected above."
-                    : "Declared on this project's own Project Details (each with its own start date) — manage items there, not here. Shown below for the billing month selected above."
-                  : 'Recurring monthly items — e-bikes, drones, patrol vehicles and similar — billed alongside guard headcount. Set once, reused every month, same as the guard rate categories above.'}
+                    ? t('branchCollection.invoiceGenerator.equipmentDeclaredOwnSite')
+                    : t('branchCollection.invoiceGenerator.equipmentDeclaredProject')
+                  : t('branchCollection.invoiceGenerator.recurringMonthlyItemsNote')}
               </p>
             </div>
             {!equipmentFromTender && (
@@ -965,7 +972,7 @@ export default function InvoiceGenerator() {
                 onClick={() => setEquipmentRateDraft((prev) => [...prev, { item: '', monthlyRate: 0, quantity: 0 }])}
                 className="shrink-0 text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
               >
-                + Add item
+                {t('branchCollection.invoiceGenerator.addItem')}
               </button>
             )}
           </div>
@@ -975,7 +982,7 @@ export default function InvoiceGenerator() {
                 <div key={i} className="flex items-center gap-2 text-sm">
                   <span className="flex-1 text-slate-700">{r.item}</span>
                   <span className="text-slate-500">
-                    RM {r.monthlyRate.toFixed(2)} / month × {r.quantity || 0}
+                    {t('branchCollection.invoiceSiteSection.perMonthTimes', { rate: r.monthlyRate.toFixed(2), qty: r.quantity || 0 })}
                   </span>
                 </div>
               ) : (
@@ -985,7 +992,7 @@ export default function InvoiceGenerator() {
                     onChange={(e) =>
                       setEquipmentRateDraft((prev) => prev.map((row, j) => (j === i ? { ...row, item: e.target.value } : row)))
                     }
-                    placeholder="e.g. E-bike"
+                    placeholder={t('branchCollection.invoiceGenerator.itemExamplePlaceholder')}
                     className="input flex-1"
                   />
                   <span className="text-xs text-slate-400">RM</span>
@@ -1003,8 +1010,8 @@ export default function InvoiceGenerator() {
                     placeholder="0.00"
                     className="input w-28"
                   />
-                  <span className="text-xs text-slate-400">/ month</span>
-                  <span className="text-xs text-slate-400 pl-2">Qty</span>
+                  <span className="text-xs text-slate-400">{t('branchCollection.invoiceGenerator.perMonthSuffix')}</span>
+                  <span className="text-xs text-slate-400 pl-2">{t('branchCollection.invoiceGenerator.qtyLabel')}</span>
                   <input
                     type="number"
                     step="1"
@@ -1019,20 +1026,20 @@ export default function InvoiceGenerator() {
                     }}
                     placeholder="0"
                     className="input w-16"
-                    title="Usual monthly quantity — prefills the invoice row, still editable per month."
+                    title={t('branchCollection.invoiceGenerator.qtyTitleHint')}
                   />
                   <button
                     onClick={() => setEquipmentRateDraft((prev) => prev.filter((_, j) => j !== i))}
                     className="text-xs text-rose-500 hover:text-rose-700 shrink-0"
                   >
-                    Remove
+                    {t('branchCollection.common.remove')}
                   </button>
                 </div>
               )
             )}
             {equipmentRateDraft.length === 0 && (
               <p className="text-xs text-slate-400">
-                {equipmentFromTender ? 'No equipment declared yet.' : 'No equipment items yet — add one above.'}
+                {equipmentFromTender ? t('branchCollection.invoiceGenerator.noEquipmentDeclaredYet') : t('branchCollection.invoiceGenerator.noEquipmentItemsYet')}
               </p>
             )}
           </div>
@@ -1043,9 +1050,9 @@ export default function InvoiceGenerator() {
                 disabled={equipmentRatesSaving}
                 className="px-3 py-2 text-sm font-medium text-white bg-slate-700 hover:bg-slate-800 disabled:opacity-60 rounded-lg"
               >
-                {equipmentRatesSaving ? 'Saving…' : 'Save equipment rates'}
+                {equipmentRatesSaving ? t('branchCollection.common.savingEllipsis') : t('branchCollection.invoiceGenerator.saveEquipmentRates')}
               </button>
-              {equipmentRatesSaved && <span className="text-xs text-emerald-600">Saved.</span>}
+              {equipmentRatesSaved && <span className="text-xs text-emerald-600">{t('branchCollection.invoiceGenerator.savedConfirmation')}</span>}
             </div>
           )}
         </div>
@@ -1053,28 +1060,37 @@ export default function InvoiceGenerator() {
 
       {site && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h3 className="text-sm font-semibold text-slate-800">Duty Roster reconciliation</h3>
+          <h3 className="text-sm font-semibold text-slate-800">{t('branchCollection.invoiceGenerator.dutyRosterReconciliation')}</h3>
           {confirmedSummary ? (
             <>
               <p className="text-xs text-slate-500 mt-0.5 mb-3">
-                Confirmed by {confirmedSummary.byName || 'someone'} for {billingMonth || billingMonthValue}:{' '}
+                {t('branchCollection.invoiceGenerator.confirmedByFor', {
+                  name: confirmedSummary.byName || t('branchCollection.invoiceGenerator.confirmedByFallbackSomeone'),
+                  month: billingMonth || billingMonthValue,
+                })}{' '}
                 <span className="font-medium text-slate-700">
-                  {confirmedSummary.manHours.toFixed(1)} man-hours · RM {confirmedSummary.amount.toFixed(2)}
+                  {t('branchCollection.invoiceGenerator.manHoursAndAmount', {
+                    manHours: confirmedSummary.manHours.toFixed(1),
+                    amount: confirmedSummary.amount.toFixed(2),
+                  })}
                 </span>
               </p>
               {!!confirmedSummary.additionalManHours && (
                 <p className="text-xs text-slate-500 -mt-2 mb-3">
-                  Plus {confirmedSummary.additionalManHours.toFixed(1)} man-hours from Duty Roster's "Additional Guard (Temporary)" posts this month — not included above; bill it separately.
+                  {t('branchCollection.invoiceGenerator.plusAdditionalManHours', { hours: confirmedSummary.additionalManHours.toFixed(1) })}
                 </p>
               )}
               <div className={`rounded-lg px-3 py-2 text-sm ${hasDiscrepancy ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>
                 <p className="font-medium">
-                  Remaining after line items: {remainingManHours!.toFixed(1)} man-hours · RM {remainingAmount!.toFixed(2)}
+                  {t('branchCollection.invoiceSiteSection.remainingAfterLineItems', {
+                    manHours: remainingManHours!.toFixed(1),
+                    amount: remainingAmount!.toFixed(2),
+                  })}
                 </p>
                 <p className="text-xs mt-0.5 opacity-80">
                   {hasDiscrepancy
-                    ? "This should reach zero once every line item matches the confirmed roster. You can still generate the invoice with a discrepancy — just acknowledge it below."
-                    : 'Line items match the confirmed roster total.'}
+                    ? t('branchCollection.invoiceGenerator.discrepancyExplanation')
+                    : t('branchCollection.invoiceGenerator.matchesConfirmedRosterTotal')}
                 </p>
               </div>
               {hasDiscrepancy && (
@@ -1086,15 +1102,14 @@ export default function InvoiceGenerator() {
                     className="mt-0.5"
                   />
                   <span>
-                    I acknowledge this discrepancy between the confirmed Duty Roster total and the line items below, and want to generate the invoice anyway.
+                    {t('branchCollection.invoiceGenerator.acknowledgeDiscrepancyGeneral')}
                   </span>
                 </label>
               )}
             </>
           ) : (
             <p className="text-xs text-slate-400 mt-0.5">
-              Not yet confirmed on Duty Roster for {billingMonth || billingMonthValue} — the branch manager/branch staff can click "Confirm for
-              invoicing" on that month's Summary Report. Invoicing can still proceed without one.
+              {t('branchCollection.invoiceGenerator.notYetConfirmedGeneral', { month: billingMonth || billingMonthValue })}
             </p>
           )}
         </div>
@@ -1103,11 +1118,11 @@ export default function InvoiceGenerator() {
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <div className="flex items-start justify-between gap-4 mb-3">
           <div>
-            <h3 className="text-sm font-semibold text-slate-800">Line items</h3>
+            <h3 className="text-sm font-semibold text-slate-800">{t('branchCollection.contentEditor.lineItems')}</h3>
             <p className="text-xs text-slate-400 mt-0.5">
               {billingMode === 'manhour'
-                ? "Add a location group per post/building, then a row per guard category — check the Summary Report (Duty Roster) for actual man-hours worked."
-                : "Add a location group per post/building, then a row per guard category — check the Summary Report (Duty Roster) for actual headcount and days worked."}
+                ? t('branchCollection.invoiceGenerator.lineItemsDescManHour')
+                : t('branchCollection.invoiceGenerator.lineItemsDescHeadcount')}
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -1119,7 +1134,7 @@ export default function InvoiceGenerator() {
                   billingMode === 'headcount' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
                 }`}
               >
-                Headcount &amp; days
+                {t('branchCollection.contentEditor.headcountAndDays')}
               </button>
               <button
                 type="button"
@@ -1128,7 +1143,7 @@ export default function InvoiceGenerator() {
                   billingMode === 'manhour' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
                 }`}
               >
-                Man-hour
+                {t('branchCollection.contentEditor.manHour')}
               </button>
             </div>
             {billingMode === 'manhour' && !!confirmedSummary?.categories?.length && (
@@ -1136,14 +1151,14 @@ export default function InvoiceGenerator() {
                 onClick={handlePullFromConfirmed}
                 className="text-xs font-medium text-emerald-700 hover:bg-emerald-50 rounded px-2.5 py-1 border border-emerald-200"
               >
-                Pull from confirmed summary
+                {t('branchCollection.invoiceSiteSection.pullFromConfirmedSummary')}
               </button>
             )}
             <button
               onClick={addLineGroup}
               className="text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
             >
-              + Add location
+              {t('branchCollection.contentEditor.addLocation')}
             </button>
           </div>
         </div>
@@ -1161,14 +1176,11 @@ export default function InvoiceGenerator() {
             }`}
           >
             <p className="font-medium">
-              Headcount: {totalHeadcount} / {siteGuardCount} guard post{siteGuardCount === 1 ? '' : 's'} required at
-              this site
+              {t('branchCollection.invoiceSiteSection.headcountRequired', { used: totalHeadcount, count: siteGuardCount })}
             </p>
             {headcountExceedsSite && (
               <p className="text-xs mt-0.5 opacity-90">
-                This site's Client Site Requirement (Duty Roster &gt; Guards &amp; Shifts) only calls for{' '}
-                {siteGuardCount} guard post{siteGuardCount === 1 ? '' : 's'} — reduce the headcount below before this
-                invoice can be saved.
+                {t('branchCollection.invoiceGenerator.headcountExceedsSiteDetail', { count: siteGuardCount })}
               </p>
             )}
           </div>
@@ -1180,31 +1192,31 @@ export default function InvoiceGenerator() {
               <input
                 value={group.location}
                 onChange={(e) => updateLineGroup(gi, e.target.value)}
-                placeholder="e.g. MDEC HQ"
+                placeholder={t('branchCollection.invoiceSiteSection.locationExamplePlaceholder')}
                 className="input flex-1 font-medium"
               />
               <button onClick={() => removeLineGroup(gi)} className="text-xs text-rose-500 hover:text-rose-700 shrink-0">
-                Remove location
+                {t('branchCollection.contentEditor.removeLocation')}
               </button>
             </div>
 
             <table className="w-full text-sm mb-2">
               <thead>
                 <tr className="text-left text-xs text-slate-400">
-                  <th className="font-medium pb-1">Category</th>
+                  <th className="font-medium pb-1">{t('branchCollection.contentEditor.colCategory')}</th>
                   {billingMode === 'manhour' ? (
                     <>
-                      <th className="font-medium pb-1 w-28">Man-hours</th>
-                      <th className="font-medium pb-1 w-24">Headcount</th>
+                      <th className="font-medium pb-1 w-28">{t('branchCollection.contentEditor.colManHours')}</th>
+                      <th className="font-medium pb-1 w-24">{t('branchCollection.contentEditor.colHeadcount')}</th>
                     </>
                   ) : (
                     <>
-                      <th className="font-medium pb-1 w-24">Headcount</th>
-                      <th className="font-medium pb-1 w-24">Days</th>
+                      <th className="font-medium pb-1 w-24">{t('branchCollection.contentEditor.colHeadcount')}</th>
+                      <th className="font-medium pb-1 w-24">{t('branchCollection.contentEditor.colDays')}</th>
                     </>
                   )}
-                  <th className="font-medium pb-1 w-24">Rate</th>
-                  <th className="font-medium pb-1 w-28 text-right">Amount</th>
+                  <th className="font-medium pb-1 w-24">{t('branchCollection.contentEditor.colRate')}</th>
+                  <th className="font-medium pb-1 w-28 text-right">{t('branchCollection.contentEditor.colAmount')}</th>
                   <th className="w-16" />
                 </tr>
               </thead>
@@ -1217,7 +1229,7 @@ export default function InvoiceGenerator() {
                         onChange={(e) => handleCategoryChange(gi, ri, e.target.value)}
                         className="input w-full"
                       >
-                        <option value="">Select…</option>
+                        <option value="">{t('branchCollection.invoiceSiteSection.selectPlaceholder')}</option>
                         {rateDraft.map((r) => (
                           <option key={r.category} value={r.category}>
                             {r.category}
@@ -1302,7 +1314,7 @@ export default function InvoiceGenerator() {
                     <td className="text-right py-1 pr-2">{row.amount.toFixed(2)}</td>
                     <td className="py-1">
                       <button onClick={() => removeRow(gi, ri)} className="text-xs text-rose-500 hover:text-rose-700">
-                        Remove
+                        {t('branchCollection.common.remove')}
                       </button>
                     </td>
                   </tr>
@@ -1310,37 +1322,36 @@ export default function InvoiceGenerator() {
               </tbody>
             </table>
             <button onClick={() => addRow(gi)} className="text-xs font-medium text-blue-700 hover:underline">
-              + Add row
+              {t('branchCollection.contentEditor.addRow')}
             </button>
           </div>
         ))}
-        {lineGroups.length === 0 && <p className="text-xs text-slate-400">No locations added yet.</p>}
+        {lineGroups.length === 0 && <p className="text-xs text-slate-400">{t('branchCollection.invoiceSiteSection.noLocationsAddedYet')}</p>}
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <div className="flex items-start justify-between gap-4 mb-3">
           <div>
-            <h3 className="text-sm font-semibold text-slate-800">Equipment / add-ons</h3>
+            <h3 className="text-sm font-semibold text-slate-800">{t('branchCollection.contentEditor.equipmentAddons')}</h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Optional — e-bikes, drones and similar items billed this month, on their own or alongside
-              the guard line items above. Leave empty for a guard-only invoice.
+              {t('branchCollection.invoiceGenerator.equipmentAddonsDesc')}
             </p>
           </div>
           <button
             onClick={addEquipmentRow}
             className="shrink-0 text-xs font-medium text-blue-700 hover:bg-blue-50 rounded px-2.5 py-1 border border-blue-200"
           >
-            + Add equipment
+            {t('branchCollection.contentEditor.addEquipment')}
           </button>
         </div>
         {equipmentRows.length > 0 && (
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-slate-400">
-                <th className="font-medium pb-1">Item</th>
-                <th className="font-medium pb-1 w-24">Quantity</th>
-                <th className="font-medium pb-1 w-28">Rate / month</th>
-                <th className="font-medium pb-1 w-28 text-right">Amount</th>
+                <th className="font-medium pb-1">{t('branchCollection.contentEditor.colItem')}</th>
+                <th className="font-medium pb-1 w-24">{t('branchCollection.contentEditor.colQuantity')}</th>
+                <th className="font-medium pb-1 w-28">{t('branchCollection.contentEditor.colRatePerMonth')}</th>
+                <th className="font-medium pb-1 w-28 text-right">{t('branchCollection.contentEditor.colAmount')}</th>
                 <th className="w-16" />
               </tr>
             </thead>
@@ -1353,7 +1364,7 @@ export default function InvoiceGenerator() {
                       onChange={(e) => handleEquipmentItemChange(i, e.target.value)}
                       className="input w-full"
                     >
-                      <option value="">Select…</option>
+                      <option value="">{t('branchCollection.invoiceSiteSection.selectPlaceholder')}</option>
                       {equipmentRateDraft.map((r) => (
                         <option key={r.item} value={r.item}>
                           {r.item}
@@ -1389,7 +1400,7 @@ export default function InvoiceGenerator() {
                   <td className="text-right py-1 pr-2">{row.amount.toFixed(2)}</td>
                   <td className="py-1">
                     <button onClick={() => removeEquipmentRow(i)} className="text-xs text-rose-500 hover:text-rose-700">
-                      Remove
+                      {t('branchCollection.common.remove')}
                     </button>
                   </td>
                 </tr>
@@ -1397,16 +1408,14 @@ export default function InvoiceGenerator() {
             </tbody>
           </table>
         )}
-        {equipmentRows.length === 0 && <p className="text-xs text-slate-400">No equipment added yet.</p>}
+        {equipmentRows.length === 0 && <p className="text-xs text-slate-400">{t('branchCollection.invoiceSiteSection.noEquipmentAddedYet')}</p>}
       </div>
 
       {site && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h3 className="text-sm font-semibold text-slate-800">Combine other sites onto this invoice</h3>
+          <h3 className="text-sm font-semibold text-slate-800">{t('branchCollection.invoiceGenerator.combineOtherSites')}</h3>
           <p className="text-xs text-slate-400 mt-0.5 mb-3">
-            Bill another site from the same multi-site project together with {site.name} on this same invoice — one
-            invoice number, one PDF, each site its own labeled section below with its own subtotal, rolled into one
-            grand total.
+            {t('branchCollection.invoiceGenerator.combineOtherSitesDesc', { site: site.name })}
           </p>
           {combinableSites.length > 0 ? (
             <select
@@ -1417,7 +1426,7 @@ export default function InvoiceGenerator() {
               }}
               className="input w-full"
             >
-              <option value="">+ Add a site…</option>
+              <option value="">{t('branchCollection.invoiceGenerator.addASitePlaceholder')}</option>
               {combinableSites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} {s.branch ? `(${s.branch})` : ''}
@@ -1427,8 +1436,8 @@ export default function InvoiceGenerator() {
           ) : (
             <p className="text-xs text-slate-400">
               {site.tenderId
-                ? 'No other sites from this project to add.'
-                : "This site has no linked project, so there's nothing to combine it with."}
+                ? t('branchCollection.invoiceGenerator.noOtherSitesToAdd')
+                : t('branchCollection.invoiceGenerator.noLinkedProjectToCombine')}
             </p>
           )}
         </div>
@@ -1461,15 +1470,15 @@ export default function InvoiceGenerator() {
           <table className="text-sm">
             <tbody>
               <tr>
-                <td className="pr-6 text-slate-500">Sub Total</td>
+                <td className="pr-6 text-slate-500">{t('branchCollection.contentEditor.subTotal')}</td>
                 <td className="text-right w-32">RM {subTotal.toFixed(2)}</td>
               </tr>
               <tr>
-                <td className="pr-6 text-slate-500">SST @{Math.round(sstRate * 100)}%</td>
+                <td className="pr-6 text-slate-500">{t('branchCollection.invoiceGenerator.sstAtPercent', { pct: Math.round(sstRate * 100) })}</td>
                 <td className="text-right">RM {sstAmount.toFixed(2)}</td>
               </tr>
               <tr>
-                <td className="pr-6 font-semibold">Total (Inclusive of SST)</td>
+                <td className="pr-6 font-semibold">{t('branchCollection.invoiceGenerator.totalInclusiveOfSst')}</td>
                 <td className="text-right font-semibold">RM {total.toFixed(2)}</td>
               </tr>
             </tbody>
@@ -1485,9 +1494,7 @@ export default function InvoiceGenerator() {
               className="mt-0.5"
             />
             <span>
-              Bill equipment on a separate invoice from guard hours — saves two invoices (two
-              invoice numbers) instead of one combined invoice. Preview below still shows the
-              combined figures either way.
+              {t('branchCollection.invoiceGenerator.splitInvoiceLabel')}
             </span>
           </label>
         )}
@@ -1502,14 +1509,14 @@ export default function InvoiceGenerator() {
             disabled={!brand}
             className="px-3.5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-60 rounded-lg border border-slate-200"
           >
-            Preview
+            {t('branchCollection.invoiceGenerator.previewButton')}
           </button>
           <button
             onClick={handleSave}
             disabled={!canSave || saving}
             className="px-3.5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg"
           >
-            {saving ? 'Saving…' : 'Save invoice'}
+            {saving ? t('branchCollection.common.savingEllipsis') : t('branchCollection.invoiceGenerator.saveInvoiceButton')}
           </button>
         </div>
       </div>

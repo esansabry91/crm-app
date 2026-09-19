@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   subscribeInvoices,
   backfillInvoiceBranches,
@@ -17,6 +18,8 @@ import StatCard from '../analytics/StatCard';
 import RevenueTrendChart, { type RevenueTrendPoint } from './RevenueTrendChart';
 import { formatRM } from '../../utils/format';
 
+// Kept in English, matching DebtorList's own monthLabel() precedent — a plain date-formatting
+// utility producing a chart-axis/table label, not sentence-level UI prose.
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -50,11 +53,13 @@ function yearKeyOf(monthKey: string): string {
   return monthKey.split('-')[0] || monthKey;
 }
 
+// Granularity itself stays the fixed English literal (internal state) — only the displayed
+// label is translated, via GRANULARITY_LABEL_KEYS.
 type Granularity = 'monthly' | 'quarterly' | 'yearly';
-const GRANULARITY_LABEL: Record<Granularity, string> = {
-  monthly: 'Monthly',
-  quarterly: 'Quarterly',
-  yearly: 'Yearly',
+const GRANULARITY_LABEL_KEYS: Record<Granularity, string> = {
+  monthly: 'branchCollection.revenuePanel.granularityMonthly',
+  quarterly: 'branchCollection.revenuePanel.granularityQuarterly',
+  yearly: 'branchCollection.revenuePanel.granularityYearly',
 };
 
 interface MonthRow {
@@ -94,6 +99,7 @@ interface SiteRow {
  * actually collected — that's what the Debtor List/Invoices tab's amountPaid already tracks.
  */
 export default function RevenuePanel() {
+  const { t } = useTranslation();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const { brands } = useBrands();
   const { branches } = useBranches();
@@ -264,7 +270,7 @@ export default function RevenuePanel() {
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input text-sm">
-            <option value="">All brands</option>
+            <option value="">{t('branchCollection.revenuePanel.allBrands')}</option>
             {brands.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
@@ -273,7 +279,7 @@ export default function RevenuePanel() {
           </select>
           {canFilterByBranch && (
             <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input text-sm">
-              <option value="">All branches</option>
+              <option value="">{t('branchCollection.revenuePanel.allBranches')}</option>
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
@@ -289,24 +295,32 @@ export default function RevenuePanel() {
               }}
               className="text-xs text-slate-500 hover:underline"
             >
-              Clear filters
+              {t('branchCollection.revenuePanel.clearFilters')}
             </button>
           )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <StatCard label={`Revenue — ${monthLabel(thisMonthKey)}`} value={formatRM(thisMonth.revenue)} sub={`${thisMonth.count} invoice(s)`} />
           <StatCard
-            label={`Discrepancy — ${monthLabel(thisMonthKey)}`}
+            label={t('branchCollection.revenuePanel.revenueLabel', { month: monthLabel(thisMonthKey) })}
+            value={formatRM(thisMonth.revenue)}
+            sub={t('branchCollection.revenuePanel.invoiceCountSub', { count: thisMonth.count })}
+          />
+          <StatCard
+            label={t('branchCollection.revenuePanel.discrepancyLabel', { month: monthLabel(thisMonthKey) })}
             value={formatRM(thisMonth.discrepancy)}
-            sub={`${thisMonth.checkedCount} of ${thisMonth.count} invoice(s) checked against Duty Roster`}
+            sub={t('branchCollection.revenuePanel.discrepancyCheckedSub', { checked: thisMonth.checkedCount, count: thisMonth.count })}
             accent={Math.abs(thisMonth.discrepancy) > 0.01 ? '#b45309' : undefined}
           />
-          <StatCard label="Total revenue (all time)" value={formatRM(overall.revenue)} sub={`${filtered.length} invoice(s)`} />
           <StatCard
-            label="Total discrepancy (all time)"
+            label={t('branchCollection.revenuePanel.totalRevenueAllTime')}
+            value={formatRM(overall.revenue)}
+            sub={t('branchCollection.revenuePanel.invoiceCountSub', { count: filtered.length })}
+          />
+          <StatCard
+            label={t('branchCollection.revenuePanel.totalDiscrepancyAllTime')}
             value={formatRM(overall.discrepancy)}
-            sub={`${overall.checkedCount} of ${filtered.length} invoice(s) checked against Duty Roster`}
+            sub={t('branchCollection.revenuePanel.discrepancyCheckedSub', { checked: overall.checkedCount, count: filtered.length })}
             accent={Math.abs(overall.discrepancy) > 0.01 ? '#b45309' : undefined}
           />
         </div>
@@ -314,9 +328,9 @@ export default function RevenuePanel() {
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
-          <h3 className="text-sm font-semibold text-slate-800">Collection over time</h3>
+          <h3 className="text-sm font-semibold text-slate-800">{t('branchCollection.revenuePanel.collectionOverTime')}</h3>
           <div className="flex gap-1">
-            {(Object.keys(GRANULARITY_LABEL) as Granularity[]).map((g) => (
+            {(Object.keys(GRANULARITY_LABEL_KEYS) as Granularity[]).map((g) => (
               <button
                 key={g}
                 onClick={() => setGranularity(g)}
@@ -324,7 +338,7 @@ export default function RevenuePanel() {
                   granularity === g ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-100'
                 }`}
               >
-                {GRANULARITY_LABEL[g]}
+                {t(GRANULARITY_LABEL_KEYS[g])}
               </button>
             ))}
           </div>
@@ -333,15 +347,15 @@ export default function RevenuePanel() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 className="text-sm font-semibold text-slate-800 mb-3">Monthly breakdown</h3>
+        <h3 className="text-sm font-semibold text-slate-800 mb-3">{t('branchCollection.revenuePanel.monthlyBreakdown')}</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
-                <th className="py-2 pr-4 font-medium">Month</th>
-                <th className="py-2 pr-4 font-medium text-right">Invoices</th>
-                <th className="py-2 pr-4 font-medium text-right">Revenue (RM)</th>
-                <th className="py-2 font-medium text-right">Discrepancy (RM)</th>
+                <th className="py-2 pr-4 font-medium">{t('branchCollection.revenuePanel.colMonth')}</th>
+                <th className="py-2 pr-4 font-medium text-right">{t('branchCollection.revenuePanel.colInvoices')}</th>
+                <th className="py-2 pr-4 font-medium text-right">{t('branchCollection.revenuePanel.colRevenueRM')}</th>
+                <th className="py-2 font-medium text-right">{t('branchCollection.revenuePanel.colDiscrepancyRM')}</th>
               </tr>
             </thead>
             <tbody>
@@ -352,14 +366,14 @@ export default function RevenuePanel() {
                   <td className="py-2 pr-4 text-right font-medium">{row.revenue.toFixed(2)}</td>
                   <td className={`py-2 text-right ${Math.abs(row.discrepancy) > 0.01 ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
                     {row.discrepancy.toFixed(2)}
-                    <span className="text-slate-300 font-normal"> ({row.checkedCount}/{row.count} checked)</span>
+                    <span className="text-slate-300 font-normal"> {t('branchCollection.revenuePanel.checkedFraction', { checked: row.checkedCount, count: row.count })}</span>
                   </td>
                 </tr>
               ))}
               {byMonth.length === 0 && (
                 <tr>
                   <td colSpan={4} className="py-4 text-xs text-slate-400">
-                    No invoices match these filters yet.
+                    {t('branchCollection.revenuePanel.noneMatchFilters')}
                   </td>
                 </tr>
               )}
@@ -369,22 +383,18 @@ export default function RevenuePanel() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 className="text-sm font-semibold text-slate-800">Revenue by site</h3>
+        <h3 className="text-sm font-semibold text-slate-800">{t('branchCollection.revenuePanel.revenueBySite')}</h3>
         <p className="text-xs text-slate-400 mt-0.5 mb-3">
-          All time, same filters as above. A combined invoice (one invoice billing several sites of the same
-          project — see Branch Collection's Generate Invoice) has its total split across the sites it billed,
-          proportional to each site's own share of the invoice — so this column always adds up to the "Total
-          revenue (all time)" figure above, and a site's own Invoices count includes every combined invoice it
-          was part of, not just the ones billed to it alone.
+          {t('branchCollection.revenuePanel.revenueBySiteDesc')}
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
-                <th className="py-2 pr-4 font-medium">Site</th>
-                <th className="py-2 pr-4 font-medium text-right">Invoices</th>
-                <th className="py-2 pr-4 font-medium text-right">Revenue (RM)</th>
-                <th className="py-2 font-medium text-right">% of total</th>
+                <th className="py-2 pr-4 font-medium">{t('branchCollection.revenuePanel.colSite')}</th>
+                <th className="py-2 pr-4 font-medium text-right">{t('branchCollection.revenuePanel.colInvoices')}</th>
+                <th className="py-2 pr-4 font-medium text-right">{t('branchCollection.revenuePanel.colRevenueRM')}</th>
+                <th className="py-2 font-medium text-right">{t('branchCollection.revenuePanel.colPercentOfTotal')}</th>
               </tr>
             </thead>
             <tbody>
@@ -401,7 +411,7 @@ export default function RevenuePanel() {
               {bySite.length === 0 && (
                 <tr>
                   <td colSpan={4} className="py-4 text-xs text-slate-400">
-                    No invoices match these filters yet.
+                    {t('branchCollection.revenuePanel.noneMatchFilters')}
                   </td>
                 </tr>
               )}
@@ -412,32 +422,33 @@ export default function RevenuePanel() {
 
       {canManageInvoiceData && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h3 className="text-sm font-semibold text-slate-800 mb-1">Data maintenance</h3>
+          <h3 className="text-sm font-semibold text-slate-800 mb-1">{t('branchCollection.revenuePanel.dataMaintenance')}</h3>
           <p className="text-xs text-slate-400 mb-3">
-            Invoices saved before the branch filter existed have no branchId, so they're excluded
-            whenever a specific branch is selected here or in the Debtor List (they still show up
-            fine under "All branches"). This looks up each such invoice's site to fill in its
-            branch — safe to run more than once, it only touches invoices still missing branchId.
+            {t('branchCollection.revenuePanel.dataMaintenanceDesc')}
           </p>
           <button
             onClick={runBackfill}
             disabled={backfillBusy}
             className="px-3 py-2 text-sm font-medium text-white bg-slate-700 hover:bg-slate-800 disabled:opacity-60 rounded-lg"
           >
-            {backfillBusy ? 'Backfilling…' : 'Backfill branch data for older invoices'}
+            {backfillBusy ? t('branchCollection.revenuePanel.backfillingEllipsis') : t('branchCollection.revenuePanel.backfillButton')}
           </button>
           {backfillResult && (
             <p className="text-xs text-slate-600 mt-2">
               {backfillResult.total === 0
-                ? 'Nothing to backfill — every invoice already has a branch.'
-                : `Checked ${backfillResult.total} invoice(s) missing branch data: ${backfillResult.updated} updated` +
-                  (backfillResult.updatedNameOnly > 0
-                    ? ` (${backfillResult.updatedNameOnly} got a branch name but no matching Branch record, so they still won't show under a specific branch filter)`
-                    : '') +
-                  (backfillResult.skippedNoSite > 0
-                    ? `, ${backfillResult.skippedNoSite} skipped (no linked site to derive a branch from)`
-                    : '') +
-                  '.'}
+                ? t('branchCollection.revenuePanel.backfillNothingToDo')
+                : [
+                    t('branchCollection.revenuePanel.backfillResultChecked', {
+                      total: backfillResult.total,
+                      updated: backfillResult.updated,
+                    }),
+                    backfillResult.updatedNameOnly > 0
+                      ? t('branchCollection.revenuePanel.backfillResultNameOnly', { count: backfillResult.updatedNameOnly })
+                      : '',
+                    backfillResult.skippedNoSite > 0
+                      ? t('branchCollection.revenuePanel.backfillResultSkipped', { count: backfillResult.skippedNoSite })
+                      : '',
+                  ].join('') + '.'}
             </p>
           )}
 
@@ -447,20 +458,20 @@ export default function RevenuePanel() {
               disabled={diagnosticsBusy}
               className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-60 rounded-lg"
             >
-              {diagnosticsBusy ? 'Checking…' : 'Check invoices still missing a branch'}
+              {diagnosticsBusy ? t('branchCollection.revenuePanel.checkingEllipsis') : t('branchCollection.revenuePanel.diagnosticsButton')}
             </button>
             {diagnostics && (
               diagnostics.length === 0 ? (
-                <p className="text-xs text-slate-600 mt-2">Every invoice now has a matched branch.</p>
+                <p className="text-xs text-slate-600 mt-2">{t('branchCollection.revenuePanel.diagnosticsAllMatched')}</p>
               ) : (
                 <div className="overflow-x-auto mt-3">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="text-left text-slate-400 border-b border-slate-100">
-                        <th className="py-1.5 pr-3 font-medium">Invoice</th>
-                        <th className="py-1.5 pr-3 font-medium">Site</th>
-                        <th className="py-1.5 pr-3 font-medium">Branch name on file</th>
-                        <th className="py-1.5 font-medium">Why it's still unmatched</th>
+                        <th className="py-1.5 pr-3 font-medium">{t('branchCollection.debtorList.colInvoice')}</th>
+                        <th className="py-1.5 pr-3 font-medium">{t('branchCollection.revenuePanel.colSite')}</th>
+                        <th className="py-1.5 pr-3 font-medium">{t('branchCollection.revenuePanel.colBranchNameOnFile')}</th>
+                        <th className="py-1.5 font-medium">{t('branchCollection.revenuePanel.colWhyUnmatched')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -485,19 +496,16 @@ export default function RevenuePanel() {
               disabled={statusFixBusy}
               className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-60 rounded-lg"
             >
-              {statusFixBusy ? 'Checking…' : 'Recompute invoice status from amount paid'}
+              {statusFixBusy ? t('branchCollection.revenuePanel.checkingEllipsis') : t('branchCollection.revenuePanel.statusFixButton')}
             </button>
             <p className="text-xs text-slate-400 mt-2">
-              Fixes any invoice whose status doesn't match its own amount paid — e.g. one stuck
-              showing Partially Paid even though it's been paid in full down to the cent (a
-              rounding-related bug in how totals used to be stored), or an older invoice whose
-              status was once set by hand. Safe to run more than once.
+              {t('branchCollection.revenuePanel.statusFixDesc')}
             </p>
             {statusFixResult && (
               <p className="text-xs text-slate-600 mt-2">
                 {statusFixResult.updated === 0
-                  ? `Checked ${statusFixResult.total} invoice(s) — every status already matches its amount paid.`
-                  : `Checked ${statusFixResult.total} invoice(s): ${statusFixResult.updated} had their status corrected.`}
+                  ? t('branchCollection.revenuePanel.statusFixNothingToDo', { total: statusFixResult.total })
+                  : t('branchCollection.revenuePanel.statusFixUpdated', { total: statusFixResult.total, updated: statusFixResult.updated })}
               </p>
             )}
           </div>
