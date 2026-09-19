@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { QuotationCalculator } from './useQuotationCalculator';
 import { NEW_POST_ITEM } from './defaults';
 import type { PostDayType, PostPeriod, PostPattern } from './types';
@@ -6,32 +7,33 @@ import { Card, ItemOut, ItemRow, NumField, Note, Row, SelectField, StrongHeaderR
 import { fmt } from './format';
 import { COMPLIANCE_MAX_WEEKLY_HOURS } from '../duty-roster/complianceRules';
 
-const PATTERN_OPTIONS: { value: PostPattern; label: string }[] = [
-  { value: 'U', label: 'Same posts at all times' },
-  { value: 'DN', label: 'Different posts for day and night shift' },
-  { value: 'WW', label: 'Different posts for weekday and weekend (day = night)' },
-  { value: 'FULL', label: 'Different posts for weekday/weekend and day/night' },
-  { value: 'CUSTOM', label: 'Custom post list - mixed shift hours' },
+const PATTERN_OPTION_KEYS: { value: PostPattern; labelKey: string }[] = [
+  { value: 'U', labelKey: 'quotationCalculator.siteRequirement.patternU' },
+  { value: 'DN', labelKey: 'quotationCalculator.siteRequirement.patternDN' },
+  { value: 'WW', labelKey: 'quotationCalculator.siteRequirement.patternWW' },
+  { value: 'FULL', labelKey: 'quotationCalculator.siteRequirement.patternFULL' },
+  { value: 'CUSTOM', labelKey: 'quotationCalculator.siteRequirement.patternCUSTOM' },
 ];
 
-const DAY_TYPE_OPTIONS: { value: PostDayType; label: string }[] = [
-  { value: 'WD', label: 'Weekday' },
-  { value: 'WE', label: 'Weekend' },
-  { value: 'ALL', label: 'Every day' },
+const DAY_TYPE_OPTION_KEYS: { value: PostDayType; labelKey: string }[] = [
+  { value: 'WD', labelKey: 'quotationCalculator.siteRequirement.dayTypeWD' },
+  { value: 'WE', labelKey: 'quotationCalculator.siteRequirement.dayTypeWE' },
+  { value: 'ALL', labelKey: 'quotationCalculator.siteRequirement.dayTypeALL' },
 ];
 
-const PERIOD_OPTIONS: { value: PostPeriod; label: string }[] = [
-  { value: 'D', label: 'Day shift' },
-  { value: 'N', label: 'Night shift' },
+const PERIOD_OPTION_KEYS: { value: PostPeriod; labelKey: string }[] = [
+  { value: 'D', labelKey: 'quotationCalculator.siteRequirement.periodD' },
+  { value: 'N', labelKey: 'quotationCalculator.siteRequirement.periodN' },
 ];
 
-const CONTRACT_UNIT_OPTIONS = [
-  { value: 'D' as const, label: 'Days' },
-  { value: 'M' as const, label: 'Months' },
-  { value: 'Y' as const, label: 'Years' },
+const CONTRACT_UNIT_OPTION_KEYS = [
+  { value: 'D' as const, labelKey: 'quotationCalculator.siteRequirement.unitDays' },
+  { value: 'M' as const, labelKey: 'quotationCalculator.siteRequirement.unitMonths' },
+  { value: 'Y' as const, labelKey: 'quotationCalculator.siteRequirement.unitYears' },
 ];
 
 export default function SiteRequirementCard({ calc }: { calc: QuotationCalculator }) {
+  const { t } = useTranslation();
   const { inputs, setField, postItems, setPostItems, result } = calc;
   const pattern = inputs.pattern;
 
@@ -58,23 +60,23 @@ export default function SiteRequirementCard({ calc }: { calc: QuotationCalculato
   );
 
   return (
-    <Card title="1. Client Site Requirement">
-      <Row label="Post Requirement Pattern" htmlFor="postPattern">
-        <SelectField value={pattern} onChange={(v) => setField('pattern', v)} options={PATTERN_OPTIONS} width="w-64" />
+    <Card title={t('quotationCalculator.siteRequirement.title')}>
+      <Row label={t('quotationCalculator.siteRequirement.postRequirementPattern')} htmlFor="postPattern">
+        <SelectField value={pattern} onChange={(v) => setField('pattern', v)} options={PATTERN_OPTION_KEYS.map((o) => ({ value: o.value, label: t(o.labelKey) }))} width="w-64" />
       </Row>
 
       {pattern === 'U' && (
-        <Row label="Guard Posts (all shifts, all days)">
+        <Row label={t('quotationCalculator.siteRequirement.guardPostsAll')}>
           <NumField value={inputs.postsU} onChange={(v) => setField('postsU', v)} step={1} min={0} />
         </Row>
       )}
 
       {pattern === 'DN' && (
         <>
-          <Row label="Guard Posts - Day Shift">
+          <Row label={t('quotationCalculator.siteRequirement.guardPostsDayShift')}>
             <NumField value={inputs.postsDay} onChange={(v) => setField('postsDay', v)} step={1} min={0} />
           </Row>
-          <Row label="Guard Posts - Night Shift">
+          <Row label={t('quotationCalculator.siteRequirement.guardPostsNightShift')}>
             <NumField value={inputs.postsNight} onChange={(v) => setField('postsNight', v)} step={1} min={0} />
           </Row>
         </>
@@ -82,10 +84,10 @@ export default function SiteRequirementCard({ calc }: { calc: QuotationCalculato
 
       {pattern === 'WW' && (
         <>
-          <Row label="Guard Posts - Weekday (Mon-Fri)">
+          <Row label={t('quotationCalculator.siteRequirement.guardPostsWeekday')}>
             <NumField value={inputs.postsWd} onChange={(v) => setField('postsWd', v)} step={1} min={0} />
           </Row>
-          <Row label="Guard Posts - Weekend (Sat-Sun)">
+          <Row label={t('quotationCalculator.siteRequirement.guardPostsWeekend')}>
             <NumField value={inputs.postsWe} onChange={(v) => setField('postsWe', v)} step={1} min={0} />
           </Row>
         </>
@@ -93,30 +95,30 @@ export default function SiteRequirementCard({ calc }: { calc: QuotationCalculato
 
       {pattern === 'FULL' && (
         <>
-          <Row label="Guard Posts - Weekday Day Shift">
+          <Row label={t('quotationCalculator.siteRequirement.guardPostsWeekdayDay')}>
             <NumField value={inputs.postsWdDay} onChange={(v) => setField('postsWdDay', v)} step={1} min={0} />
           </Row>
-          <Row label="Guard Posts - Weekday Night Shift">
+          <Row label={t('quotationCalculator.siteRequirement.guardPostsWeekdayNight')}>
             <NumField value={inputs.postsWdNight} onChange={(v) => setField('postsWdNight', v)} step={1} min={0} />
           </Row>
-          <Row label="Guard Posts - Weekend Day Shift">
+          <Row label={t('quotationCalculator.siteRequirement.guardPostsWeekendDay')}>
             <NumField value={inputs.postsWeDay} onChange={(v) => setField('postsWeDay', v)} step={1} min={0} />
           </Row>
-          <Row label="Guard Posts - Weekend Night Shift">
+          <Row label={t('quotationCalculator.siteRequirement.guardPostsWeekendNight')}>
             <NumField value={inputs.postsWeNight} onChange={(v) => setField('postsWeNight', v)} step={1} min={0} />
           </Row>
         </>
       )}
 
-      <Row label="Coverage Hours per Day">
+      <Row label={t('quotationCalculator.siteRequirement.coverageHoursPerDay')}>
         <NumField value={inputs.hoursDay} onChange={(v) => setField('hoursDay', v)} step={0.5} min={0} />
       </Row>
-      <Row label="Coverage Days per Week">
+      <Row label={t('quotationCalculator.siteRequirement.coverageDaysPerWeek')}>
         <NumField value={inputs.daysWeek} onChange={(v) => setField('daysWeek', v)} step={1} min={0} max={7} />
       </Row>
-      <Row label="Contract Period">
+      <Row label={t('quotationCalculator.siteRequirement.contractPeriod')}>
         <NumField value={inputs.contractMonths} onChange={(v) => setField('contractMonths', v)} step={1} min={1} width="w-20" />
-        <SelectField value={inputs.contractUnit} onChange={(v) => setField('contractUnit', v)} options={CONTRACT_UNIT_OPTIONS} />
+        <SelectField value={inputs.contractUnit} onChange={(v) => setField('contractUnit', v)} options={CONTRACT_UNIT_OPTION_KEYS.map((o) => ({ value: o.value, label: t(o.labelKey) }))} />
       </Row>
 
       <div
@@ -127,65 +129,60 @@ export default function SiteRequirementCard({ calc }: { calc: QuotationCalculato
       >
         <div className="flex items-center justify-between gap-3">
           <label htmlFor="complianceMode" className="text-[13px] font-bold text-slate-900">
-            RBA/SMETA Compliance Mode
+            {t('quotationCalculator.siteRequirement.complianceModeLabel')}
           </label>
           <ToggleSwitch id="complianceMode" checked={inputs.complianceMode === 'Y'} onChange={(v) => setField('complianceMode', v ? 'Y' : 'N')} />
         </div>
         <p className="text-xs text-slate-600 mt-1.5">
-          Caps every guard at {COMPLIANCE_MAX_WEEKLY_HOURS}h/week (regular + OT combined) when quoting a client site that must comply with the RBA Code of Conduct, SMETA/ETI, or Malaysia&apos;s
-          Employment Act — the strictest of the three, so it satisfies all of them at once. When on, Guards Required - Suggested (Section 3) and every downstream cost/quote figure reflect the
-          headcount actually needed to stay compliant, not just the bare roster-coverage minimum.
+          {t('quotationCalculator.siteRequirement.complianceModeDesc', { maxHours: COMPLIANCE_MAX_WEEKLY_HOURS })}
         </p>
       </div>
 
       {pattern === 'CUSTOM' && (
         <div>
-          <div className="text-[10.5px] font-bold uppercase tracking-wide text-blue-700 border-l-2 border-blue-300 pl-2 mt-4 mb-1.5">Custom post list</div>
-          <StrongHeaderRow cols={['Post block', 'Slots / week', 'Manhours / week']} />
+          <div className="text-[10.5px] font-bold uppercase tracking-wide text-blue-700 border-l-2 border-blue-300 pl-2 mt-4 mb-1.5">{t('quotationCalculator.siteRequirement.customPostListHeading')}</div>
+          <StrongHeaderRow cols={[t('quotationCalculator.siteRequirement.colPostBlock'), t('quotationCalculator.siteRequirement.colSlotsPerWeek'), t('quotationCalculator.siteRequirement.colManhoursPerWeek')]} />
           {postItems.map((it, i) => (
             <ItemRow key={i} onRemove={() => removePost(i)}>
               <NumField value={it.posts} onChange={(v) => updatePost(i, { posts: v })} step={1} min={0} width="w-14" />
-              <span>post(s)</span>
-              <SelectField value={it.period} onChange={(v) => updatePost(i, { period: v })} options={PERIOD_OPTIONS} />
-              <span>at</span>
+              <span>{t('quotationCalculator.siteRequirement.postsUnit')}</span>
+              <SelectField value={it.period} onChange={(v) => updatePost(i, { period: v })} options={PERIOD_OPTION_KEYS.map((o) => ({ value: o.value, label: t(o.labelKey) }))} />
+              <span>{t('quotationCalculator.siteRequirement.at')}</span>
               <NumField value={it.hours} onChange={(v) => updatePost(i, { hours: v })} step={0.5} min={0} width="w-16" />
-              <span>hour shift on</span>
-              <SelectField value={it.dayType} onChange={(v) => updatePost(i, { dayType: v })} options={DAY_TYPE_OPTIONS} />
+              <span>{t('quotationCalculator.siteRequirement.hourShiftOn')}</span>
+              <SelectField value={it.dayType} onChange={(v) => updatePost(i, { dayType: v })} options={DAY_TYPE_OPTION_KEYS.map((o) => ({ value: o.value, label: t(o.labelKey) }))} />
               <span className="flex-1" />
               <ItemOut>{fmt(result.postBreakdown[i]?.slotsPerWeek, 0)}</ItemOut>
               <ItemOut>{fmt(result.postBreakdown[i]?.manHoursPerWeek, 1)}</ItemOut>
             </ItemRow>
           ))}
           <div className="mt-2">
-            <Btn onClick={addPost}>Add post block</Btn>
+            <Btn onClick={addPost}>{t('quotationCalculator.siteRequirement.addPostBlock')}</Btn>
           </div>
-          <Row label="Total across blocks" strong>
+          <Row label={t('quotationCalculator.siteRequirement.totalAcrossBlocks')} strong>
             <Out>{fmt(customTotals.slots, 0)}</Out>
             <Out>{fmt(customTotals.mh, 1)}</Out>
           </Row>
           <Note>
-            Each block is a number of posts covering one shift length, on weekdays, weekends or every day, in the day or night period. Example: 1 post day shift 12 hours on weekdays, plus 2
-            posts day shift 16 hours on weekdays. Blocks are independent so shift lengths can differ. In this mode Coverage Hours per Day and Hours per Shift no longer drive coverage - Hours per
-            Shift still drives the wage build-up - and Coverage Days per Week still decides which days are worked.
+            {t('quotationCalculator.siteRequirement.customPostListNote')}
           </Note>
         </div>
       )}
 
-      <Row label="Shift Slots per Week (all posts)">
+      <Row label={t('quotationCalculator.siteRequirement.shiftSlotsPerWeek')}>
         <Out>{fmt(result.slotsWeek, 1)}</Out>
       </Row>
       <Note>
-        A shift counts as day when it starts between 06:00 and 18:00 (derived from Roster Start Hour and Hours per Shift); anything else is night. Weekend means Saturday and Sunday. If Coverage
-        Days per Week is 5 or fewer, weekend posts are never used.
+        {t('quotationCalculator.siteRequirement.dayNightNote')}
       </Note>
 
       {inputs.complianceMode === 'Y' && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-[12.5px] px-3 py-2 mt-2">
-          RBA/SMETA compliance mode is on: no guard may exceed {COMPLIANCE_MAX_WEEKLY_HOURS}h/week. This site&apos;s ~{fmt(result.weeklyManHours, 0)}h/week of coverage needs at least{' '}
-          <strong>{fmt(result.suggested, 0)}</strong> guard{result.suggested === 1 ? '' : 's'} to keep every guard&apos;s shifts under that cap
+          {t('quotationCalculator.siteRequirement.complianceBannerIntro', { maxHours: COMPLIANCE_MAX_WEEKLY_HOURS, weeklyManHours: fmt(result.weeklyManHours, 0) })}{' '}
+          <strong>{fmt(result.suggested, 0)}</strong> {t('quotationCalculator.siteRequirement.complianceBannerGuardWord', { count: result.suggested })} {t('quotationCalculator.siteRequirement.complianceBannerCapSuffix')}
           {result.suggested > result.suggestedWithoutCompliance
-            ? ` — ${fmt(result.suggested - result.suggestedWithoutCompliance, 0)} more than the ${fmt(result.suggestedWithoutCompliance, 0)} the roster math alone would suggest.`
-            : ' (already covered by the roster math alone).'}
+            ? ` ${t('quotationCalculator.siteRequirement.complianceBannerMoreThan', { extra: fmt(result.suggested - result.suggestedWithoutCompliance, 0), base: fmt(result.suggestedWithoutCompliance, 0) })}`
+            : ` ${t('quotationCalculator.siteRequirement.complianceBannerAlreadyCovered')}`}
         </div>
       )}
     </Card>

@@ -1,8 +1,10 @@
+import { useTranslation } from 'react-i18next';
 import type { QuotationCalculator } from './useQuotationCalculator';
 import { Card, NumField, Note, Out, Row } from './ui';
 import { fmt, pct } from './format';
 
 export default function ClientQuoteCard({ calc }: { calc: QuotationCalculator }) {
+  const { t } = useTranslation();
   const { inputs, setField, gradeItems, result } = calc;
 
   const mk = 1 + inputs.compMarkup / 100;
@@ -26,57 +28,57 @@ export default function ClientQuoteCard({ calc }: { calc: QuotationCalculator })
 
   return (
     <>
-      <Card title="6. Client Quote">
-        <Row label="Markup on Cost (%)">
+      <Card title={t('quotationCalculator.clientQuote.title')}>
+        <Row label={t('quotationCalculator.clientQuote.markupOnCost')}>
           <NumField value={inputs.markup} onChange={(v) => setField('markup', v)} step={1} min={0} />
         </Row>
-        <Row label="Quoted Rate per Manhour (RM/hr)" strong>
+        <Row label={t('quotationCalculator.clientQuote.quotedRatePerManhour')} strong>
           <Out strong>{fmt(result.quote, 4)}</Out>
         </Row>
-        <Row label="Gross Margin - Main Stream (%)">
+        <Row label={t('quotationCalculator.clientQuote.grossMarginMainStream')}>
           <Out>{pct(result.margin)}</Out>
         </Row>
-        <Row label="Gross Margin - All Streams (%)">
+        <Row label={t('quotationCalculator.clientQuote.grossMarginAllStreams')}>
           <Out>{pct(result.marginTotal)}</Out>
         </Row>
-        <Row label={`${result.pw} Revenue - Site (RM)`}>
+        <Row label={t('quotationCalculator.clientQuote.revenueSite', { pw: result.pw })}>
           <Out>{fmt(result.revenuePP, 2)}</Out>
         </Row>
-        <Row label={`${result.pw} Gross Profit - Site (RM)`}>
+        <Row label={t('quotationCalculator.clientQuote.grossProfitSite', { pw: result.pw })}>
           <Out>{fmt(result.profitPP, 2)}</Out>
         </Row>
-        <Row label={`Less: Management Fee (RM)`}>
+        <Row label={t('quotationCalculator.clientQuote.lessManagementFee')}>
           <Out>{fmt(result.feeAmt, 2)}</Out>
         </Row>
-        <Row label={`FINAL ${result.pw} Gross Profit after Management Fee (RM)`} strong>
+        <Row label={t('quotationCalculator.clientQuote.finalGrossProfit', { pw: result.pw })} strong>
           <Out strong>{fmt(result.finalProfit, 2)}</Out>
         </Row>
-        <Row label="FINAL Gross Margin after Management Fee" strong>
+        <Row label={t('quotationCalculator.clientQuote.finalGrossMargin')} strong>
           <Out strong>{pct(result.finalMargin)}</Out>
         </Row>
       </Card>
 
       {result.gradesOn && (
-        <Card title="6b. Compulsory Grade Billing - Separate Rate">
+        <Card title={t('quotationCalculator.clientQuote.title6b')}>
           <div className="overflow-x-auto rounded-lg border border-slate-200">
             <table className="w-full text-[12px]">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 text-[10.5px] uppercase tracking-wide">
-                  <th className="text-left font-semibold py-1.5 px-2">Compulsory grade</th>
-                  <th className="text-right font-semibold py-1.5 px-2">Pax</th>
-                  <th className="text-right font-semibold py-1.5 px-2">Manhours</th>
-                  <th className="text-right font-semibold py-1.5 px-2">Cost (RM)</th>
-                  <th className="text-right font-semibold py-1.5 px-2">Cost/hr</th>
-                  <th className="text-right font-semibold py-1.5 px-2">Rate/hr</th>
-                  <th className="text-right font-semibold py-1.5 px-2">Revenue</th>
-                  <th className="text-right font-semibold py-1.5 px-2">Gross profit</th>
+                  <th className="text-left font-semibold py-1.5 px-2">{t('quotationCalculator.clientQuote.colCompulsoryGrade')}</th>
+                  <th className="text-right font-semibold py-1.5 px-2">{t('quotationCalculator.clientQuote.colPax')}</th>
+                  <th className="text-right font-semibold py-1.5 px-2">{t('quotationCalculator.clientQuote.colManhours')}</th>
+                  <th className="text-right font-semibold py-1.5 px-2">{t('quotationCalculator.clientQuote.colCost')}</th>
+                  <th className="text-right font-semibold py-1.5 px-2">{t('quotationCalculator.clientQuote.colCostPerHr')}</th>
+                  <th className="text-right font-semibold py-1.5 px-2">{t('quotationCalculator.clientQuote.colRatePerHr')}</th>
+                  <th className="text-right font-semibold py-1.5 px-2">{t('quotationCalculator.clientQuote.colRevenue')}</th>
+                  <th className="text-right font-semibold py-1.5 px-2">{t('quotationCalculator.clientQuote.colGrossProfit')}</th>
                 </tr>
               </thead>
               <tbody>
                 {compulsoryRows.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center text-slate-400 py-3">
-                      No compulsory grades entered.
+                      {t('quotationCalculator.clientQuote.noCompulsoryGrades')}
                     </td>
                   </tr>
                 ) : (
@@ -96,37 +98,35 @@ export default function ClientQuoteCard({ calc }: { calc: QuotationCalculator })
               </tbody>
             </table>
           </div>
-          <Row label="TOTAL compulsory headcount" strong>
+          <Row label={t('quotationCalculator.clientQuote.totalCompulsoryHeadcount')} strong>
             <Out strong>{fmt(result.headC, 0)}</Out>
           </Row>
-          <Row label={`Coverage manhours per ${result.dayBasis ? 'day' : 'month'} (pro-rata)`}>
+          <Row label={result.dayBasis ? t('quotationCalculator.clientQuote.coverageManhoursDay') : t('quotationCalculator.clientQuote.coverageManhoursMonth')}>
             <Out>{fmt(result.mhC, 1)}</Out>
           </Row>
-          <Row label={`${result.pw} Cost - compulsory grades (RM)`}>
+          <Row label={t('quotationCalculator.clientQuote.costCompulsoryGrades', { pw: result.pw })}>
             <Out>{fmt(result.siteCostC, 2)}</Out>
           </Row>
-          <Row label="Cost per Manhour - Compulsory (RM/hr)">
+          <Row label={t('quotationCalculator.clientQuote.cpmCompulsory')}>
             <Out>{fmt(result.cpmC, 4)}</Out>
           </Row>
-          <Row label="Markup on Cost - Compulsory (%)">
+          <Row label={t('quotationCalculator.clientQuote.markupCompulsory')}>
             <NumField value={inputs.compMarkup} onChange={(v) => setField('compMarkup', v)} step={1} min={0} />
           </Row>
-          <Row label="QUOTED RATE - Compulsory (RM/hr)" strong>
+          <Row label={t('quotationCalculator.clientQuote.quotedRateCompulsory')} strong>
             <Out strong>{fmt(result.quoteC, 4)}</Out>
           </Row>
-          <Row label="Gross margin - Compulsory">
+          <Row label={t('quotationCalculator.clientQuote.grossMarginCompulsory')}>
             <Out>{pct(result.marginC)}</Out>
           </Row>
-          <Row label={`${result.pw} Revenue - Compulsory (RM)`}>
+          <Row label={t('quotationCalculator.clientQuote.revenueCompulsory', { pw: result.pw })}>
             <Out>{fmt(result.revenueC, 2)}</Out>
           </Row>
-          <Row label={`${result.pw} Gross profit - Compulsory (RM)`}>
+          <Row label={t('quotationCalculator.clientQuote.grossProfitCompulsory', { pw: result.pw })}>
             <Out>{fmt(result.profitC, 2)}</Out>
           </Row>
           <Note>
-            Every compulsory grade is listed individually with its own headcount, share of coverage manhours, cost, cost per manhour, quoted rate, revenue and gross profit. Each carries the
-            compulsory markup below. Manhours and misc cost are allocated in proportion to headcount, so the individual lines add up to the totals shown, and this stream&apos;s revenue and gross
-            profit feed the totals in sections 6 and 7.
+            {t('quotationCalculator.clientQuote.compulsoryNote')}
           </Note>
         </Card>
       )}

@@ -15,6 +15,7 @@
  * convention used elsewhere in this CRM.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { collection, deleteDoc, doc, onSnapshot, query, setDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -71,6 +72,7 @@ export default function SaveQuotationPanel({
   currentQuoteId,
   setCurrentQuoteId,
 }: SaveQuotationPanelProps) {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const { branches } = useBranches();
   const isPrivileged = isAdminRole(profile?.role) || profile?.department === 'HQ';
@@ -117,19 +119,19 @@ export default function SaveQuotationPanel({
 
   async function handleSave() {
     if (!canUse) {
-      setSaveMsg({ kind: 'warn', text: 'Your account cannot save quotations.' });
+      setSaveMsg({ kind: 'warn', text: t('quotationCalculator.saveQuotationPanel.errorCannotSave') });
       return;
     }
     const name = clientName.trim();
     if (!name) {
-      setSaveMsg({ kind: 'warn', text: 'Please enter a Client Name before saving.' });
+      setSaveMsg({ kind: 'warn', text: t('quotationCalculator.saveQuotationPanel.errorClientNameRequired') });
       return;
     }
     const existing = currentQuoteId ? savedQuotes.find((r) => r.id === currentQuoteId) : null;
     let isUpdate = false;
     if (existing) {
       isUpdate = window.confirm(
-        `A quotation for "${existing.clientName}" saved ${fmtDateTime(existing.savedAt)} is currently loaded.\n\nOK = overwrite that saved record with the current figures\nCancel = save this as a brand new record`
+        t('quotationCalculator.saveQuotationPanel.confirmOverwrite', { client: existing.clientName, savedAt: fmtDateTime(existing.savedAt) })
       );
     }
     const id = isUpdate && currentQuoteId ? currentQuoteId : `q_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -145,16 +147,21 @@ export default function SaveQuotationPanel({
       state: calc.collectState(),
       branch,
       createdByUid: profile?.uid || null,
-      createdByName: profile?.name || 'Unknown',
+      createdByName: profile?.name || t('quotationCalculator.saveQuotationPanel.unknown'),
       isTestData,
     };
     if (syncMode === 'live') {
       try {
         await setDoc(doc(db, COLLECTION, id), body);
         setCurrentQuoteId(id);
-        setSaveMsg({ kind: 'ok', text: `${isUpdate ? 'Updated' : 'Saved'} quotation for "${name}" at ${fmtDateTime(body.savedAt)} — synced to your team.` });
+        setSaveMsg({
+          kind: 'ok',
+          text: isUpdate
+            ? t('quotationCalculator.saveQuotationPanel.updatedSyncedFlash', { name, savedAt: fmtDateTime(body.savedAt) })
+            : t('quotationCalculator.saveQuotationPanel.savedSyncedFlash', { name, savedAt: fmtDateTime(body.savedAt) }),
+        });
       } catch (err) {
-        setSaveMsg({ kind: 'warn', text: `Could not save to the shared team store (${(err as { code?: string }).code || 'error'}). Nothing was saved - try again.` });
+        setSaveMsg({ kind: 'warn', text: t('quotationCalculator.saveQuotationPanel.errorCouldNotSaveShared', { code: (err as { code?: string }).code || 'error' }) });
       }
     } else {
       const rec: Quotation = { id, ...body };
@@ -164,8 +171,13 @@ export default function SaveQuotationPanel({
       const ok = saveLocalQuotes(next);
       setSaveMsg(
         ok
-          ? { kind: 'ok', text: `${isUpdate ? 'Updated' : 'Saved'} quotation for "${name}" at ${fmtDateTime(body.savedAt)} (saved to this browser only).` }
-          : { kind: 'warn', text: 'This browser could not store the save (storage may be full, disabled, or this is a private-browsing window). Use Export Backup to keep this quotation as a file.' }
+          ? {
+              kind: 'ok',
+              text: isUpdate
+                ? t('quotationCalculator.saveQuotationPanel.updatedLocalFlash', { name, savedAt: fmtDateTime(body.savedAt) })
+                : t('quotationCalculator.saveQuotationPanel.savedLocalFlash', { name, savedAt: fmtDateTime(body.savedAt) }),
+            }
+          : { kind: 'warn', text: t('quotationCalculator.saveQuotationPanel.errorLocalStorageFailed') }
       );
     }
   }
@@ -178,19 +190,19 @@ export default function SaveQuotationPanel({
     setNotes(rec.notes || '');
     calc.applyState(rec.state);
     setCurrentQuoteId(rec.id);
-    setSaveMsg({ kind: 'ok', text: `Loaded quotation for "${rec.clientName}" saved ${fmtDateTime(rec.savedAt)}.` });
+    setSaveMsg({ kind: 'ok', text: t('quotationCalculator.saveQuotationPanel.loadedFlash', { client: rec.clientName, savedAt: fmtDateTime(rec.savedAt) }) });
   }
 
   async function handleDelete(id: string) {
     const rec = savedQuotes.find((r) => r.id === id);
     if (!rec) return;
-    if (!window.confirm(`Delete the saved quotation for "${rec.clientName}" (saved ${fmtDateTime(rec.savedAt)})? This cannot be undone.`)) return;
+    if (!window.confirm(t('quotationCalculator.saveQuotationPanel.confirmDelete', { client: rec.clientName, savedAt: fmtDateTime(rec.savedAt) }))) return;
     if (syncMode === 'live') {
       try {
         await deleteDoc(doc(db, COLLECTION, id));
         if (currentQuoteId === id) setCurrentQuoteId(null);
       } catch (err) {
-        setSaveMsg({ kind: 'warn', text: `Could not delete from the shared team store (${(err as { code?: string }).code || 'error'}).` });
+        setSaveMsg({ kind: 'warn', text: t('quotationCalculator.saveQuotationPanel.errorCouldNotDeleteShared', { code: (err as { code?: string }).code || 'error' }) });
       }
     } else {
       const next = savedQuotes.filter((r) => r.id !== id);
@@ -201,19 +213,19 @@ export default function SaveQuotationPanel({
   }
 
   function handleNewQuotation() {
-    if (!window.confirm('Start a new blank quotation? Client Name, Site and Notes will be cleared and all figures reset to the calculator defaults. This does not delete anything already saved.'))
+    if (!window.confirm(t('quotationCalculator.saveQuotationPanel.confirmNewQuotation')))
       return;
     setCurrentQuoteId(null);
     setClientName('');
     setSite('');
     setNotes('');
     calc.newQuotation();
-    setSaveMsg({ kind: 'ok', text: 'Started a new blank quotation.' });
+    setSaveMsg({ kind: 'ok', text: t('quotationCalculator.saveQuotationPanel.startedNewFlash') });
   }
 
   function handleExport() {
     if (!savedQuotes.length) {
-      setSaveMsg({ kind: 'warn', text: 'No saved quotations to export yet.' });
+      setSaveMsg({ kind: 'warn', text: t('quotationCalculator.saveQuotationPanel.errorNoQuotationsToExport') });
       return;
     }
     const payload = { exportedAt: new Date().toISOString(), source: 'Guard Quotation Calculator', quotes: savedQuotes };
@@ -228,19 +240,19 @@ export default function SaveQuotationPanel({
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setSaveMsg({ kind: 'ok', text: `Exported ${savedQuotes.length} saved quotation(s) to a backup file.` });
+    setSaveMsg({ kind: 'ok', text: t('quotationCalculator.saveQuotationPanel.exportedFlash', { count: savedQuotes.length }) });
   }
 
   async function handleImport(file: File) {
     if (!canUse) {
-      setSaveMsg({ kind: 'warn', text: 'Your account cannot import quotations.' });
+      setSaveMsg({ kind: 'warn', text: t('quotationCalculator.saveQuotationPanel.errorCannotImport') });
       return;
     }
     try {
       const text = await file.text();
       const data = JSON.parse(text);
       const incoming: Quotation[] | null = Array.isArray(data) ? data : Array.isArray(data?.quotes) ? data.quotes : null;
-      if (!incoming) throw new Error('File does not contain a recognised quotations backup.');
+      if (!incoming) throw new Error(t('quotationCalculator.saveQuotationPanel.errorNotABackupFile'));
       const existingIds = new Set(savedQuotes.map((r) => r.id));
       const toAdd: Quotation[] = [];
       incoming.forEach((q, j) => {
@@ -277,82 +289,82 @@ export default function SaveQuotationPanel({
               state: rec.state,
               branch: importBranch,
               createdByUid: profile?.uid || null,
-              createdByName: profile?.name || 'Unknown',
+              createdByName: profile?.name || t('quotationCalculator.saveQuotationPanel.unknown'),
               isTestData,
             })
           )
         );
-        setSaveMsg({ kind: 'ok', text: `Imported ${toAdd.length} quotation(s) into the shared team store.` });
+        setSaveMsg({ kind: 'ok', text: t('quotationCalculator.saveQuotationPanel.importedSharedFlash', { count: toAdd.length }) });
       } else {
         const next = [...savedQuotes, ...toAdd];
         setSavedQuotes(next);
         saveLocalQuotes(next);
-        setSaveMsg({ kind: 'ok', text: `Imported ${toAdd.length} quotation(s) (saved to this browser only).` });
+        setSaveMsg({ kind: 'ok', text: t('quotationCalculator.saveQuotationPanel.importedLocalFlash', { count: toAdd.length }) });
       }
     } catch (e) {
-      setSaveMsg({ kind: 'warn', text: `Could not read that backup file: ${e instanceof Error ? e.message : String(e)}` });
+      setSaveMsg({ kind: 'warn', text: t('quotationCalculator.saveQuotationPanel.errorCouldNotReadBackup', { message: e instanceof Error ? e.message : String(e) }) });
     }
   }
 
-  const syncDotClass =
-    syncMode === 'live' ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,163,127,0.16)]' : syncMode === 'denied' ? 'bg-rose-500' : syncMode === 'checking' ? 'bg-slate-400' : 'bg-amber-500';
   const syncText =
     syncMode === 'live'
-      ? 'Live — synced with your team'
+      ? t('quotationCalculator.saveQuotationPanel.syncLive')
       : syncMode === 'denied'
-        ? 'Signed in — no access to saved quotations'
+        ? t('quotationCalculator.saveQuotationPanel.syncDenied')
         : syncMode === 'checking'
-          ? 'Checking sync…'
-          : 'Not connected — local storage only';
+          ? t('quotationCalculator.saveQuotationPanel.syncChecking')
+          : t('quotationCalculator.saveQuotationPanel.syncLocal');
+  const syncDotClass =
+    syncMode === 'live' ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,163,127,0.16)]' : syncMode === 'denied' ? 'bg-rose-500' : syncMode === 'checking' ? 'bg-slate-400' : 'bg-amber-500';
 
   return (
-    <Card title="Quotation Details &amp; Save" id="saveCard">
-      <Row label="Sync status">
+    <Card title={t('quotationCalculator.saveQuotationPanel.title')} id="saveCard">
+      <Row label={t('quotationCalculator.saveQuotationPanel.syncStatus')}>
         <span className="flex items-center gap-1.5 text-[12.5px] font-semibold">
           <span className={`w-2 h-2 rounded-full ${syncDotClass}`} />
           {syncText}
         </span>
       </Row>
-      <Row label="Signed in as">
+      <Row label={t('quotationCalculator.saveQuotationPanel.signedInAs')}>
         <span className="text-[12.5px] font-semibold text-slate-700">
           {profile ? `${profile.name || profile.email}${profile.department ? ` (${profile.department})` : ''}` : '—'}
         </span>
       </Row>
-      <Row label="Client Name">
-        <TextField value={clientName} onChange={setClientName} width="w-56" placeholder="e.g. ABC Sdn Bhd" />
+      <Row label={t('quotationCalculator.saveQuotationPanel.clientName')}>
+        <TextField value={clientName} onChange={setClientName} width="w-56" placeholder={t('quotationCalculator.saveQuotationPanel.clientNamePlaceholder')} />
       </Row>
-      <Row label="Site / Project (optional)">
-        <TextField value={site} onChange={setSite} width="w-56" placeholder="e.g. Menara ABC, KL" />
+      <Row label={t('quotationCalculator.saveQuotationPanel.siteProject')}>
+        <TextField value={site} onChange={setSite} width="w-56" placeholder={t('quotationCalculator.saveQuotationPanel.siteProjectPlaceholder')} />
       </Row>
-      <Row label="Notes (optional)">
-        <TextField value={notes} onChange={setNotes} width="w-56" placeholder="e.g. Revision 2 - added night posts" />
+      <Row label={t('quotationCalculator.saveQuotationPanel.notesOptional')}>
+        <TextField value={notes} onChange={setNotes} width="w-56" placeholder={t('quotationCalculator.saveQuotationPanel.notesPlaceholder')} />
       </Row>
-      <Row label="Branch">
+      <Row label={t('quotationCalculator.saveQuotationPanel.branch')}>
         {isPrivileged ? (
           <SelectField
             value={selectedBranch}
             onChange={setSelectedBranch}
-            options={[{ value: '', label: 'Unassigned (Admin/HQ only)' }, ...branchOptions.map((b) => ({ value: b.name, label: b.name }))]}
+            options={[{ value: '', label: t('quotationCalculator.saveQuotationPanel.unassignedAdminHqOnly') }, ...branchOptions.map((b) => ({ value: b.name, label: b.name }))]}
             width="w-44"
           />
         ) : (
-          <span className="text-[13px] text-slate-500">{profile?.department || 'Unassigned'}</span>
+          <span className="text-[13px] text-slate-500">{profile?.department || t('quotationCalculator.saveQuotationPanel.unassigned')}</span>
         )}
       </Row>
-      <Row label="Currently editing">
+      <Row label={t('quotationCalculator.saveQuotationPanel.currentlyEditing')}>
         <span className="text-[13px] font-semibold text-blue-700 text-right">
-          {editingRecord ? `Loaded: ${editingRecord.clientName} (saved ${fmtDateTime(editingRecord.savedAt)})` : 'New, unsaved quotation'}
+          {editingRecord ? t('quotationCalculator.saveQuotationPanel.loadedLabel', { client: editingRecord.clientName, savedAt: fmtDateTime(editingRecord.savedAt) }) : t('quotationCalculator.saveQuotationPanel.newUnsaved')}
         </span>
       </Row>
 
       <div className="flex gap-2 flex-wrap mt-3">
         <Btn variant="primary" onClick={handleSave}>
-          Save Quotation
+          {t('quotationCalculator.saveQuotationPanel.saveQuotation')}
         </Btn>
-        <Btn onClick={handleNewQuotation}>New Quotation</Btn>
-        <Btn onClick={handleExport}>Export Backup (.json)</Btn>
+        <Btn onClick={handleNewQuotation}>{t('quotationCalculator.saveQuotationPanel.newQuotation')}</Btn>
+        <Btn onClick={handleExport}>{t('quotationCalculator.saveQuotationPanel.exportBackup')}</Btn>
         <label className="rounded-lg font-medium border text-[12.5px] px-3 py-1.5 text-slate-700 border-slate-200 hover:bg-slate-50 cursor-pointer">
-          Import Backup (.json)
+          {t('quotationCalculator.saveQuotationPanel.importBackup')}
           <input
             type="file"
             accept=".json,application/json"
@@ -369,23 +381,20 @@ export default function SaveQuotationPanel({
       {saveMsg && (saveMsg.kind === 'ok' ? <Ok>{saveMsg.text}</Ok> : <Warn>{saveMsg.text}</Warn>)}
 
       <Note>
-        Save stores every figure on this page - all inputs, guard posts, grades, misc items and fees - together with the Client Name, the date and time saved, who saved it and which branch it
-        belongs to. This syncs automatically with your CRM team, the same way Duty Roster does - once Sync status reads Live, every save, load and delete is shared instantly with everyone who can
-        see this branch. Admin and HQ see every saved quotation from every branch; a Branch Manager sees and saves only their own branch&apos;s. If sync is briefly unavailable, saves stay local to
-        this browser - use Export Backup to keep a portable copy, and Import Backup to bring a backup file back in.
+        {t('quotationCalculator.saveQuotationPanel.note')}
       </Note>
 
-      <div className="text-[10.5px] font-bold uppercase tracking-wide text-blue-700 border-l-2 border-blue-300 pl-2 mt-4 mb-1.5">Saved Quotations Log</div>
-      <Row label="Search by client or site/project">
-        <TextField value={logSearch} onChange={setLogSearch} width="w-56" placeholder="Type to filter..." />
+      <div className="text-[10.5px] font-bold uppercase tracking-wide text-blue-700 border-l-2 border-blue-300 pl-2 mt-4 mb-1.5">{t('quotationCalculator.saveQuotationPanel.savedQuotationsLog')}</div>
+      <Row label={t('quotationCalculator.saveQuotationPanel.searchByClientOrSite')}>
+        <TextField value={logSearch} onChange={setLogSearch} width="w-56" placeholder={t('quotationCalculator.saveQuotationPanel.typeToFilter')} />
       </Row>
 
       {savedQuotes.length === 0 ? (
-        <Note>No quotations saved yet in this browser.</Note>
+        <Note>{t('quotationCalculator.saveQuotationPanel.noQuotationsSavedYet')}</Note>
       ) : logSearch.trim() && filteredSorted.length === 0 ? (
-        <Note>No saved quotations match &quot;{logSearch.trim()}&quot;.</Note>
+        <Note>{t('quotationCalculator.saveQuotationPanel.noQuotationsMatch', { term: logSearch.trim() })}</Note>
       ) : (
-        <Note>{logSearch.trim() ? `Showing ${filteredSorted.length} of ${savedQuotes.length} saved quotation(s) matching "${logSearch.trim()}".` : `Showing all ${savedQuotes.length} saved quotation(s).`}</Note>
+        <Note>{logSearch.trim() ? t('quotationCalculator.saveQuotationPanel.showingFiltered', { shown: filteredSorted.length, total: savedQuotes.length, term: logSearch.trim() }) : t('quotationCalculator.saveQuotationPanel.showingAll', { total: savedQuotes.length })}</Note>
       )}
 
       {filteredSorted.length > 0 && (
@@ -393,14 +402,14 @@ export default function SaveQuotationPanel({
           <table className="w-full text-[11.5px]">
             <thead>
               <tr className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wide sticky top-0">
-                <th className="text-left font-semibold py-1.5 px-2 whitespace-nowrap">Date &amp; time saved</th>
-                <th className="text-left font-semibold py-1.5 px-2 whitespace-nowrap">Client</th>
-                <th className="text-left font-semibold py-1.5 px-2 whitespace-nowrap">Site / Notes</th>
-                <th className="text-right font-semibold py-1.5 px-2 whitespace-nowrap">Rate (RM/hr)</th>
-                <th className="text-right font-semibold py-1.5 px-2 whitespace-nowrap">Guards</th>
-                <th className="text-left font-semibold py-1.5 px-2 whitespace-nowrap">Branch</th>
-                <th className="text-left font-semibold py-1.5 px-2 whitespace-nowrap">Created by</th>
-                <th className="text-center font-semibold py-1.5 px-2 whitespace-nowrap">Actions</th>
+                <th className="text-left font-semibold py-1.5 px-2 whitespace-nowrap">{t('quotationCalculator.saveQuotationPanel.colDateTimeSaved')}</th>
+                <th className="text-left font-semibold py-1.5 px-2 whitespace-nowrap">{t('quotationCalculator.saveQuotationPanel.colClient')}</th>
+                <th className="text-left font-semibold py-1.5 px-2 whitespace-nowrap">{t('quotationCalculator.saveQuotationPanel.colSiteNotes')}</th>
+                <th className="text-right font-semibold py-1.5 px-2 whitespace-nowrap">{t('quotationCalculator.saveQuotationPanel.colRate')}</th>
+                <th className="text-right font-semibold py-1.5 px-2 whitespace-nowrap">{t('quotationCalculator.saveQuotationPanel.colGuards')}</th>
+                <th className="text-left font-semibold py-1.5 px-2 whitespace-nowrap">{t('quotationCalculator.saveQuotationPanel.colBranch')}</th>
+                <th className="text-left font-semibold py-1.5 px-2 whitespace-nowrap">{t('quotationCalculator.saveQuotationPanel.colCreatedBy')}</th>
+                <th className="text-center font-semibold py-1.5 px-2 whitespace-nowrap">{t('quotationCalculator.saveQuotationPanel.colActions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -418,10 +427,10 @@ export default function SaveQuotationPanel({
                     <td className="py-1.5 px-2">
                       <div className="flex gap-1 justify-center">
                         <Btn small onClick={() => handleLoad(rec.id)}>
-                          Load
+                          {t('quotationCalculator.saveQuotationPanel.load')}
                         </Btn>
                         <Btn small variant="danger" onClick={() => handleDelete(rec.id)}>
-                          Delete
+                          {t('quotationCalculator.saveQuotationPanel.delete')}
                         </Btn>
                       </div>
                     </td>

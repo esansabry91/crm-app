@@ -7,6 +7,7 @@
  * language as Duty Roster / Branch Collection.
  */
 import { Component, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuotationCalculator } from './useQuotationCalculator';
 import type { OtMode } from './types';
 import SaveQuotationPanel from './SaveQuotationPanel';
@@ -26,10 +27,10 @@ import ScenarioComparisonCard from './ScenarioComparisonCard';
 import AssumptionsCard from './AssumptionsCard';
 import HeroPanel from './HeroPanel';
 
-const OT_TABS: { mode: OtMode; label: string }[] = [
-  { mode: 'F', label: 'Fixed OT Rate' },
-  { mode: 'M', label: 'Multiplier OT Rate' },
-  { mode: 'B', label: 'Only Basic' },
+const OT_TAB_KEYS: { mode: OtMode; labelKey: string }[] = [
+  { mode: 'F', labelKey: 'quotationCalculator.main.otTabFixed' },
+  { mode: 'M', labelKey: 'quotationCalculator.main.otTabMultiplier' },
+  { mode: 'B', labelKey: 'quotationCalculator.main.otTabOnlyBasic' },
 ];
 
 class CalculatorErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -39,6 +40,9 @@ class CalculatorErrorBoundary extends Component<{ children: ReactNode }, { error
   }
   render() {
     if (this.state.error) {
+      // Class components can't use hooks, so this fixed English string is a last-resort
+      // technical error display for a calculation bug in this feature (a JS TypeError/RangeError
+      // from `engine.ts`), not a user-facing message end users are expected to see routinely.
       return (
         <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-sm px-4 py-3 font-mono">
           Calculation error: {this.state.error.message || String(this.state.error)}
@@ -50,6 +54,7 @@ class CalculatorErrorBoundary extends Component<{ children: ReactNode }, { error
 }
 
 export default function QuotationCalculator() {
+  const { t } = useTranslation();
   const calc = useQuotationCalculator();
   const [clientName, setClientName] = useState('');
   const [site, setSite] = useState('');
@@ -60,28 +65,28 @@ export default function QuotationCalculator() {
     <CalculatorErrorBoundary>
       <div className="max-w-[1400px] mx-auto pb-16">
         <div className="rounded-xl bg-gradient-to-r from-[#0b2b47] via-[#14527f] to-[#12806a] text-white px-6 py-5 mb-5 shadow-md">
-          <h1 className="text-xl font-bold tracking-tight">Security Guard Service - Cost per Manhour</h1>
+          <h1 className="text-xl font-bold tracking-tight">{t('quotationCalculator.main.title')}</h1>
           <p className="text-[13px] text-white/85 mt-1 max-w-[70ch]">
-            Drag the sliders or type in the yellow fields. Overtime is priced at a fixed RM per hour. Guards Required drives every calculation and is editable. Currency: RM.
+            {t('quotationCalculator.main.subtitle')}
           </p>
           {clientName && (
             <p className="text-[13px] font-semibold text-blue-50 mt-1.5">
-              Client: {clientName}
+              {t('quotationCalculator.main.clientLabel')}: {clientName}
               {site ? `  —  ${site}` : ''}
             </p>
           )}
           <div className="flex gap-2 mt-3.5 flex-wrap">
-            {OT_TABS.map((t) => (
+            {OT_TAB_KEYS.map((tab) => (
               <button
-                key={t.mode}
+                key={tab.mode}
                 type="button"
-                onClick={() => calc.setOtMode(t.mode)}
+                onClick={() => calc.setOtMode(tab.mode)}
                 className={
                   'rounded-full px-4 py-1.5 text-[12.5px] font-semibold border transition-colors ' +
-                  (calc.inputs.otMode === t.mode ? 'bg-white text-[#0b2b47] border-white' : 'bg-white/10 text-white border-white/35 hover:bg-white/20')
+                  (calc.inputs.otMode === tab.mode ? 'bg-white text-[#0b2b47] border-white' : 'bg-white/10 text-white border-white/35 hover:bg-white/20')
                 }
               >
-                {t.label}
+                {t(tab.labelKey)}
               </button>
             ))}
           </div>

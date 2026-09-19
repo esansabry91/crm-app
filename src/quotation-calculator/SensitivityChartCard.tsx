@@ -1,26 +1,28 @@
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { QuotationCalculator } from './useQuotationCalculator';
 import type { SensitivityDriverKey } from './engine';
 import { Card, Note, Row, SelectField } from './ui';
 import { fmt } from './format';
 
-const DRIVER_OPTIONS: { value: SensitivityDriverKey; label: string }[] = [
-  { value: 'markup', label: 'Markup on Cost (%)' },
-  { value: 'guards', label: 'Guards Required' },
-  { value: 'basic', label: 'Basic Monthly Salary (RM)' },
-  { value: 'otHrs', label: 'Overtime Hours per Month' },
-  { value: 'otX', label: 'Overtime rate / multiplier' },
+const DRIVER_OPTION_KEYS: { value: SensitivityDriverKey; labelKey: string }[] = [
+  { value: 'markup', labelKey: 'quotationCalculator.sensitivityChart.driverMarkup' },
+  { value: 'guards', labelKey: 'quotationCalculator.sensitivityChart.driverGuards' },
+  { value: 'basic', labelKey: 'quotationCalculator.sensitivityChart.driverBasic' },
+  { value: 'otHrs', labelKey: 'quotationCalculator.sensitivityChart.driverOtHrs' },
+  { value: 'otX', labelKey: 'quotationCalculator.sensitivityChart.driverOtX' },
 ];
 
 const W = 470, H = 210, ML = 54, MR = 12, MT = 12, MB = 30;
 const PW = W - ML - MR, PH = H - MT - MB;
 
 export default function SensitivityChartCard({ calc }: { calc: QuotationCalculator }) {
+  const { t } = useTranslation();
   const { sensitivityDriver, setSensitivityDriver, sensitivity } = calc;
   const { points, lo, hi, dp, current } = sensitivity;
 
   const valid = points.filter((p) => isFinite(p.y));
-  let body: ReactNode = <div className="text-xs text-slate-400 py-6 text-center">Not enough range to chart this driver.</div>;
+  let body: ReactNode = <div className="text-xs text-slate-400 py-6 text-center">{t('quotationCalculator.sensitivityChart.notEnoughRange')}</div>;
 
   if (valid.length && hi > lo) {
     let ymin = Math.min(...valid.map((p) => p.y));
@@ -66,12 +68,12 @@ export default function SensitivityChartCard({ calc }: { calc: QuotationCalculat
   }
 
   return (
-    <Card title="Sensitivity - Quoted Rate vs Driver">
-      <Row label="Driver to vary">
-        <SelectField value={sensitivityDriver} onChange={setSensitivityDriver} options={DRIVER_OPTIONS} width="w-56" />
+    <Card title={t('quotationCalculator.sensitivityChart.title')}>
+      <Row label={t('quotationCalculator.sensitivityChart.driverToVary')}>
+        <SelectField value={sensitivityDriver} onChange={setSensitivityDriver} options={DRIVER_OPTION_KEYS.map((o) => ({ value: o.value, label: t(o.labelKey) }))} width="w-56" />
       </Row>
       {body}
-      <Note>The red marker is your current setting. Varying guard posts also re-derives the suggested headcount unless you have overridden Guards Required.</Note>
+      <Note>{t('quotationCalculator.sensitivityChart.note')}</Note>
     </Card>
   );
 }

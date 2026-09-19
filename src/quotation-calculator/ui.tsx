@@ -8,6 +8,7 @@
  * these are drop-in equivalents of the original CSS classes.
  */
 import type { InputHTMLAttributes, ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export function Card({ title, tag, children, id }: { title: ReactNode; tag?: ReactNode; children: ReactNode; id?: string }) {
   return (
@@ -67,6 +68,7 @@ export function KeyRow({ label, htmlFor, tag, children }: { label: ReactNode; ht
  *  the state reads at a glance rather than needing to open a dropdown to see which value is
  *  selected. Color is never the only signal (the ON/OFF text is always shown alongside it). */
 export function ToggleSwitch({ checked, onChange, id }: { checked: boolean; onChange: (v: boolean) => void; id?: string }) {
+  const { t } = useTranslation();
   return (
     <button
       type="button"
@@ -91,7 +93,7 @@ export function ToggleSwitch({ checked, onChange, id }: { checked: boolean; onCh
           }
         />
       </span>
-      <span className={'text-[11px] font-bold tracking-wide w-6 ' + (checked ? 'text-emerald-700' : 'text-slate-500')}>{checked ? 'ON' : 'OFF'}</span>
+      <span className={'text-[11px] font-bold tracking-wide w-6 ' + (checked ? 'text-emerald-700' : 'text-slate-500')}>{checked ? t('quotationCalculator.ui.on') : t('quotationCalculator.ui.off')}</span>
     </button>
   );
 }
@@ -218,11 +220,12 @@ export function Btn({
 }
 
 export function ItemRow({ children, onRemove }: { children: ReactNode; onRemove: () => void }) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center gap-2 flex-wrap py-1.5 border-b border-dotted border-slate-100 last:border-0">
       <div className="flex items-center gap-1.5 flex-wrap flex-1 text-[12.5px] text-slate-600">{children}</div>
       <button type="button" onClick={onRemove} className="shrink-0 text-[10.5px] font-medium text-rose-500 hover:text-rose-700 px-2 py-1 rounded hover:bg-rose-50">
-        Remove
+        {t('quotationCalculator.ui.remove')}
       </button>
     </div>
   );

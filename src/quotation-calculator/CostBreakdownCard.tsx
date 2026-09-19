@@ -1,29 +1,36 @@
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import type { QuotationCalculator } from './useQuotationCalculator';
 import { Card } from './ui';
 import { fmt } from './format';
 
-const ITEMS: { label: string; key: 'basic' | 'allowPay' | 'otPay' | 'rdPay' | 'rdOtPay' | 'phPay' | 'phOtPay' | 'epfAmt' | 'socsoAmt' | 'eisAmt'; color: string }[] = [
-  { label: 'Basic Salary', key: 'basic', color: '#1f4e78' },
-  { label: 'Allowance', key: 'allowPay', color: '#7c3aed' },
-  { label: 'Overtime', key: 'otPay', color: '#2e75b6' },
-  { label: 'Rest Day', key: 'rdPay', color: '#5b9bd5' },
-  { label: 'Rest Day OT', key: 'rdOtPay', color: '#9dc3e6' },
-  { label: 'Public Holiday', key: 'phPay', color: '#c55a11' },
-  { label: 'Public Holiday OT', key: 'phOtPay', color: '#f4b183' },
-  { label: 'EPF', key: 'epfAmt', color: '#548235' },
-  { label: 'SOCSO', key: 'socsoAmt', color: '#a9d18e' },
-  { label: 'EIS', key: 'eisAmt', color: '#d6e4c8' },
+const ITEMS: { labelKey: string; key: 'basic' | 'allowPay' | 'otPay' | 'rdPay' | 'rdOtPay' | 'phPay' | 'phOtPay' | 'epfAmt' | 'socsoAmt' | 'eisAmt'; color: string }[] = [
+  { labelKey: 'quotationCalculator.costBreakdown.basicSalary', key: 'basic', color: '#1f4e78' },
+  { labelKey: 'quotationCalculator.costBreakdown.allowance', key: 'allowPay', color: '#7c3aed' },
+  { labelKey: 'quotationCalculator.costBreakdown.overtime', key: 'otPay', color: '#2e75b6' },
+  { labelKey: 'quotationCalculator.costBreakdown.restDay', key: 'rdPay', color: '#5b9bd5' },
+  { labelKey: 'quotationCalculator.costBreakdown.restDayOt', key: 'rdOtPay', color: '#9dc3e6' },
+  { labelKey: 'quotationCalculator.costBreakdown.publicHoliday', key: 'phPay', color: '#c55a11' },
+  { labelKey: 'quotationCalculator.costBreakdown.publicHolidayOt', key: 'phOtPay', color: '#f4b183' },
+  { labelKey: 'quotationCalculator.costBreakdown.epf', key: 'epfAmt', color: '#548235' },
+  { labelKey: 'quotationCalculator.costBreakdown.socso', key: 'socsoAmt', color: '#a9d18e' },
+  { labelKey: 'quotationCalculator.costBreakdown.eis', key: 'eisAmt', color: '#d6e4c8' },
 ];
 
+function labelOf(t: TFunction, labelKey: string) {
+  return t(labelKey);
+}
+
 export default function CostBreakdownCard({ calc }: { calc: QuotationCalculator }) {
+  const { t } = useTranslation();
   const { result } = calc;
   const total = result.costGuardPP;
-  const segments = ITEMS.map((it) => ({ ...it, amt: result[it.key] }))
+  const segments = ITEMS.map((it) => ({ ...it, label: labelOf(t, it.labelKey), amt: result[it.key] }))
     .filter((it) => isFinite(it.amt) && it.amt > 0)
     .map((it) => ({ ...it, share: total > 0 ? it.amt / total : 0 }));
 
   return (
-    <Card title={`Cost Breakdown - One Guard per ${result.dayBasis ? 'Day' : 'Month'}`}>
+    <Card title={result.dayBasis ? t('quotationCalculator.costBreakdown.titleDay') : t('quotationCalculator.costBreakdown.titleMonth')}>
       <div className="flex h-7 w-full rounded-lg overflow-hidden border border-slate-200 shadow-inner">
         {segments.map((s) => (
           <div key={s.label} title={`${s.label}: RM ${fmt(s.amt, 2)} (${(s.share * 100).toFixed(1)}%)`} style={{ width: `${s.share * 100}%`, background: s.color }} className="h-full transition-all" />
