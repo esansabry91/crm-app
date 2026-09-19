@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { usePastProjects } from '../hooks/useActiveProjects';
 import { useBranches } from '../hooks/useBranches';
@@ -11,6 +12,7 @@ import { VIZ } from '../utils/vizColors';
 import type { Tender } from '../types';
 
 export default function PastProjectsPage() {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const { projects, loading, seesAllBranches } = usePastProjects(profile);
   const { branches } = useBranches();
@@ -32,12 +34,10 @@ export default function PastProjectsPage() {
 
   const totalValue = visible.reduce((sum, t) => sum + (t.tenderValue || 0), 0);
 
-  const handleReopen = (t: Tender) => {
-    const confirmed = window.confirm(
-      `Reopen "${t.clientName}"?\n\nIt will move back into Active Projects.`
-    );
+  const handleReopen = (tender: Tender) => {
+    const confirmed = window.confirm(t('pastProjects.confirmReopen', { client: tender.clientName }));
     if (!confirmed) return;
-    reopenProject(t.id);
+    reopenProject(tender.id);
   };
 
   if (!profile) return null;
@@ -46,19 +46,19 @@ export default function PastProjectsPage() {
     <div className="h-full overflow-y-auto">
       <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
         <div className="flex items-center gap-2">
-          <h1 className="text-lg font-semibold text-slate-900">Past Projects</h1>
+          <h1 className="text-lg font-semibold text-slate-900">{t('pastProjects.title')}</h1>
           <HeaderCollapseToggle expanded={headerExpanded} onToggle={() => setHeaderExpanded((v) => !v)} />
         </div>
         {headerExpanded && (
           <div className="flex items-center justify-between gap-4 flex-wrap mt-2">
             <p className="text-sm text-slate-500">
               {seesAllBranches
-                ? 'Ended contract tenders that have been closed out, across every branch'
-                : `Ended contract tenders closed out for ${profile.department}`}
+                ? t('pastProjects.subtitleAllBranches')
+                : t('pastProjects.subtitleDepartment', { department: profile.department })}
             </p>
             {seesAllBranches && (
               <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input w-full sm:w-44">
-                <option value="all">All branches</option>
+                <option value="all">{t('pastProjects.allBranches')}</option>
                 {branchNames.map((b) => (
                   <option key={b} value={b}>
                     {b}
@@ -71,86 +71,83 @@ export default function PastProjectsPage() {
       </header>
 
       {loading ? (
-        <p className="px-6 py-8 text-sm text-slate-400">Loading past projects…</p>
+        <p className="px-6 py-8 text-sm text-slate-400">{t('pastProjects.loadingEllipsis')}</p>
       ) : (
         <div className="px-6 py-6 space-y-6 max-w-6xl">
           <div className="grid grid-cols-2 gap-4 max-w-md">
             <StatCard
-              label="Past Project Value"
+              label={t('pastProjects.pastProjectValue')}
               value={formatRM(totalValue)}
-              sub={`${visible.length} closed out`}
+              sub={t('pastProjects.closedOutCount', { count: visible.length })}
               accent={VIZ.status.good}
             />
-            <StatCard label="Closed Out" value={String(visible.length)} sub="no longer active" />
+            <StatCard label={t('pastProjects.closedOut')} value={String(visible.length)} sub={t('pastProjects.noLongerActive')} />
           </div>
 
           <p className="text-xs text-slate-400 max-w-2xl">
-            These stay counted as Won revenue in Pipeline Analysis — closing out only moves a
-            project out of the Active Projects view.
+            {t('pastProjects.wonRevenueNote')}
           </p>
 
           {sorted.length === 0 ? (
-            <p className="text-sm text-slate-400 py-8 text-center">No past projects yet.</p>
+            <p className="text-sm text-slate-400 py-8 text-center">{t('pastProjects.noPastProjectsYet')}</p>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 text-left text-xs font-medium text-slate-500">
-                    <th className="px-4 py-3">Client</th>
-                    <th className="px-4 py-3">Brand</th>
-                    {seesAllBranches && <th className="px-4 py-3">Branch</th>}
-                    <th className="px-4 py-3">Contract Start</th>
-                    <th className="px-4 py-3">Contract End</th>
-                    <th className="px-4 py-3">Closed Out</th>
-                    <th className="px-4 py-3 text-right">Value</th>
-                    <th className="px-4 py-3">Actions</th>
+                    <th className="px-4 py-3">{t('pastProjects.colClient')}</th>
+                    <th className="px-4 py-3">{t('pastProjects.colBrand')}</th>
+                    {seesAllBranches && <th className="px-4 py-3">{t('pastProjects.colBranch')}</th>}
+                    <th className="px-4 py-3">{t('pastProjects.colContractStart')}</th>
+                    <th className="px-4 py-3">{t('pastProjects.colContractEnd')}</th>
+                    <th className="px-4 py-3">{t('pastProjects.colClosedOut')}</th>
+                    <th className="px-4 py-3 text-right">{t('pastProjects.colValue')}</th>
+                    <th className="px-4 py-3">{t('pastProjects.colActions')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.map((t) => {
-                    const hasDetails = t.location || t.contactPerson || t.guardsDeployed != null || t.tenderDocNumber || t.scopeOfWork;
+                  {sorted.map((item) => {
+                    const hasDetails = item.location || item.contactPerson || item.guardsDeployed != null || item.tenderDocNumber || item.scopeOfWork;
                     return (
-                      <tr key={t.id} className="border-b border-slate-50 last:border-0">
+                      <tr key={item.id} className="border-b border-slate-50 last:border-0">
                         <td className="px-4 py-3">
-                          <p className="font-medium text-slate-800">{t.clientName}</p>
-                          {(t.location || t.guardsDeployed != null) && (
+                          <p className="font-medium text-slate-800">{item.clientName}</p>
+                          {(item.location || item.guardsDeployed != null) && (
                             <p className="text-xs text-slate-400 mt-0.5">
-                              {t.location && <>📍 {t.location}</>}
-                              {t.location && t.guardsDeployed != null && ' · '}
-                              {t.guardsDeployed != null && (
-                                <>
-                                  {t.guardsDeployed} guard{t.guardsDeployed === 1 ? '' : 's'}
-                                </>
+                              {item.location && <>📍 {item.location}</>}
+                              {item.location && item.guardsDeployed != null && ' · '}
+                              {item.guardsDeployed != null && (
+                                <>{t('pastProjects.guardsDeployedCount', { count: item.guardsDeployed })}</>
                               )}
                             </p>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-slate-500">{t.brandName}</td>
+                        <td className="px-4 py-3 text-slate-500">{item.brandName}</td>
                         {seesAllBranches && (
-                          <td className="px-4 py-3 text-slate-500">{t.activeBranch || 'Unassigned'}</td>
+                          <td className="px-4 py-3 text-slate-500">{item.activeBranch || t('pastProjects.unassignedBranch')}</td>
                         )}
-                        <td className="px-4 py-3 text-slate-500">{formatDate(t.contractStart)}</td>
-                        <td className="px-4 py-3 text-slate-500">{formatDate(t.contractEnd)}</td>
+                        <td className="px-4 py-3 text-slate-500">{formatDate(item.contractStart)}</td>
+                        <td className="px-4 py-3 text-slate-500">{formatDate(item.contractEnd)}</td>
                         <td className="px-4 py-3 text-slate-500">
-                          {t.closedOutAt ? formatDateTime(t.closedOutAt) : '-'}
+                          {item.closedOutAt ? formatDateTime(item.closedOutAt) : '-'}
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-slate-800">
-                          {formatRM(t.tenderValue)}
+                          {formatRM(item.tenderValue)}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2.5">
                             <button
-                              onClick={() => setDetailsTender(t)}
+                              onClick={() => setDetailsTender(item)}
                               className="text-xs font-medium text-blue-600 hover:text-blue-700"
                             >
-                              {hasDetails ? 'View' : '+ Add'}
+                              {hasDetails ? t('pastProjects.view') : t('pastProjects.addDetails')}
                             </button>
                             <span className="text-slate-300">·</span>
                             <button
-                              onClick={() => handleReopen(t)}
+                              onClick={() => handleReopen(item)}
                               className="text-xs font-medium text-slate-500 hover:text-emerald-600"
                             >
-                              Reopen
+                              {t('pastProjects.reopen')}
                             </button>
                           </div>
                         </td>
