@@ -1,3 +1,10 @@
+// NOT translated, deliberately — this renders the actual printed/PDF invoice document shown to
+// and sent to clients (the letterhead layout below), a formal legal/financial business document
+// rather than app UI. It stays in English regardless of the app's language setting, matching
+// standard Malaysian commercial invoice practice and the same scope boundary documented on
+// MigrateInvoiceForm's and InvoiceGenerator's own MONTH_NAMES/formatBillingMonth helpers (which
+// feed this component's billingMonth prop). Every label, header and terms-and-conditions line
+// below is intentionally hardcoded English, not a missed translation.
 import { Fragment } from 'react';
 import { amountToRinggitWords, cardinalWordsLower } from '../../utils/numberToWords';
 import { sumEquipmentRows, sumLineGroups } from '../../services/invoices';
