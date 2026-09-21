@@ -809,6 +809,10 @@ export interface BackfillStatusResult {
  * invoice is resaved through the Status editor, but this fixes every affected invoice at once
  * rather than requiring each one to be opened by hand. Safe to run more than once — it only ever
  * touches invoices whose stored status doesn't match their own amount.
+ *
+ * Void invoices are left alone. deriveInvoiceStatus only returns unpaid/partial/paid (it has no
+ * void input), so without this skip a cancelled invoice with amountPaid === 0 would be rewritten
+ * to 'unpaid' and reappear on the Debtor List / Revenue totals.
  */
 export async function backfillInvoiceStatuses(): Promise<BackfillStatusResult> {
   const invoicesSnap = await getDocs(invoicesCollection());
@@ -820,6 +824,7 @@ export async function backfillInvoiceStatuses(): Promise<BackfillStatusResult> {
 
   for (const d of invoicesSnap.docs) {
     const inv = d.data() as Invoice;
+    if (inv.status === 'void') continue;
     const correctStatus = deriveInvoiceStatus(inv.amountPaid, inv.total);
     if (correctStatus === inv.status) continue;
 
