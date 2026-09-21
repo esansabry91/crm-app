@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { useUsers } from '../../hooks/useUsers';
 import { useTenders } from '../../hooks/useTenders';
 import { useBranches } from '../../hooks/useBranches';
 import { updateUserProfile } from '../../services/users';
 import { setActiveBranch, updateTender } from '../../services/tenders';
+import { labelToKey } from '../../i18n';
 
 function FixRow({
   label,
@@ -19,6 +21,7 @@ function FixRow({
   options: string[];
   onFix: (value: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [value, setValue] = useState(options[0] || '');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -37,7 +40,7 @@ function FixRow({
     return (
       <div className="flex items-center justify-between gap-3 py-2.5 border-b border-slate-50 last:border-0">
         <p className="text-sm text-emerald-600">
-          ✓ {label} fixed — now "{value}"
+          {t('admin.dataRepair.fixedLabel', { label, value })}
         </p>
       </div>
     );
@@ -49,7 +52,7 @@ function FixRow({
         <p className="text-sm font-medium text-slate-800 truncate">{label}</p>
         {sub && <p className="text-xs text-slate-400 truncate">{sub}</p>}
         <p className="text-xs text-rose-500 mt-0.5">
-          Currently: <span className="font-mono">"{badValue}"</span> — not a real department
+          {t('admin.dataRepair.currentlyPrefix')} <span className="font-mono">"{badValue}"</span> {t('admin.dataRepair.currentlySuffix')}
         </p>
       </div>
       <div className="flex items-center gap-2 shrink-0">
@@ -69,7 +72,7 @@ function FixRow({
           disabled={busy}
           className="text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded px-2.5 py-1 disabled:opacity-60"
         >
-          {busy ? 'Fixing…' : 'Fix'}
+          {busy ? t('admin.dataRepair.fixingEllipsis') : t('admin.dataRepair.fixButton')}
         </button>
       </div>
     </div>
@@ -85,6 +88,7 @@ function FixRow({
  * show up as confusing extra "branches" in Pipeline Analysis and Active Projects.
  */
 export default function DepartmentRepairTool() {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const { users } = useUsers();
   const { tenders } = useTenders(profile);
@@ -100,11 +104,11 @@ export default function DepartmentRepairTool() {
     [users, validSet]
   );
   const orphanTenderDepts = useMemo(
-    () => tenders.filter((t) => t.department && !validSet.has(t.department)),
+    () => tenders.filter((tender) => tender.department && !validSet.has(tender.department)),
     [tenders, validSet]
   );
   const orphanActiveBranches = useMemo(
-    () => tenders.filter((t) => t.stage === 'Won' && t.activeBranch && !validSet.has(t.activeBranch)),
+    () => tenders.filter((tender) => tender.stage === 'Won' && tender.activeBranch && !validSet.has(tender.activeBranch)),
     [tenders, validSet]
   );
 
@@ -116,18 +120,16 @@ export default function DepartmentRepairTool() {
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 className="text-sm font-semibold text-slate-800">Data Repair</h3>
+        <h3 className="text-sm font-semibold text-slate-800">{t('admin.dataRepair.title')}</h3>
         <p className="text-xs text-slate-400 mt-0.5">
-          Finds team members or tenders whose department doesn't match a real branch or "HQ" —
-          usually left over from a typo or a renamed branch. Left unfixed, these show up as
-          confusing duplicate bars in Pipeline Analysis and Active Projects.
+          {t('admin.dataRepair.description')}
         </p>
       </div>
 
       {totalIssues === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <p className="text-sm text-emerald-600">
-            ✓ No department issues found — everything lines up with your Branches list.
+            {t('admin.dataRepair.noIssuesFound')}
           </p>
         </div>
       ) : (
@@ -135,11 +137,10 @@ export default function DepartmentRepairTool() {
           {orphanUsers.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <h4 className="text-sm font-semibold text-slate-800 mb-1">
-                Team Member Profiles ({orphanUsers.length})
+                {t('admin.dataRepair.teamMemberProfilesHeading', { count: orphanUsers.length })}
               </h4>
               <p className="text-xs text-slate-400 mb-3">
-                Their department doesn't match any real branch — new tenders they own will keep
-                inheriting the bad value until this is fixed.
+                {t('admin.dataRepair.teamMemberProfilesDescription')}
               </p>
               {orphanUsers.map((u) => (
                 <FixRow
@@ -157,20 +158,19 @@ export default function DepartmentRepairTool() {
           {orphanTenderDepts.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <h4 className="text-sm font-semibold text-slate-800 mb-1">
-                Tender Departments ({orphanTenderDepts.length})
+                {t('admin.dataRepair.tenderDepartmentsHeading', { count: orphanTenderDepts.length })}
               </h4>
               <p className="text-xs text-slate-400 mb-3">
-                Sales-attribution department stored directly on the tender (affects the Branch
-                Race chart).
+                {t('admin.dataRepair.tenderDepartmentsDescription')}
               </p>
-              {orphanTenderDepts.map((t) => (
+              {orphanTenderDepts.map((tender) => (
                 <FixRow
-                  key={t.id}
-                  label={t.clientName}
-                  sub={`Owner: ${t.ownerName} · ${t.stage}`}
-                  badValue={t.department}
+                  key={tender.id}
+                  label={tender.clientName}
+                  sub={t('admin.dataRepair.ownerSub', { owner: tender.ownerName, stage: t(`pipeline.stages.${labelToKey(tender.stage)}`) })}
+                  badValue={tender.department}
                   options={validDepartments}
-                  onFix={(value) => updateTender(t.id, { department: value }, actor, t)}
+                  onFix={(value) => updateTender(tender.id, { department: value }, actor, tender)}
                 />
               ))}
             </div>
@@ -179,20 +179,19 @@ export default function DepartmentRepairTool() {
           {orphanActiveBranches.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <h4 className="text-sm font-semibold text-slate-800 mb-1">
-                Active Project Branches ({orphanActiveBranches.length})
+                {t('admin.dataRepair.activeProjectBranchesHeading', { count: orphanActiveBranches.length })}
               </h4>
               <p className="text-xs text-slate-400 mb-3">
-                Operational branch assigned once a tender is Won (affects Active Projects and its
-                race chart).
+                {t('admin.dataRepair.activeProjectBranchesDescription')}
               </p>
-              {orphanActiveBranches.map((t) => (
+              {orphanActiveBranches.map((tender) => (
                 <FixRow
-                  key={t.id}
-                  label={t.clientName}
-                  sub={`Owner: ${t.ownerName} · Won`}
-                  badValue={t.activeBranch || ''}
+                  key={tender.id}
+                  label={tender.clientName}
+                  sub={t('admin.dataRepair.ownerSub', { owner: tender.ownerName, stage: t(`pipeline.stages.${labelToKey('Won')}`) })}
+                  badValue={tender.activeBranch || ''}
                   options={activeBranchOptions}
-                  onFix={(value) => setActiveBranch(t.id, value)}
+                  onFix={(value) => setActiveBranch(tender.id, value)}
                 />
               ))}
             </div>

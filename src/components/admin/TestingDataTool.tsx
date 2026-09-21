@@ -1,10 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenders } from '../../hooks/useTenders';
 import { useGuards, useBufferGuards } from '../../hooks/useGuards';
 import { getTestDataCounts, resetTestData } from '../../services/testDataReset';
+import { labelToKey } from '../../i18n';
+
+const GUARD_STATUS_KEYS: Record<string, string> = {
+  pool: 'admin.testingDataTool.guardStatusPool',
+  deployed: 'admin.testingDataTool.guardStatusDeployed',
+  dismissed: 'admin.testingDataTool.guardStatusDismissed',
+};
+function guardStatusLabel(t: TFunction, status: string): string {
+  const key = GUARD_STATUS_KEYS[status];
+  return key ? t(key) : status;
+}
 
 /** Minimal shape read straight off a Duty Roster `sites/{id}` doc — there's no shared Site type
  *  in types.ts (that collection is owned by public/duty-roster/index.html's own data model), so
@@ -60,6 +73,7 @@ function TestDataRow({
   flagged: boolean;
   onToggle: (next: boolean) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const handleClick = async () => {
     setBusy(true);
@@ -84,7 +98,7 @@ function TestDataRow({
             : 'text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-60 rounded px-2.5 py-1 shrink-0'
         }
       >
-        {busy ? 'Saving…' : flagged ? 'Unmark test data' : 'Mark as test data'}
+        {busy ? t('admin.testingDataTool.savingEllipsis') : flagged ? t('admin.testingDataTool.unmarkTestData') : t('admin.testingDataTool.markAsTestData')}
       </button>
     </div>
   );
@@ -109,13 +123,14 @@ function TestDataRow({
  * can still be tagged by hand, one time, before go-live.
  */
 export default function TestingDataTool() {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const { tenders } = useTenders(profile);
   const { guards } = useGuards();
   const { bufferGuards } = useBufferGuards();
   const { sites } = useRawSites();
 
-  const untaggedTenders = useMemo(() => tenders.filter((t) => t.isTestData === undefined), [tenders]);
+  const untaggedTenders = useMemo(() => tenders.filter((tender) => tender.isTestData === undefined), [tenders]);
   const untaggedGuards = useMemo(() => guards.filter((g) => g.isTestData === undefined), [guards]);
   const untaggedBuffer = useMemo(() => bufferGuards.filter((b) => b.isTestData === undefined), [bufferGuards]);
   const untaggedSites = useMemo(() => sites.filter((s) => s.isTestData === undefined), [sites]);
@@ -188,33 +203,37 @@ export default function TestingDataTool() {
       const total =
         counts.tenders + counts.sites + counts.guards + counts.bufferGuards + counts.invoices + counts.tasks;
       if (total === 0) {
-        setResetMessage({ text: 'Nothing is currently tagged as test data — nothing to delete.', isError: false });
+        setResetMessage({ text: t('admin.testingDataTool.nothingToDelete'), isError: false });
         return;
       }
       const confirmed = window.confirm(
-        `Permanently delete all test data?\n\n` +
-          `- ${counts.tenders} tender(s), plus their history logs\n` +
-          `- ${counts.sites} Duty Roster site(s), plus their schedule data\n` +
-          `- ${counts.guards} Guard Bank guard(s)\n` +
-          `- ${counts.bufferGuards} buffer guard(s)\n` +
-          `- ${counts.invoices} Branch Collection invoice(s)\n` +
-          `- ${counts.tasks} Task Board task(s)\n\n` +
-          `Any real guard still deployed at a test site will be released back to the Guard Pool first. This cannot be undone. ` +
-          `(This does not reset invoice numbering — a brand/branch/client's running sequence is left as-is so a future real invoice never risks reusing a number.)`
+        t('admin.testingDataTool.confirmDeleteAll', {
+          tenders: counts.tenders,
+          sites: counts.sites,
+          guards: counts.guards,
+          bufferGuards: counts.bufferGuards,
+          invoices: counts.invoices,
+          tasks: counts.tasks,
+        })
       );
       if (!confirmed) return;
-      const typed = window.prompt('Type DELETE (all caps) to confirm, or Cancel to back out:');
+      const typed = window.prompt(t('admin.testingDataTool.typeDeletePrompt'));
       if (typed !== 'DELETE') {
-        setResetMessage({ text: 'Cancelled — nothing was deleted.', isError: false });
+        setResetMessage({ text: t('admin.testingDataTool.cancelledNothingDeleted'), isError: false });
         return;
       }
       const result = await resetTestData();
       setResetMessage({
-        text:
-          `Deleted ${result.tenders} tender(s), ${result.history} history entrie(s), ${result.sites} site(s), ` +
-          `${result.months} schedule record(s), ${result.guards} guard(s), ${result.bufferGuards} buffer guard(s), ` +
-          `${result.invoices} invoice(s), and ${result.tasks} task(s).` +
-          (result.guardsReleased > 0 ? ` Released ${result.guardsReleased} real guard(s) back to the Guard Pool.` : ''),
+        text: t('admin.testingDataTool.deleteResultSummary', {
+          tenders: result.tenders,
+          history: result.history,
+          sites: result.sites,
+          months: result.months,
+          guards: result.guards,
+          bufferGuards: result.bufferGuards,
+          invoices: result.invoices,
+          tasks: result.tasks,
+        }) + (result.guardsReleased > 0 ? ` ${t('admin.testingDataTool.guardsReleasedNote', { count: result.guardsReleased })}` : ''),
         isError: false,
       });
     } catch (err) {
@@ -223,7 +242,7 @@ export default function TestingDataTool() {
       // text below is deliberately terser than what Firestore actually reports.
       console.error('Delete all test data failed:', err);
       const code = (err as { code?: string } | null)?.code;
-      const baseMessage = err instanceof Error ? err.message : 'Could not delete test data.';
+      const baseMessage = err instanceof Error ? err.message : t('admin.testingDataTool.errorCouldNotDelete');
       setResetMessage({
         text: code ? `${baseMessage} (code: ${code})` : baseMessage,
         isError: true,
@@ -240,37 +259,26 @@ export default function TestingDataTool() {
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-sm font-semibold text-slate-800">Testing Mode</h3>
+            <h3 className="text-sm font-semibold text-slate-800">{t('admin.testingDataTool.testingModeTitle')}</h3>
             <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-              You're signed in as a Developer account, so this is always ON for you: every
-              tender, Guard Bank guard, buffer guard, and Duty Roster site you create anywhere in
-              the app — CRM or Duty Roster — is automatically tagged as test data. This is now
-              purely a status indicator (nothing to turn on or off) — a real staff/admin
-              account's data is never affected by it.
+              {t('admin.testingDataTool.testingModeDescription')}
             </p>
           </div>
           <span className="shrink-0 px-3.5 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg">
-            Testing Mode: ON
+            {t('admin.testingDataTool.testingModeOn')}
           </span>
         </div>
         <p className="text-xs mt-3" style={{ color: '#b45309' }}>
-          Always ON for this account — every record you create here is tagged as test data.
+          {t('admin.testingDataTool.testingModeAlwaysOnNote')}
         </p>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h3 className="text-sm font-semibold text-slate-800">Currently tagged as test data</h3>
+            <h3 className="text-sm font-semibold text-slate-800">{t('admin.testingDataTool.currentlyTaggedTitle')}</h3>
             <p className="text-xs text-slate-400 mt-0.5 max-w-2xl">
-              {taggedCount} record{taggedCount === 1 ? '' : 's'} across tenders, sites, guards and
-              buffer guards (this count doesn't include Branch Collection invoices or Task
-              Board tasks, which the button below still deletes — see it for the up-to-date
-              total across everything, invoices and tasks included). Deleting is permanent —
-              each tender's history log and each
-              site's schedule data goes with it, any real guard still deployed at a test site is
-              released back to the Guard Pool first, and invoice numbering sequences are left
-              untouched so a future real invoice never risks reusing a number.
+              {t('admin.testingDataTool.currentlyTaggedDescription', { count: taggedCount })}
             </p>
           </div>
           <button
@@ -278,7 +286,7 @@ export default function TestingDataTool() {
             disabled={resetBusy}
             className="shrink-0 px-3.5 py-2 text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-60 rounded-lg"
           >
-            {resetBusy ? 'Deleting…' : 'Delete all test data'}
+            {resetBusy ? t('admin.testingDataTool.deletingEllipsis') : t('admin.testingDataTool.deleteAllTestData')}
           </button>
         </div>
         {resetMessage && (
@@ -289,39 +297,41 @@ export default function TestingDataTool() {
           </p>
         )}
         <p className="text-xs text-slate-400 mt-3">
-          The same cleanup is also available from a terminal via{' '}
-          <code className="font-mono">node scripts/purge-test-data.mjs --test-data</code>, if
-          you'd rather run it that way.
+          {t('admin.testingDataTool.terminalAlternativePrefix')}{' '}
+          <code className="font-mono">node scripts/purge-test-data.mjs --test-data</code>{t('admin.testingDataTool.terminalAlternativeSuffix')}
         </p>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h4 className="text-sm font-semibold text-slate-800">Look up a site to fix its tag</h4>
+        <h4 className="text-sm font-semibold text-slate-800">{t('admin.testingDataTool.lookupSiteTitle')}</h4>
         <p className="text-xs text-slate-400 mt-0.5 max-w-2xl">
-          For a Duty Roster site that's stuck on the wrong tag and never showed up in "not yet
-          sorted" below (see createTenderSite()'s doc comment in services/tenders.ts for why that
-          could happen). Search by name and flip its tag directly — marking it as test data here
-          makes it eligible for "Delete all test data" above.
+          {t('admin.testingDataTool.lookupSiteDescription')}
         </p>
         <input
           type="text"
           value={siteLookupQuery}
           onChange={(e) => setSiteLookupQuery(e.target.value)}
-          placeholder="Type a site name…"
+          placeholder={t('admin.testingDataTool.lookupSitePlaceholder')}
           className="mt-3 w-full max-w-sm rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
         />
         {siteLookupQuery.trim() !== '' && (
           siteLookupMatches.length === 0 ? (
-            <p className="text-xs text-slate-400 mt-3">No sites match "{siteLookupQuery.trim()}".</p>
+            <p className="text-xs text-slate-400 mt-3">{t('admin.testingDataTool.noSitesMatch', { query: siteLookupQuery.trim() })}</p>
           ) : (
             <div className="mt-2">
               {siteLookupMatches.map((s) => (
                 <TestDataRow
                   key={s.id}
                   label={s.name}
-                  sub={`${s.branch || 'Unassigned branch'} — currently tagged ${
-                    s.isTestData === undefined ? 'not yet sorted' : s.isTestData ? 'test data' : 'real data'
-                  }`}
+                  sub={t('admin.testingDataTool.siteLookupSub', {
+                    branch: s.branch || t('admin.testingDataTool.unassignedBranch'),
+                    tag:
+                      s.isTestData === undefined
+                        ? t('admin.testingDataTool.tagNotYetSorted')
+                        : s.isTestData
+                          ? t('admin.testingDataTool.tagTestData')
+                          : t('admin.testingDataTool.tagRealData'),
+                  })}
                   flagged={!!s.isTestData}
                   onToggle={(next) => updateDoc(doc(db, 'sites', s.id), { isTestData: next, updatedAt: new Date().toISOString() })}
                 />
@@ -334,7 +344,7 @@ export default function TestingDataTool() {
       {untaggedTenders.length === 0 && untaggedSites.length === 0 && untaggedGuards.length === 0 && untaggedBuffer.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <p className="text-sm text-emerald-600">
-            ✓ Every current record is already tagged one way or the other — nothing left to sort.
+            {t('admin.testingDataTool.nothingLeftToSort')}
           </p>
         </div>
       ) : (
@@ -343,33 +353,36 @@ export default function TestingDataTool() {
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-start justify-between gap-3 mb-1">
                 <h4 className="text-sm font-semibold text-slate-800">
-                  Tenders not yet sorted ({untaggedTenders.length})
+                  {t('admin.testingDataTool.tendersNotSortedHeading', { count: untaggedTenders.length })}
                 </h4>
                 <button
                   onClick={() =>
                     confirmAllReal(
                       'tenders',
-                      untaggedTenders.map((t) => t.id),
+                      untaggedTenders.map((tender) => tender.id),
                       (id) => updateDoc(doc(db, 'tenders', id), { isTestData: false, updatedAt: Date.now() })
                     )
                   }
                   disabled={confirmBusyKey === 'tenders'}
                   className="shrink-0 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 rounded px-2.5 py-1 border border-emerald-200"
                 >
-                  {confirmBusyKey === 'tenders' ? 'Confirming…' : 'Confirm all as real data'}
+                  {confirmBusyKey === 'tenders' ? t('admin.testingDataTool.confirmingEllipsis') : t('admin.testingDataTool.confirmAllAsRealData')}
                 </button>
               </div>
               <p className="text-xs text-slate-400 mb-3">
-                Left over from before this feature existed — mark any that were only for testing,
-                or confirm the rest as real in one go.
+                {t('admin.testingDataTool.tendersNotSortedDescription')}
               </p>
-              {untaggedTenders.map((t) => (
+              {untaggedTenders.map((tender) => (
                 <TestDataRow
-                  key={t.id}
-                  label={t.clientName}
-                  sub={`${t.stage} · ${t.department} · Owner: ${t.ownerName}`}
+                  key={tender.id}
+                  label={tender.clientName}
+                  sub={t('admin.testingDataTool.tenderSub', {
+                    stage: t(`pipeline.stages.${labelToKey(tender.stage)}`),
+                    department: tender.department,
+                    owner: tender.ownerName,
+                  })}
                   flagged={false}
-                  onToggle={(next) => updateDoc(doc(db, 'tenders', t.id), { isTestData: next, updatedAt: Date.now() })}
+                  onToggle={(next) => updateDoc(doc(db, 'tenders', tender.id), { isTestData: next, updatedAt: Date.now() })}
                 />
               ))}
             </div>
@@ -379,7 +392,7 @@ export default function TestingDataTool() {
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-start justify-between gap-3 mb-1">
                 <h4 className="text-sm font-semibold text-slate-800">
-                  Duty Roster sites not yet sorted ({untaggedSites.length})
+                  {t('admin.testingDataTool.sitesNotSortedHeading', { count: untaggedSites.length })}
                 </h4>
                 <button
                   onClick={() =>
@@ -392,18 +405,17 @@ export default function TestingDataTool() {
                   disabled={confirmBusyKey === 'sites'}
                   className="shrink-0 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 rounded px-2.5 py-1 border border-emerald-200"
                 >
-                  {confirmBusyKey === 'sites' ? 'Confirming…' : 'Confirm all as real data'}
+                  {confirmBusyKey === 'sites' ? t('admin.testingDataTool.confirmingEllipsis') : t('admin.testingDataTool.confirmAllAsRealData')}
                 </button>
               </div>
               <p className="text-xs text-slate-400 mb-3">
-                Includes archived sites — sort those too if they were only ever test/demo sites,
-                or confirm the rest as real in one go.
+                {t('admin.testingDataTool.sitesNotSortedDescription')}
               </p>
               {untaggedSites.map((s) => (
                 <TestDataRow
                   key={s.id}
                   label={s.name}
-                  sub={`${s.branch || 'Unassigned branch'}${s.archived ? ' · Archived' : ''}`}
+                  sub={`${s.branch || t('admin.testingDataTool.unassignedBranch')}${s.archived ? ` · ${t('admin.testingDataTool.archivedSuffix')}` : ''}`}
                   flagged={false}
                   onToggle={(next) => updateDoc(doc(db, 'sites', s.id), { isTestData: next, updatedAt: new Date().toISOString() })}
                 />
@@ -415,7 +427,7 @@ export default function TestingDataTool() {
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-start justify-between gap-3 mb-1">
                 <h4 className="text-sm font-semibold text-slate-800">
-                  Guard Bank guards not yet sorted ({untaggedGuards.length})
+                  {t('admin.testingDataTool.guardsNotSortedHeading', { count: untaggedGuards.length })}
                 </h4>
                 <button
                   onClick={() =>
@@ -428,14 +440,14 @@ export default function TestingDataTool() {
                   disabled={confirmBusyKey === 'guards'}
                   className="shrink-0 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 rounded px-2.5 py-1 border border-emerald-200"
                 >
-                  {confirmBusyKey === 'guards' ? 'Confirming…' : 'Confirm all as real data'}
+                  {confirmBusyKey === 'guards' ? t('admin.testingDataTool.confirmingEllipsis') : t('admin.testingDataTool.confirmAllAsRealData')}
                 </button>
               </div>
               {untaggedGuards.map((g) => (
                 <TestDataRow
                   key={g.id}
                   label={g.name}
-                  sub={`${g.employeeId || 'No employee ID'} · ${g.status}`}
+                  sub={`${g.employeeId || t('admin.testingDataTool.noEmployeeId')} · ${guardStatusLabel(t, g.status)}`}
                   flagged={false}
                   onToggle={(next) => updateDoc(doc(db, 'guards', g.id), { isTestData: next, updatedAt: Date.now() })}
                 />
@@ -447,7 +459,7 @@ export default function TestingDataTool() {
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-start justify-between gap-3 mb-1">
                 <h4 className="text-sm font-semibold text-slate-800">
-                  Buffer guards not yet sorted ({untaggedBuffer.length})
+                  {t('admin.testingDataTool.bufferGuardsNotSortedHeading', { count: untaggedBuffer.length })}
                 </h4>
                 <button
                   onClick={() =>
@@ -460,14 +472,14 @@ export default function TestingDataTool() {
                   disabled={confirmBusyKey === 'bufferGuards'}
                   className="shrink-0 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 rounded px-2.5 py-1 border border-emerald-200"
                 >
-                  {confirmBusyKey === 'bufferGuards' ? 'Confirming…' : 'Confirm all as real data'}
+                  {confirmBusyKey === 'bufferGuards' ? t('admin.testingDataTool.confirmingEllipsis') : t('admin.testingDataTool.confirmAllAsRealData')}
                 </button>
               </div>
               {untaggedBuffer.map((b) => (
                 <TestDataRow
                   key={b.id}
                   label={b.name}
-                  sub={b.lastSiteName ? `Last at ${b.lastSiteName}` : 'Never assigned'}
+                  sub={b.lastSiteName ? t('admin.testingDataTool.lastAtSite', { site: b.lastSiteName }) : t('admin.testingDataTool.neverAssigned')}
                   flagged={false}
                   onToggle={(next) => updateDoc(doc(db, 'bufferGuards', b.id), { isTestData: next })}
                 />

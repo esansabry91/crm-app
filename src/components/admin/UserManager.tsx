@@ -1,29 +1,33 @@
 import { useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useUsers } from '../../hooks/useUsers';
 import { useBranches } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
 import { createStaffAccount, updateUserProfile, deactivateUser, deleteUserProfile } from '../../services/users';
 import type { Role } from '../../types';
 
-// Friendly labels for the confirmation prompts below — matches what each <option> shows,
+// Translation keys for the confirmation prompts below — matches what each <option> shows,
 // independent of the raw value stored in Firestore.
-const ROLE_LABELS: Record<string, string> = {
-  branchManager: 'Branch Manager',
-  admin: 'HQ Admin',
-  dutyStaff: 'Operation Staff',
-  payroll: 'Payroll',
-  developer: 'Developer',
-  finance: 'Finance',
-  hr: 'HR',
-  ceo: 'CEO',
-  director: 'Director',
-  tenderController: 'Tender Controller',
+const ROLE_LABEL_KEYS: Record<string, string> = {
+  branchManager: 'admin.roles.branchManager',
+  admin: 'admin.roles.hqAdmin',
+  dutyStaff: 'admin.roles.operationStaff',
+  payroll: 'admin.roles.payroll',
+  developer: 'admin.roles.developer',
+  finance: 'admin.roles.finance',
+  hr: 'admin.roles.hr',
+  ceo: 'admin.roles.ceo',
+  director: 'admin.roles.director',
+  tenderController: 'admin.roles.tenderController',
 };
-function roleLabel(role: string): string {
-  return ROLE_LABELS[role] || role;
+function roleLabel(t: TFunction, role: string): string {
+  const key = ROLE_LABEL_KEYS[role];
+  return key ? t(key) : role;
 }
 
 export default function UserManager() {
+  const { t } = useTranslation();
   const { users } = useUsers();
   const { branches } = useBranches();
   const { profile } = useAuth();
@@ -72,12 +76,10 @@ export default function UserManager() {
         await updateUserProfile(u.uid, { role: 'branchManager' });
       }
       setMigrateMsg(
-        `Updated ${legacyStaffUsers.length} account${legacyStaffUsers.length === 1 ? '' : 's'} to the "branchManager" role.`
+        t('admin.userManager.migratedToRole', { count: legacyStaffUsers.length, role: roleLabel(t, 'branchManager') })
       );
     } catch (err) {
-      setMigrateMsg(
-        'Something went wrong partway through — check the Role column below and re-run if any account still looks off.'
-      );
+      setMigrateMsg(t('admin.userManager.migrateError'));
       console.error(err);
     } finally {
       setMigrating(false);
@@ -89,7 +91,7 @@ export default function UserManager() {
     setError(null);
     setSuccess(null);
     if (!name.trim() || !email.trim()) {
-      setError('Fill in a name and email.');
+      setError(t('admin.userManager.errorNameAndEmailRequired'));
       return;
     }
     // Branch managers can only ever create Operation Staff in their own branch — force these
@@ -98,7 +100,7 @@ export default function UserManager() {
     const effectiveRole: Role = isBranchManagerRole ? 'dutyStaff' : role;
     const effectiveDepartment = isBranchManagerRole ? myDepartment : department;
     if (isBranchManagerRole && !effectiveDepartment) {
-      setError('Your account has no branch assigned — contact an HQ Admin.');
+      setError(t('admin.userManager.errorNoBranchAssigned'));
       return;
     }
     setBusy(true);
@@ -109,7 +111,7 @@ export default function UserManager() {
         role: effectiveRole,
         department: effectiveDepartment,
       });
-      setSuccess(`Account created — an email has been sent to ${email.trim()} with a link to set their password.`);
+      setSuccess(t('admin.userManager.accountCreated', { email: email.trim() }));
       setName('');
       setEmail('');
       setRole(isBranchManagerRole ? 'dutyStaff' : 'branchManager');
@@ -118,8 +120,8 @@ export default function UserManager() {
       const code = (err as { code?: string })?.code;
       setError(
         code === 'auth/email-already-in-use'
-          ? 'That email is already registered.'
-          : 'Could not create the account. Please check the details and try again.'
+          ? t('admin.userManager.errorEmailInUse')
+          : t('admin.userManager.errorCouldNotCreate')
       );
       console.error(err);
     } finally {
@@ -128,9 +130,7 @@ export default function UserManager() {
   };
 
   const handleRemove = async (uid: string, name: string) => {
-    const confirmed = window.confirm(
-      `Remove ${name} from the team? They will lose all access to the CRM immediately and disappear from staff/owner lists. This does not delete their sign-in credentials — see the note below the table if you need those fully revoked too.`
-    );
+    const confirmed = window.confirm(t('admin.userManager.confirmRemove', { name }));
     if (!confirmed) return;
     setRemovingUid(uid);
     try {
@@ -148,7 +148,7 @@ export default function UserManager() {
   const handleRoleChange = async (uid: string, name: string, currentRole: string, newRole: Role) => {
     if (newRole === currentRole) return;
     const confirmed = window.confirm(
-      `Change ${name}'s role from "${roleLabel(currentRole)}" to "${roleLabel(newRole)}"? This changes what they can access as soon as you confirm.`
+      t('admin.userManager.confirmRoleChange', { name, from: roleLabel(t, currentRole), to: roleLabel(t, newRole) })
     );
     if (!confirmed) return;
     await updateUserProfile(uid, { role: newRole });
@@ -157,7 +157,7 @@ export default function UserManager() {
   const handleDepartmentChange = async (uid: string, name: string, currentDepartment: string, newDepartment: string) => {
     if (newDepartment === currentDepartment) return;
     const confirmed = window.confirm(
-      `Change ${name}'s department from "${currentDepartment}" to "${newDepartment}"? This changes which branch's data they can see as soon as you confirm.`
+      t('admin.userManager.confirmDepartmentChange', { name, from: currentDepartment, to: newDepartment })
     );
     if (!confirmed) return;
     await updateUserProfile(uid, { department: newDepartment });
@@ -169,12 +169,10 @@ export default function UserManager() {
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
           <div>
             <p className="text-sm font-medium text-amber-800">
-              {legacyStaffUsers.length} account{legacyStaffUsers.length === 1 ? '' : 's'} still stored with the old
-              "staff" role value.
+              {t('admin.userManager.legacyRoleBanner', { count: legacyStaffUsers.length })}
             </p>
             <p className="text-xs text-amber-700 mt-0.5">
-              One-time cleanup — updates their role field to "branchManager" to match the new label. Nothing breaks
-              if you skip this; it just keeps the dropdowns below showing the right selection.
+              {t('admin.userManager.legacyRoleBannerDetail')}
             </p>
             {migrateMsg && <p className="text-xs text-emerald-700 mt-1">{migrateMsg}</p>}
           </div>
@@ -183,48 +181,47 @@ export default function UserManager() {
             disabled={migrating}
             className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg disabled:opacity-60 shrink-0"
           >
-            {migrating ? 'Migrating…' : `Migrate ${legacyStaffUsers.length} account${legacyStaffUsers.length === 1 ? '' : 's'}`}
+            {migrating ? t('admin.userManager.migratingEllipsis') : t('admin.userManager.migrateButton', { count: legacyStaffUsers.length })}
           </button>
         </div>
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 className="text-sm font-semibold text-slate-800">Add Team Member</h3>
+        <h3 className="text-sm font-semibold text-slate-800">{t('admin.userManager.addTeamMemberTitle')}</h3>
         <p className="text-xs text-slate-400 mt-0.5 mb-4">
-          Creates their sign-in account and CRM profile, then emails them a link to set their own password —
-          nothing to share manually.
+          {t('admin.userManager.addTeamMemberDescription')}
         </p>
         <form onSubmit={handleCreate} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" className="input" />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('admin.userManager.fullNamePlaceholder')} className="input" />
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
+            placeholder={t('admin.userManager.emailPlaceholder')}
             type="email"
             className="input"
           />
           {isBranchManagerRole ? (
             <>
               <div className="input flex items-center bg-slate-50 text-slate-500">
-                Operation Staff (fixed)
+                {t('admin.userManager.operationStaffFixed')}
               </div>
               <div className="input flex items-center bg-slate-50 text-slate-500">
-                {myDepartment || '—'} (your branch)
+                {t('admin.userManager.yourBranchFixed', { department: myDepartment || '—' })}
               </div>
             </>
           ) : (
             <>
               <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="input">
-                <option value="branchManager">Branch Manager — sees only their own tenders</option>
-                <option value="admin">HQ Admin — sees everything</option>
-                <option value="ceo">CEO — full access, same as HQ Admin</option>
-                <option value="director">Director — full access, same as HQ Admin</option>
-                <option value="tenderController">Tender Controller — full access, same as HQ Admin</option>
-                <option value="dutyStaff">Operation Staff — Duty Roster only, nothing else</option>
-                <option value="payroll">Payroll — Duty Roster only, view &amp; export only, all branches</option>
-                <option value="hr">HR — same as Payroll, plus full access to Guard Bank</option>
-                <option value="developer">Developer — full access like HQ Admin, but every record it creates is auto-tagged as test data</option>
-                <option value="finance">Finance — Branch Collection only (Invoices, Debtor List, Revenue)</option>
+                <option value="branchManager">{t('admin.userManager.roleOptionBranchManager')}</option>
+                <option value="admin">{t('admin.userManager.roleOptionAdmin')}</option>
+                <option value="ceo">{t('admin.userManager.roleOptionCeo')}</option>
+                <option value="director">{t('admin.userManager.roleOptionDirector')}</option>
+                <option value="tenderController">{t('admin.userManager.roleOptionTenderController')}</option>
+                <option value="dutyStaff">{t('admin.userManager.roleOptionDutyStaff')}</option>
+                <option value="payroll">{t('admin.userManager.roleOptionPayroll')}</option>
+                <option value="hr">{t('admin.userManager.roleOptionHr')}</option>
+                <option value="developer">{t('admin.userManager.roleOptionDeveloper')}</option>
+                <option value="finance">{t('admin.userManager.roleOptionFinance')}</option>
               </select>
               <select value={department} onChange={(e) => setDepartment(e.target.value)} className="input">
                 {departmentOptions.map((d) => (
@@ -242,25 +239,27 @@ export default function UserManager() {
             disabled={busy}
             className="sm:col-span-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-60"
           >
-            {busy ? 'Creating…' : 'Create Account'}
+            {busy ? t('admin.userManager.creatingEllipsis') : t('admin.userManager.createAccountButton')}
           </button>
         </form>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <h3 className="text-sm font-semibold text-slate-800 mb-3">
-          {isBranchManagerRole ? 'Your Branch — Operation Staff' : 'Team Members'} ({visibleUsers.length})
+          {isBranchManagerRole
+            ? t('admin.userManager.yourBranchHeading', { count: visibleUsers.length })
+            : t('admin.userManager.teamMembersHeading', { count: visibleUsers.length })}
         </h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
-                <th className="py-2 pr-4 font-medium">Name</th>
-                <th className="py-2 pr-4 font-medium">Email</th>
-                <th className="py-2 pr-4 font-medium">Role</th>
-                <th className="py-2 pr-4 font-medium">Department</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 font-medium text-right">Actions</th>
+                <th className="py-2 pr-4 font-medium">{t('admin.userManager.colName')}</th>
+                <th className="py-2 pr-4 font-medium">{t('admin.userManager.colEmail')}</th>
+                <th className="py-2 pr-4 font-medium">{t('admin.userManager.colRole')}</th>
+                <th className="py-2 pr-4 font-medium">{t('admin.userManager.colDepartment')}</th>
+                <th className="py-2 pr-4 font-medium">{t('admin.userManager.colStatus')}</th>
+                <th className="py-2 font-medium text-right">{t('admin.userManager.colActions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -270,23 +269,23 @@ export default function UserManager() {
                   <td className="py-2 pr-4 text-slate-500">{u.email}</td>
                   <td className="py-2 pr-4">
                     {isBranchManagerRole ? (
-                      <span className="text-xs text-slate-600">{roleLabel(u.role)}</span>
+                      <span className="text-xs text-slate-600">{roleLabel(t, u.role)}</span>
                     ) : (
                       <select
                         value={u.role}
                         onChange={(e) => handleRoleChange(u.uid, u.name, u.role, e.target.value as Role)}
                         className="text-xs rounded border border-slate-200 px-1.5 py-1"
                       >
-                        <option value="branchManager">Branch Manager</option>
-                        <option value="admin">HQ Admin</option>
-                        <option value="ceo">CEO</option>
-                        <option value="director">Director</option>
-                        <option value="tenderController">Tender Controller</option>
-                        <option value="dutyStaff">Operation Staff</option>
-                        <option value="payroll">Payroll</option>
-                        <option value="hr">HR</option>
-                        <option value="developer">Developer</option>
-                        <option value="finance">Finance</option>
+                        <option value="branchManager">{t('admin.roles.branchManager')}</option>
+                        <option value="admin">{t('admin.roles.hqAdmin')}</option>
+                        <option value="ceo">{t('admin.roles.ceo')}</option>
+                        <option value="director">{t('admin.roles.director')}</option>
+                        <option value="tenderController">{t('admin.roles.tenderController')}</option>
+                        <option value="dutyStaff">{t('admin.roles.operationStaff')}</option>
+                        <option value="payroll">{t('admin.roles.payroll')}</option>
+                        <option value="hr">{t('admin.roles.hr')}</option>
+                        <option value="developer">{t('admin.roles.developer')}</option>
+                        <option value="finance">{t('admin.roles.finance')}</option>
                       </select>
                     )}
                   </td>
@@ -309,9 +308,9 @@ export default function UserManager() {
                   </td>
                   <td className="py-2 pr-4">
                     {u.active === false ? (
-                      <span className="text-xs text-rose-500">Deactivated</span>
+                      <span className="text-xs text-rose-500">{t('admin.userManager.statusDeactivated')}</span>
                     ) : (
-                      <span className="text-xs text-emerald-600">Active</span>
+                      <span className="text-xs text-emerald-600">{t('admin.userManager.statusActive')}</span>
                     )}
                   </td>
                   <td className="py-2 text-right whitespace-nowrap">
@@ -321,7 +320,7 @@ export default function UserManager() {
                           onClick={() => deactivateUser(u.uid)}
                           className="text-xs text-slate-500 hover:text-amber-600"
                         >
-                          Deactivate
+                          {t('admin.userManager.deactivateAction')}
                         </button>
                       )}
                       <button
@@ -329,7 +328,7 @@ export default function UserManager() {
                         disabled={removingUid === u.uid}
                         className="text-xs text-slate-500 hover:text-rose-600 disabled:opacity-50"
                       >
-                        {removingUid === u.uid ? 'Removing…' : 'Remove'}
+                        {removingUid === u.uid ? t('admin.userManager.removingEllipsis') : t('admin.userManager.removeAction')}
                       </button>
                     </div>
                   </td>
@@ -339,12 +338,10 @@ export default function UserManager() {
           </table>
         </div>
         <p className="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-100">
-          <span className="font-medium text-slate-500">Deactivate</span> blocks CRM access instantly but keeps their
-          record (useful if they're just on leave). <span className="font-medium text-slate-500">Remove</span> deletes
-          their CRM profile entirely — they'll vanish from staff/owner lists, though their past tenders stay put with
-          their name attached. Neither one deletes their actual email/password sign-in — this app runs on Firebase's
-          free plan without the extra setup needed to do that automatically, so to fully revoke a former staff
-          member's login, delete their account manually in Firebase Console → Authentication → Users.
+          <span className="font-medium text-slate-500">{t('admin.userManager.deactivateAction')}</span>{' '}
+          {t('admin.userManager.footerNoteDeactivateRest')}{' '}
+          <span className="font-medium text-slate-500">{t('admin.userManager.removeAction')}</span>{' '}
+          {t('admin.userManager.footerNoteRemoveRest')}
         </p>
       </div>
     </div>

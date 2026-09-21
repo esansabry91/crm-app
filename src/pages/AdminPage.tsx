@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import clsx from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import BranchBrandManager from '../components/admin/BranchBrandManager';
 import UserManager from '../components/admin/UserManager';
@@ -9,7 +10,15 @@ import TestingDataTool from '../components/admin/TestingDataTool';
 const ALL_TABS = ['Team', 'Branches & Brands', 'Data Repair', 'Testing Data'] as const;
 type Tab = (typeof ALL_TABS)[number];
 
+const TAB_LABEL_KEYS: Record<Tab, string> = {
+  'Team': 'admin.tabs.team',
+  'Branches & Brands': 'admin.tabs.branchesAndBrands',
+  'Data Repair': 'admin.tabs.dataRepair',
+  'Testing Data': 'admin.tabs.testingData',
+};
+
 export default function AdminPage() {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   // Testing Data is deliberately restricted to the 'developer' role only — not even a real HQ
   // Admin account gets it (see isDeveloper() in firestore.rules, which backs this up server-side
@@ -26,28 +35,28 @@ export default function AdminPage() {
     ? ['Team']
     : isDeveloper
       ? [...ALL_TABS]
-      : ALL_TABS.filter((t) => t !== 'Testing Data');
+      : ALL_TABS.filter((tabOption) => tabOption !== 'Testing Data');
 
   const [tab, setTab] = useState<Tab>('Team');
 
   return (
     <div className="h-full overflow-y-auto">
       <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
-        <h1 className="text-lg font-semibold text-slate-900">Admin Settings</h1>
+        <h1 className="text-lg font-semibold text-slate-900">{t('admin.title')}</h1>
         <p className="text-sm text-slate-500 mb-4">
-          {isBranchManagerRole ? 'Manage your branch\'s Operation Staff.' : 'Manage your team, branches and brands.'}
+          {isBranchManagerRole ? t('admin.subtitleBranchManager') : t('admin.subtitleDefault')}
         </p>
         <div className="flex gap-1">
-          {TABS.map((t) => (
+          {TABS.map((tabOption) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              key={tabOption}
+              onClick={() => setTab(tabOption)}
               className={clsx(
                 'px-3 py-1.5 text-sm font-medium rounded-lg transition',
-                tab === t ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-100'
+                tab === tabOption ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-100'
               )}
             >
-              {t}
+              {t(TAB_LABEL_KEYS[tabOption])}
             </button>
           ))}
         </div>
