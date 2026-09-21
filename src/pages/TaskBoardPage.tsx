@@ -53,7 +53,7 @@ function priorityLabel(priority: TaskPriority, t: TFunction): string {
 export default function TaskBoardPage() {
   const { t } = useTranslation();
   const { profile } = useAuth();
-  const { tasks, loading, error: loadError } = useTasks();
+  const { tasks, loading, error: loadError } = useTasks(profile);
   const { users } = useUsers();
   const { branches } = useBranches();
 

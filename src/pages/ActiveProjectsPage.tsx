@@ -221,7 +221,7 @@ export default function ActiveProjectsPage() {
   // further by the branch dropdown) so switching that dropdown never tears down and re-opens
   // history subscriptions — see useTenderHistory's own doc comment on why this is per-tender
   // subscriptions rather than one big collectionGroup query.
-  const { entries: wonHistoryEntries } = useTenderHistory(wonTenders);
+  const { entries: wonHistoryEntries } = useTenderHistory(wonTenders, profile);
   const bridgeBars = useMemo(
     () =>
       currentBridgePeriod

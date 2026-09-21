@@ -47,7 +47,7 @@ export default function AnalysisPage() {
   const { tenders, loading } = useTenders(profile);
   // Scoped to exactly the tenders this viewer can already see — see useTenderHistory's own doc
   // comment for why this reads per-tender rather than a single collectionGroup('history') query.
-  const { entries, error: historyError } = useTenderHistory(tenders);
+  const { entries, error: historyError } = useTenderHistory(tenders, profile);
   const { brands } = useBrands();
   const { branches } = useBranches();
 
