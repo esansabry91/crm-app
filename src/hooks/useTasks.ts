@@ -3,6 +3,10 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { StaffTask } from '../types';
 
+// How long to wait before re-establishing a listener that failed with permission-denied — see
+// the retry doc comment inside the effect below for why this is safe to do unconditionally.
+const RETRY_DELAY_MS = 2000;
+
 /**
  * Subscribes to the whole `tasks` collection, unfiltered — matches this codebase's established
  * pattern of skipping composite indexes in favor of a plain collection listener plus client-side
@@ -20,10 +24,18 @@ export function useTasks() {
   // "no tasks" apart from "the read was silently denied and nobody knows why the board looks
   // empty" — see the doc comment on the banner in TaskBoardPage.tsx for the incident this covers.
   const [error, setError] = useState<string | null>(null);
+  // Bumped to force the effect below to tear down and re-create the listener after a failure —
+  // see the retry doc comment inside the effect for why.
+  const [retryTick, setRetryTick] = useState(0);
+
   useEffect(() => {
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
     const unsub = onSnapshot(
       collection(db, 'tasks'),
       (snap) => {
+        if (cancelled) return;
         // progressUpdates defaults to [] for any task assigned before that field existed (it
         // was added after the first Task Board release) — Firestore simply omits a field that
         // was never written, so an older doc comes back with it `undefined` at runtime despite
@@ -40,12 +52,33 @@ export function useTasks() {
         setLoading(false);
       },
       (err) => {
+        if (cancelled) return;
         console.error('useTasks subscription error', err);
         setError(err.code ? `${err.code}: ${err.message}` : err.message || String(err));
         setLoading(false);
+        // Retry rather than leaving the board permanently blank: by the time this hook is even
+        // mounted, ProtectedRoute has already confirmed this account's own profile (role,
+        // department, active) is valid and readable — so a permission-denied here is virtually
+        // never a REAL access problem. In practice it's a listener that got established in the
+        // brief window right around a hard page refresh's auth-restoration, which Firestore's SDK
+        // treats as a terminal failure and never retries on its own even once the exact same auth
+        // context that every other query on the page succeeds with has settled in. This was the
+        // root cause of Task Board (and Pipeline Analysis's trend/bridge charts, see
+        // useTenderHistory.ts) staying blank after a refresh until the user manually signed out
+        // and back in — tearing down and re-subscribing after a short delay self-heals it instead.
+        retryTimer = setTimeout(() => {
+          if (!cancelled) setRetryTick((n) => n + 1);
+        }, RETRY_DELAY_MS);
       }
     );
-    return unsub;
-  }, []);
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      unsub();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retryTick]);
+
   return { tasks, loading, error };
 }

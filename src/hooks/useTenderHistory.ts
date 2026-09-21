@@ -3,6 +3,11 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { Tender, TenderHistoryEntry } from '../types';
 
+// How long to wait before re-establishing a per-tender listener that failed with
+// permission-denied — see the retry doc comment inside the effect below for why this is safe to
+// do unconditionally, and useTasks.ts for the sibling case this mirrors.
+const RETRY_DELAY_MS = 2000;
+
 /**
  * Subscribes to the change-history log for exactly the tenders the caller can already see — the
  * same `tenders` array useTenders() returns — via one onSnapshot per tender's own
@@ -36,6 +41,10 @@ export function useTenderHistory(tenders: Tender[]) {
   const unsubsRef = useRef<Record<string, () => void>>({});
   const seenRef = useRef<Set<string>>(new Set());
   const errorsRef = useRef<Record<string, string>>({});
+  const retryTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Bumped to force the effect below to notice a tender whose listener was torn down after a
+  // failure and re-create it — see the retry doc comment below for why.
+  const [retryTick, setRetryTick] = useState(0);
 
   // Stable key so the effect below only re-runs when the SET of tender ids actually changes,
   // not on every re-render of the (new-array-each-time) tenders prop.
@@ -45,7 +54,8 @@ export function useTenderHistory(tenders: Tender[]) {
     const ids = idsKey ? idsKey.split(',') : [];
     const currentIds = new Set(ids);
 
-    // Tear down listeners for tenders no longer in scope (filtered out, deleted, etc.).
+    // Tear down listeners (and any pending retry) for tenders no longer in scope (filtered out,
+    // deleted, etc.).
     for (const id of Object.keys(unsubsRef.current)) {
       if (!currentIds.has(id)) {
         unsubsRef.current[id]();
@@ -53,6 +63,10 @@ export function useTenderHistory(tenders: Tender[]) {
         seenRef.current.delete(id);
         delete errorsRef.current[id];
         setError(Object.values(errorsRef.current)[0] || null);
+        if (retryTimersRef.current[id]) {
+          clearTimeout(retryTimersRef.current[id]);
+          delete retryTimersRef.current[id];
+        }
         setEntriesByTender((prev) => {
           if (!(id in prev)) return prev;
           const next = { ...prev };
@@ -62,7 +76,8 @@ export function useTenderHistory(tenders: Tender[]) {
       }
     }
 
-    // Start listeners for newly-visible tenders.
+    // Start listeners for newly-visible tenders (including ones a prior failure just tore down —
+    // see the retry doc comment below).
     for (const id of ids) {
       if (unsubsRef.current[id]) continue;
       unsubsRef.current[id] = onSnapshot(
@@ -83,19 +98,39 @@ export function useTenderHistory(tenders: Tender[]) {
           setError(Object.values(errorsRef.current)[0] || null);
           seenRef.current.add(id);
           if (seenRef.current.size >= currentIds.size) setLoading(false);
+          // Tear down and retry rather than leaving this tender's history permanently missing:
+          // by the time this hook is even mounted, ProtectedRoute has already confirmed this
+          // account's own profile (role, department, active) is valid and readable, and
+          // useTenders() has already successfully returned this exact tender — so a
+          // permission-denied here is virtually never a REAL access problem. In practice it's a
+          // listener that got established in the brief window right around a hard page refresh's
+          // auth-restoration, which Firestore's SDK treats as a terminal failure and never
+          // retries on its own even once the exact same auth context every other query on the
+          // page succeeds with has settled in. This was the root cause of the Pipeline Analysis
+          // trend/bridge charts (and Task Board, see useTasks.ts) staying blank after a refresh
+          // until the user manually signed out and back in.
+          unsubsRef.current[id]?.();
+          delete unsubsRef.current[id];
+          if (retryTimersRef.current[id]) clearTimeout(retryTimersRef.current[id]);
+          retryTimersRef.current[id] = setTimeout(() => {
+            delete retryTimersRef.current[id];
+            setRetryTick((n) => n + 1);
+          }, RETRY_DELAY_MS);
         }
       );
     }
 
     if (ids.length === 0) setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey]);
+  }, [idsKey, retryTick]);
 
-  // Tear every listener down on unmount.
+  // Tear every listener (and pending retry) down on unmount.
   useEffect(() => {
     return () => {
       Object.values(unsubsRef.current).forEach((unsub) => unsub());
       unsubsRef.current = {};
+      Object.values(retryTimersRef.current).forEach((timer) => clearTimeout(timer));
+      retryTimersRef.current = {};
     };
   }, []);
 
