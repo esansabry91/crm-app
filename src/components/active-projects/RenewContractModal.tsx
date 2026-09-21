@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Role, Tender } from '../../types';
 import { renewContract } from '../../services/tenders';
 import { formatDate, formatRM } from '../../utils/format';
@@ -20,6 +21,7 @@ interface Props {
  * it (owner, admin, or the Branch Manager currently running this project's activeBranch).
  */
 export default function RenewContractModal({ open, onClose, tender, actor }: Props) {
+  const { t } = useTranslation();
   const [contractEnd, setContractEnd] = useState('');
   const [tenderValue, setTenderValue] = useState('');
   const [saving, setSaving] = useState(false);
@@ -39,18 +41,16 @@ export default function RenewContractModal({ open, onClose, tender, actor }: Pro
     setError(null);
 
     if (!contractEnd) {
-      setError('Enter the new Contract End date.');
+      setError(t('renewContract.errorEnterEndDate'));
       return;
     }
     if (contractEnd <= tender.contractEnd) {
-      setError(
-        `New Contract End should be after the current end date (${formatDate(tender.contractEnd)}) — this renews the contract, it doesn't shorten it.`
-      );
+      setError(t('renewContract.errorEndDateBeforeCurrent', { date: formatDate(tender.contractEnd) }));
       return;
     }
     const valueNum = Number(tenderValue);
     if (tenderValue.trim() === '' || !Number.isFinite(valueNum) || valueNum < 0) {
-      setError('Enter a valid Tender Value.');
+      setError(t('renewContract.errorInvalidValue'));
       return;
     }
 
@@ -59,7 +59,7 @@ export default function RenewContractModal({ open, onClose, tender, actor }: Pro
       await renewContract(tender, { contractEnd, tenderValue: valueNum }, actor);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not renew this contract. Please try again.');
+      setError(err instanceof Error ? err.message : t('renewContract.errorGenericRenew'));
     } finally {
       setSaving(false);
     }
@@ -70,7 +70,7 @@ export default function RenewContractModal({ open, onClose, tender, actor }: Pro
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Renew Contract</h2>
+            <h2 className="text-base font-semibold text-slate-900">{t('renewContract.title')}</h2>
             <p className="text-xs text-slate-400 mt-0.5">{tender.clientName}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">
@@ -79,17 +79,13 @@ export default function RenewContractModal({ open, onClose, tender, actor }: Pro
         </div>
 
         <form onSubmit={handleSave} className="px-6 py-5 space-y-4">
-          <p className="text-xs text-slate-500">
-            For a contract that's continuing straight through with no real break in work — extend
-            its end date and, if the rate changed, its value. This is the same tender, not a new
-            deal: it keeps its site, its guards, and its place in Past Projects history untouched.
-          </p>
+          <p className="text-xs text-slate-500">{t('renewContract.intro')}</p>
 
-          <Field label="Current Contract End">
+          <Field label={t('renewContract.currentContractEnd')}>
             <p className="text-sm text-slate-600">{formatDate(tender.contractEnd)}</p>
           </Field>
 
-          <Field label="New Contract End">
+          <Field label={t('renewContract.newContractEnd')}>
             <input
               type="date"
               value={contractEnd}
@@ -98,11 +94,11 @@ export default function RenewContractModal({ open, onClose, tender, actor }: Pro
             />
           </Field>
 
-          <Field label="Current Tender Value">
+          <Field label={t('renewContract.currentTenderValue')}>
             <p className="text-sm text-slate-600">{formatRM(tender.tenderValue)}</p>
           </Field>
 
-          <Field label="New Tender Value (RM)">
+          <Field label={t('renewContract.newTenderValue')}>
             <input
               type="number"
               min={0}
@@ -112,10 +108,7 @@ export default function RenewContractModal({ open, onClose, tender, actor }: Pro
               className="input"
               placeholder="0.00"
             />
-            <span className="block text-xs text-slate-400 mt-1">
-              Leave as-is if the rate isn't changing. Changing it logs a value-change entry in
-              this tender's history, same as any other correction.
-            </span>
+            <span className="block text-xs text-slate-400 mt-1">{t('renewContract.valueHint')}</span>
           </Field>
 
           {error && <p className="text-sm text-rose-600">{error}</p>}
@@ -126,14 +119,14 @@ export default function RenewContractModal({ open, onClose, tender, actor }: Pro
               onClick={onClose}
               className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg"
             >
-              Cancel
+              {t('renewContract.cancel')}
             </button>
             <button
               type="submit"
               disabled={saving}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-60"
             >
-              {saving ? 'Renewing…' : 'Renew Contract'}
+              {saving ? t('renewContract.renewing') : t('renewContract.renew')}
             </button>
           </div>
         </form>

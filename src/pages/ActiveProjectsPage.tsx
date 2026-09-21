@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useLiveGuardCountsByTender, useWonTenders } from '../hooks/useActiveProjects';
 import { useBranches, useBrands } from '../hooks/useBranches';
@@ -40,11 +41,6 @@ const ENDING_SOON_DAYS = 60;
 // (30 days) at a glance, without having to open the list and start counting badges.
 const ENDING_VERY_SOON_DAYS = 30;
 
-const ACTIVE_RACE_METRICS = [
-  { value: 'value' as ActiveProjectRaceMetric, label: 'Value' },
-  { value: 'guards' as ActiveProjectRaceMetric, label: 'Guards deployed' },
-];
-
 /** Whole days from today to an ISO contract-end date (negative once it's passed). */
 function daysUntil(iso: string | undefined): number | null {
   if (!iso) return null;
@@ -56,9 +52,10 @@ function daysUntil(iso: string | undefined): number | null {
 }
 
 function ContractStatusBadge({ contractEnd }: { contractEnd: string }) {
+  const { t } = useTranslation();
   const days = daysUntil(contractEnd);
   if (days === null) {
-    return <span className="text-xs text-slate-400">No end date</span>;
+    return <span className="text-xs text-slate-400">{t('activeProjects.noEndDate')}</span>;
   }
   if (days < 0) {
     return (
@@ -66,7 +63,7 @@ function ContractStatusBadge({ contractEnd }: { contractEnd: string }) {
         className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
         style={{ backgroundColor: `${VIZ.status.critical}1a`, color: VIZ.status.critical }}
       >
-        Contract ended
+        {t('activeProjects.contractEndedBadge')}
       </span>
     );
   }
@@ -76,18 +73,19 @@ function ContractStatusBadge({ contractEnd }: { contractEnd: string }) {
         className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
         style={{ backgroundColor: `${VIZ.status.warning}26`, color: '#9a6400' }}
       >
-        Ending in {days}d
+        {t('activeProjects.endingInDays', { days })}
       </span>
     );
   }
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-500">
-      Active
+      {t('activeProjects.active')}
     </span>
   );
 }
 
 export default function ActiveProjectsPage() {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const { wonTenders: rawWonTenders, loading, seesAllBranches } = useWonTenders(profile);
   const isBranchManager = profile?.role === 'branchManager';
@@ -100,7 +98,7 @@ export default function ActiveProjectsPage() {
   // Computed from rawWonTenders (not the liveCount-overlaid `wonTenders` below) to avoid a
   // circular dependency on liveGuardCounts itself.
   const ownedTenderIds = useMemo(
-    () => rawWonTenders.filter((t) => !t.closedOut && t.activeBranch === profile?.department).map((t) => t.id),
+    () => rawWonTenders.filter((tender) => !tender.closedOut && tender.activeBranch === profile?.department).map((tender) => tender.id),
     [rawWonTenders, profile?.department]
   );
   // Overlays each tender's guardsDeployed with the Duty Roster site's own live active-guard
@@ -112,9 +110,9 @@ export default function ActiveProjectsPage() {
   const liveGuardCounts = useLiveGuardCountsByTender(profile, seesAllBranches, ownedTenderIds);
   const wonTenders = useMemo(
     () =>
-      rawWonTenders.map((t) => {
-        const liveCount = liveGuardCounts.get(t.id);
-        return liveCount === undefined ? t : { ...t, guardsDeployed: liveCount };
+      rawWonTenders.map((tender) => {
+        const liveCount = liveGuardCounts.get(tender.id);
+        return liveCount === undefined ? tender : { ...tender, guardsDeployed: liveCount };
       }),
     [rawWonTenders, liveGuardCounts]
   );
@@ -124,7 +122,7 @@ export default function ActiveProjectsPage() {
   // deliberately excluded here rather than mixed into "my branch's active projects"; they only
   // ever appear in the separate pendingIncoming list below, until accepted.
   const projects = useMemo(
-    () => wonTenders.filter((t) => !t.closedOut && (seesAllBranches || t.activeBranch === profile?.department)),
+    () => wonTenders.filter((tender) => !tender.closedOut && (seesAllBranches || tender.activeBranch === profile?.department)),
     [wonTenders, seesAllBranches, profile?.department]
   );
   // Won tenders with a reassignment pending TO this Branch Manager's own branch, awaiting their
@@ -136,7 +134,7 @@ export default function ActiveProjectsPage() {
     () =>
       isBranchManager
         ? wonTenders.filter(
-            (t) => !t.closedOut && t.pendingReassignment && t.pendingReassignment.toBranch === profile?.department
+            (tender) => !tender.closedOut && tender.pendingReassignment && tender.pendingReassignment.toBranch === profile?.department
           )
         : [],
     [wonTenders, isBranchManager, profile?.department]
@@ -164,24 +162,35 @@ export default function ActiveProjectsPage() {
   const isAdmin = isAdminRole(profile?.role);
   const branchNames = useMemo(() => branches.map((b) => b.name), [branches]);
 
+  // The "Value" / "Guards deployed" toggle for the Active Projects Race chart below — kept as
+  // its own translated option list (rather than RaceBarChart's built-in won/submitted default)
+  // since this race ranks by a different pair of metrics. See RaceBarChart's metricOptions prop.
+  const activeRaceMetricOptions = useMemo(
+    () => [
+      { value: 'value' as ActiveProjectRaceMetric, label: t('activeProjects.raceMetricValue') },
+      { value: 'guards' as ActiveProjectRaceMetric, label: t('activeProjects.raceMetricGuards') },
+    ],
+    [t]
+  );
+
   // One-time-per-tender opportunistic backfill for Won tenders that predate Active Projects and
   // so are missing `activeBranch`. Restricted to admins: Firestore rules only let an admin update
   // a tender they don't personally own, so a non-admin HQ viewer running this against someone
   // else's tender would just hit permission-denied.
   useEffect(() => {
     if (!isAdmin) return;
-    projects.forEach((t) => {
-      if (!t.activeBranch) backfillActiveBranch(t).catch(() => {});
+    projects.forEach((tender) => {
+      if (!tender.activeBranch) backfillActiveBranch(tender).catch(() => {});
     });
   }, [projects, isAdmin]);
 
   const visible = useMemo(() => {
     let rows = projects;
     if (seesAllBranches && branchFilter !== 'all') {
-      rows = rows.filter((t) => (t.activeBranch || t.department) === branchFilter);
+      rows = rows.filter((tender) => (tender.activeBranch || tender.department) === branchFilter);
     }
     if (brandFilter !== 'all') {
-      rows = rows.filter((t) => t.brandId === brandFilter);
+      rows = rows.filter((tender) => tender.brandId === brandFilter);
     }
     return rows;
   }, [projects, seesAllBranches, branchFilter, brandFilter]);
@@ -193,12 +202,12 @@ export default function ActiveProjectsPage() {
   // `projects` above), not the raw merged list — a tender only pending reassignment TO this
   // branch isn't this branch's revenue yet and shouldn't show up in its bridge.
   const myBranchWonTenders = useMemo(
-    () => (seesAllBranches ? wonTenders : wonTenders.filter((t) => t.activeBranch === profile?.department)),
+    () => (seesAllBranches ? wonTenders : wonTenders.filter((tender) => tender.activeBranch === profile?.department)),
     [wonTenders, seesAllBranches, profile?.department]
   );
   const bridgeSource = useMemo(() => {
     if (!seesAllBranches || branchFilter === 'all') return myBranchWonTenders;
-    return myBranchWonTenders.filter((t) => (t.activeBranch || t.department) === branchFilter);
+    return myBranchWonTenders.filter((tender) => (tender.activeBranch || tender.department) === branchFilter);
   }, [myBranchWonTenders, seesAllBranches, branchFilter]);
 
   const bridgePeriods = useMemo(
@@ -234,8 +243,8 @@ export default function ActiveProjectsPage() {
   // counts themselves are computed from `visible` directly, not this.
   const reminderFiltered = useMemo(() => {
     if (reminderFilter === 'none') return visible;
-    return visible.filter((t) => {
-      const d = daysUntil(t.contractEnd);
+    return visible.filter((tender) => {
+      const d = daysUntil(tender.contractEnd);
       if (d === null) return false;
       if (reminderFilter === 'contractEnded') return d < 0;
       if (reminderFilter === 'endingVerySoon') return d >= 0 && d <= ENDING_VERY_SOON_DAYS;
@@ -255,23 +264,23 @@ export default function ActiveProjectsPage() {
     [reminderFiltered]
   );
 
-  const totalValue = visible.reduce((sum, t) => sum + (t.tenderValue || 0), 0);
-  const endingSoonCount = visible.filter((t) => {
-    const d = daysUntil(t.contractEnd);
+  const totalValue = visible.reduce((sum, tender) => sum + (tender.tenderValue || 0), 0);
+  const endingSoonCount = visible.filter((tender) => {
+    const d = daysUntil(tender.contractEnd);
     return d !== null && d >= 0 && d <= ENDING_SOON_DAYS;
   }).length;
   // Subset of endingSoonCount above (0-30 days is inside 0-60 days) — deliberately excludes
   // already-passed contracts the same way endingSoonCount does, since those are their own
   // "Contract Ended" tile below, not a more-urgent flavor of "ending soon".
-  const endingVerySoonCount = visible.filter((t) => {
-    const d = daysUntil(t.contractEnd);
+  const endingVerySoonCount = visible.filter((tender) => {
+    const d = daysUntil(tender.contractEnd);
     return d !== null && d >= 0 && d <= ENDING_VERY_SOON_DAYS;
   }).length;
-  const endedCount = visible.filter((t) => {
-    const d = daysUntil(t.contractEnd);
+  const endedCount = visible.filter((tender) => {
+    const d = daysUntil(tender.contractEnd);
     return d !== null && d < 0;
   }).length;
-  const totalGuards = visible.reduce((sum, t) => sum + (t.guardsDeployed || 0), 0);
+  const totalGuards = visible.reduce((sum, tender) => sum + (tender.guardsDeployed || 0), 0);
 
   // "Estimated monthly collection" tiles: each visible project's tenderValue spread evenly over
   // its own contract length, then prorated by how many of that year's 12 months the contract
@@ -292,7 +301,7 @@ export default function ActiveProjectsPage() {
   const brandScopeLabel = !seesAllBranches
     ? profile?.department || ''
     : branchFilter === 'all'
-      ? 'all branches'
+      ? t('activeProjects.allBranchesScope')
       : branchFilter;
 
   // Sets the reminder filter AND scrolls the (possibly far-below-the-fold) project table into
@@ -303,64 +312,49 @@ export default function ActiveProjectsPage() {
     document.getElementById('activeProjectsList')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const handleBranchChange = (t: Tender, newBranch: string) => {
-    const current = t.activeBranch;
+  const handleBranchChange = (tender: Tender, newBranch: string) => {
+    const current = tender.activeBranch;
     if (newBranch === current) return;
     if (!current) {
       // First-ever assignment — uncontested (no receiving manager needs to accept), but a
       // Duty Roster site can already exist for this project (see assignFirstActiveBranch()'s
       // doc comment) so this still needs to sweep it over, not just flip activeBranch.
-      const confirmed = window.confirm(`Assign "${t.clientName}" to ${newBranch}'s Active Projects?`);
+      const confirmed = window.confirm(t('activeProjects.confirmAssign', { client: tender.clientName, branch: newBranch }));
       if (!confirmed) return;
-      assignFirstActiveBranch(t, newBranch);
+      assignFirstActiveBranch(tender, newBranch);
       return;
     }
     const confirmed = window.confirm(
-      `Request reassigning "${t.clientName}" from ${current} to ${newBranch}?\n\n` +
-        `${current} keeps full access and its Duty Roster stays live until ${newBranch}'s Branch ` +
-        `Manager accepts the move and chooses what happens to the existing duty roster.`
+      t('activeProjects.confirmReassignRequest', { client: tender.clientName, from: current, to: newBranch })
     );
     if (!confirmed) return;
-    requestReassignBranch(t.id, newBranch, current);
+    requestReassignBranch(tender.id, newBranch, current);
   };
 
-  const handleCancelReassignment = (t: Tender) => {
-    if (!t.pendingReassignment) return;
+  const handleCancelReassignment = (tender: Tender) => {
+    if (!tender.pendingReassignment) return;
     const confirmed = window.confirm(
-      `Cancel the pending reassignment of "${t.clientName}" to ${t.pendingReassignment.toBranch}?`
+      t('activeProjects.confirmCancelReassignment', { client: tender.clientName, branch: tender.pendingReassignment.toBranch })
     );
     if (!confirmed) return;
-    cancelReassignment(t.id);
+    cancelReassignment(tender.id);
   };
 
-  const handleAcceptReassignment = (t: Tender, choice: 'bring-over' | 'new') => {
-    if (!t.pendingReassignment) return;
-    const toBranch = t.pendingReassignment.toBranch;
+  const handleAcceptReassignment = (tender: Tender, choice: 'bring-over' | 'new') => {
+    if (!tender.pendingReassignment) return;
+    const toBranch = tender.pendingReassignment.toBranch;
     const confirmed =
       choice === 'bring-over'
-        ? window.confirm(
-            `Bring over "${t.clientName}"'s existing duty roster? Its guards, schedule and ` +
-              `history all move to ${toBranch} as-is.`
-          )
-        : window.confirm(
-            `Start a brand-new duty roster for "${t.clientName}" under ${toBranch}? The existing ` +
-              `roster is archived (kept for Admin/HQ/Payroll records) but no longer used for this project.`
-          );
+        ? window.confirm(t('activeProjects.confirmBringOver', { client: tender.clientName, branch: toBranch }))
+        : window.confirm(t('activeProjects.confirmNewRoster', { client: tender.clientName, branch: toBranch }));
     if (!confirmed) return;
-    acceptReassignment(t.id, t.activeBranch || t.department || null, toBranch, choice);
+    acceptReassignment(tender.id, tender.activeBranch || tender.department || null, toBranch, choice);
   };
 
-  const handleCloseOut = (t: Tender) => {
-    const confirmed = window.confirm(
-      `Close out "${t.clientName}"?\n\n` +
-        `It will move out of Active Projects and into Past Projects, and any guards still deployed ` +
-        `here move back into the Guard Pool. Its value keeps counting in Pipeline Analysis as Won ` +
-        `revenue — this only affects the Active Projects view.\n\n` +
-        `If this contract is simply being renewed and work is continuing without a break, edit its ` +
-        `Contract End date (and value, if the rate changed) instead — closing out will release its guards.`
-    );
+  const handleCloseOut = (tender: Tender) => {
+    const confirmed = window.confirm(t('activeProjects.confirmCloseOut', { client: tender.clientName }));
     if (!confirmed) return;
-    closeOutProject(t.id);
+    closeOutProject(tender.id);
   };
 
   if (!profile) return null;
@@ -369,19 +363,19 @@ export default function ActiveProjectsPage() {
     <div className="h-full overflow-y-auto">
       <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
         <div className="flex items-center gap-2">
-          <h1 className="text-lg font-semibold text-slate-900">Active Projects</h1>
+          <h1 className="text-lg font-semibold text-slate-900">{t('activeProjects.title')}</h1>
           <HeaderCollapseToggle expanded={headerExpanded} onToggle={() => setHeaderExpanded((v) => !v)} />
         </div>
         {headerExpanded && (
           <div className="flex items-center justify-between gap-4 flex-wrap mt-2">
             <p className="text-sm text-slate-500">
               {seesAllBranches
-                ? 'Won tenders currently running, across every branch'
-                : `Won tenders currently running for ${profile.department}`}
+                ? t('activeProjects.subtitleAll')
+                : t('activeProjects.subtitleBranch', { department: profile.department })}
             </p>
             <div className="flex items-center gap-2">
               <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="input w-full sm:w-40">
-                <option value="all">All brands</option>
+                <option value="all">{t('activeProjects.allBrands')}</option>
                 {brands.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
@@ -390,7 +384,7 @@ export default function ActiveProjectsPage() {
               </select>
               {seesAllBranches && (
                 <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="input w-full sm:w-44">
-                  <option value="all">All branches</option>
+                  <option value="all">{t('activeProjects.allBranches')}</option>
                   {branchNames.map((b) => (
                     <option key={b} value={b}>
                       {b}
@@ -404,40 +398,42 @@ export default function ActiveProjectsPage() {
       </header>
 
       {loading ? (
-        <p className="px-6 py-8 text-sm text-slate-400">Loading active projects…</p>
+        <p className="px-6 py-8 text-sm text-slate-400">{t('activeProjects.loading')}</p>
       ) : (
         <div className="px-6 py-6 space-y-6 max-w-6xl">
           {pendingIncoming.length > 0 && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
               <h3 className="text-sm font-semibold text-amber-900">
                 {pendingIncoming.length === 1
-                  ? 'A project is being reassigned to your branch'
-                  : `${pendingIncoming.length} projects are being reassigned to your branch`}
+                  ? t('activeProjects.pendingSingular')
+                  : t('activeProjects.pendingPlural', { count: pendingIncoming.length })}
               </h3>
-              {pendingIncoming.map((t) => (
+              {pendingIncoming.map((tender) => (
                 <div
-                  key={t.id}
+                  key={tender.id}
                   className="flex items-center justify-between gap-4 bg-white rounded-lg border border-amber-100 px-4 py-3 flex-wrap"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-800">{t.clientName}</p>
+                    <p className="text-sm font-medium text-slate-800">{tender.clientName}</p>
                     <p className="text-xs text-slate-500">
-                      From {t.pendingReassignment?.fromBranch || 'Unassigned'} — choose what happens to its duty roster
-                      before it goes live under {profile.department}.
+                      {t('activeProjects.pendingReassignBody', {
+                        from: tender.pendingReassignment?.fromBranch || t('activeProjects.unassigned'),
+                        department: profile.department,
+                      })}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button
-                      onClick={() => handleAcceptReassignment(t, 'bring-over')}
+                      onClick={() => handleAcceptReassignment(tender, 'bring-over')}
                       className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
                     >
-                      Bring over existing roster
+                      {t('activeProjects.bringOverRoster')}
                     </button>
                     <button
-                      onClick={() => handleAcceptReassignment(t, 'new')}
+                      onClick={() => handleAcceptReassignment(tender, 'new')}
                       className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg"
                     >
-                      Start a new roster
+                      {t('activeProjects.startNewRoster')}
                     </button>
                   </div>
                 </div>
@@ -451,60 +447,64 @@ export default function ActiveProjectsPage() {
               Only widens to the full 7-across row at 2xl (1536px+), where there's room for it. */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7 gap-4">
             <StatCard
-              label="Active Project Value"
+              label={t('activeProjects.activeProjectValue')}
               value={formatRM(totalValue)}
-              sub={`${visible.length} active project${visible.length === 1 ? '' : 's'}`}
+              sub={t('activeProjects.activeProjectsCount', { count: visible.length })}
               accent={VIZ.status.good}
             />
             <StatCard
-              label={`Est. Monthly Collection (${thisYear})`}
+              label={t('activeProjects.estMonthlyCollection', { year: thisYear })}
               value={formatRM(currentYearMonthlyCollection)}
-              sub="avg/mo, prorated by months covered"
+              sub={t('activeProjects.estMonthlyCollectionSub')}
             />
             <StatCard
-              label={`Est. Monthly Collection (${thisYear + 1})`}
+              label={t('activeProjects.estMonthlyCollection', { year: thisYear + 1 })}
               value={formatRM(nextYearMonthlyCollection)}
-              sub="avg/mo, prorated by months covered"
+              sub={t('activeProjects.estMonthlyCollectionSub')}
             />
             <StatCard
-              label="Ending Soon"
+              label={t('activeProjects.endingSoon')}
               value={String(endingSoonCount)}
-              sub={`within ${ENDING_SOON_DAYS} days`}
+              sub={t('activeProjects.withinDays', { days: ENDING_SOON_DAYS })}
               accent={VIZ.status.warning}
               action={{
-                label: 'Go to list',
+                label: t('activeProjects.goToList'),
                 onClick: () => goToReminderList('endingSoon'),
                 disabled: endingSoonCount === 0,
               }}
             />
             <StatCard
-              label="Ending Very Soon"
+              label={t('activeProjects.endingVerySoon')}
               value={String(endingVerySoonCount)}
-              sub={`within ${ENDING_VERY_SOON_DAYS} days`}
+              sub={t('activeProjects.withinDays', { days: ENDING_VERY_SOON_DAYS })}
               accent={VIZ.status.critical}
               action={{
-                label: 'Go to list',
+                label: t('activeProjects.goToList'),
                 onClick: () => goToReminderList('endingVerySoon'),
                 disabled: endingVerySoonCount === 0,
               }}
             />
             <StatCard
-              label="Contract Ended"
+              label={t('activeProjects.contractEnded')}
               value={String(endedCount)}
-              sub="needs follow-up"
+              sub={t('activeProjects.needsFollowUp')}
               accent={VIZ.status.critical}
               action={{
-                label: 'Go to list',
+                label: t('activeProjects.goToList'),
                 onClick: () => goToReminderList('contractEnded'),
                 disabled: endedCount === 0,
               }}
             />
-            <StatCard label="Guards Deployed" value={String(totalGuards)} sub="across shown projects" />
+            <StatCard
+              label={t('activeProjects.guardsDeployed')}
+              value={String(totalGuards)}
+              sub={t('activeProjects.acrossShownProjects')}
+            />
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-5">
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-              <h3 className="text-sm font-semibold text-slate-800">Active Project Value Bridge</h3>
+              <h3 className="text-sm font-semibold text-slate-800">{t('activeProjects.bridgeTitle')}</h3>
               {bridgePeriods.length > 0 && (
                 <div className="flex items-center gap-3">
                   <button
@@ -512,7 +512,7 @@ export default function ActiveProjectsPage() {
                     disabled={bridgeIndex === 0}
                     className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-30"
                   >
-                    ◀ Prev
+                    {t('charts.prev')}
                   </button>
                   <span className="text-xs font-semibold text-slate-700 w-28 text-center">
                     {currentBridgePeriod?.label}
@@ -524,7 +524,7 @@ export default function ActiveProjectsPage() {
                     disabled={bridgeIndex >= bridgePeriods.length - 1}
                     className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-30"
                   >
-                    Next ▶
+                    {t('charts.next')}
                   </button>
                 </div>
               )}
@@ -541,7 +541,7 @@ export default function ActiveProjectsPage() {
                     bridgeTimeView === tv.value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  {tv.label}
+                  {t(tv.label)}
                 </button>
               ))}
             </div>
@@ -553,7 +553,7 @@ export default function ActiveProjectsPage() {
           {isAdmin && (
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <h3 className="text-sm font-semibold text-slate-800 mb-3">
-                Active Projects Race — Branch {raceMetric === 'guards' ? 'Guards Deployed' : 'Value'} Over Time
+                {raceMetric === 'guards' ? t('activeProjects.raceTitleGuards') : t('activeProjects.raceTitleValue')}
               </h3>
               <RaceBarChart
                 frames={activeRaceFrames}
@@ -562,7 +562,7 @@ export default function ActiveProjectsPage() {
                 onMetricChange={setRaceMetric}
                 onTimeViewChange={setRaceTimeView}
                 colorDomain={branchNames}
-                metricOptions={ACTIVE_RACE_METRICS}
+                metricOptions={activeRaceMetricOptions}
                 valueFormatter={raceMetric === 'guards' ? (v) => String(v) : formatRM}
               />
             </div>
@@ -573,13 +573,13 @@ export default function ActiveProjectsPage() {
           {reminderFilter !== 'none' && (
             <div className="flex items-center justify-between gap-3 bg-amber-50 text-amber-800 text-sm rounded-lg px-3 py-2">
               <span>
-                Showing only projects matching{' '}
+                {t('activeProjects.showingFilter')}{' '}
                 <span className="font-medium">
                   {reminderFilter === 'endingSoon'
-                    ? 'Ending Soon'
+                    ? t('activeProjects.endingSoon')
                     : reminderFilter === 'endingVerySoon'
-                      ? 'Ending Very Soon'
-                      : 'Contract Ended'}
+                      ? t('activeProjects.endingVerySoon')
+                      : t('activeProjects.contractEnded')}
                 </span>{' '}
                 ({sorted.length})
               </span>
@@ -587,74 +587,70 @@ export default function ActiveProjectsPage() {
                 onClick={() => setReminderFilter('none')}
                 className="font-medium underline underline-offset-2 shrink-0"
               >
-                Clear filter
+                {t('activeProjects.clearFilter')}
               </button>
             </div>
           )}
 
           {sorted.length === 0 ? (
             <p className="text-sm text-slate-400 py-8 text-center">
-              {reminderFilter === 'none' ? 'No active projects yet.' : 'No projects match this filter.'}
+              {reminderFilter === 'none' ? t('activeProjects.noProjectsYet') : t('activeProjects.noProjectsMatchFilter')}
             </p>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 text-left text-xs font-medium text-slate-500">
-                    <th className="px-4 py-3">Client</th>
-                    <th className="px-4 py-3">Brand</th>
-                    {seesAllBranches && <th className="px-4 py-3">Branch</th>}
-                    <th className="px-4 py-3">Contract Start</th>
-                    <th className="px-4 py-3">Contract End</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3 text-right">Value</th>
-                    <th className="px-4 py-3">Details</th>
+                    <th className="px-4 py-3">{t('activeProjects.table.client')}</th>
+                    <th className="px-4 py-3">{t('activeProjects.table.brand')}</th>
+                    {seesAllBranches && <th className="px-4 py-3">{t('activeProjects.table.branch')}</th>}
+                    <th className="px-4 py-3">{t('activeProjects.table.contractStart')}</th>
+                    <th className="px-4 py-3">{t('activeProjects.table.contractEnd')}</th>
+                    <th className="px-4 py-3">{t('activeProjects.table.status')}</th>
+                    <th className="px-4 py-3 text-right">{t('activeProjects.table.value')}</th>
+                    <th className="px-4 py-3">{t('activeProjects.table.details')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.map((t) => {
-                    const hasDetails = t.location || t.contactPerson || t.guardsDeployed != null || t.tenderDocNumber || t.scopeOfWork;
+                  {sorted.map((tender) => {
+                    const hasDetails = tender.location || tender.contactPerson || tender.guardsDeployed != null || tender.tenderDocNumber || tender.scopeOfWork;
                     return (
-                      <tr key={t.id} className="border-b border-slate-50 last:border-0">
+                      <tr key={tender.id} className="border-b border-slate-50 last:border-0">
                         <td className="px-4 py-3">
-                          <p className="font-medium text-slate-800">{t.clientName}</p>
-                          {(t.location || t.guardsDeployed != null) && (
+                          <p className="font-medium text-slate-800">{tender.clientName}</p>
+                          {(tender.location || tender.guardsDeployed != null) && (
                             <p className="text-xs text-slate-400 mt-0.5">
-                              {t.location && <>📍 {t.location}</>}
-                              {t.location && t.guardsDeployed != null && ' · '}
-                              {t.guardsDeployed != null && (
-                                <>
-                                  {t.guardsDeployed} guard{t.guardsDeployed === 1 ? '' : 's'}
-                                </>
-                              )}
+                              {tender.location && <>📍 {tender.location}</>}
+                              {tender.location && tender.guardsDeployed != null && ' · '}
+                              {tender.guardsDeployed != null && t('activeProjects.guardsCount', { count: tender.guardsDeployed })}
                             </p>
                           )}
                           {/* Non-privileged branch view has no Branch column at all (see
                               `seesAllBranches` below), so this is the only place the FROM branch
                               sees that a reassignment is in flight — they keep full access until
                               it's accepted (see requestReassignBranch()'s doc comment). */}
-                          {!seesAllBranches && t.pendingReassignment && (
+                          {!seesAllBranches && tender.pendingReassignment && (
                             <p className="text-[11px] font-medium text-amber-600 mt-0.5">
-                              → pending reassignment to {t.pendingReassignment.toBranch}
+                              {t('activeProjects.pendingReassignmentTo', { branch: tender.pendingReassignment.toBranch })}
                             </p>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-slate-500">{t.brandName}</td>
+                        <td className="px-4 py-3 text-slate-500">{tender.brandName}</td>
                         {seesAllBranches && (
                           <td className="px-4 py-3">
-                            {t.pendingReassignment ? (
+                            {tender.pendingReassignment ? (
                               <div className="space-y-0.5">
-                                <span className="text-slate-500">{t.activeBranch || 'Unassigned'}</span>
+                                <span className="text-slate-500">{tender.activeBranch || t('activeProjects.unassigned')}</span>
                                 <p className="text-[11px] font-medium text-amber-600">
-                                  → pending to {t.pendingReassignment.toBranch}
+                                  {t('activeProjects.pendingTo', { branch: tender.pendingReassignment.toBranch })}
                                   {isAdmin && (
                                     <>
                                       {' · '}
                                       <button
-                                        onClick={() => handleCancelReassignment(t)}
+                                        onClick={() => handleCancelReassignment(tender)}
                                         className="underline hover:text-amber-800"
                                       >
-                                        Cancel
+                                        {t('activeProjects.cancel')}
                                       </button>
                                     </>
                                   )}
@@ -662,16 +658,16 @@ export default function ActiveProjectsPage() {
                               </div>
                             ) : isAdmin ? (
                               <select
-                                value={t.activeBranch || ''}
-                                onChange={(e) => handleBranchChange(t, e.target.value)}
+                                value={tender.activeBranch || ''}
+                                onChange={(e) => handleBranchChange(tender, e.target.value)}
                                 className={
-                                  t.activeBranch
+                                  tender.activeBranch
                                     ? 'input w-36 text-xs py-1'
                                     : 'input w-36 text-xs py-1 border-amber-300 text-amber-700'
                                 }
                               >
                                 <option value="" disabled>
-                                  Select branch
+                                  {t('activeProjects.selectBranch')}
                                 </option>
                                 {branchNames.map((b) => (
                                   <option key={b} value={b}>
@@ -680,25 +676,25 @@ export default function ActiveProjectsPage() {
                                 ))}
                               </select>
                             ) : (
-                              <span className="text-slate-500">{t.activeBranch || 'Unassigned'}</span>
+                              <span className="text-slate-500">{tender.activeBranch || t('activeProjects.unassigned')}</span>
                             )}
                           </td>
                         )}
-                        <td className="px-4 py-3 text-slate-500">{formatDate(t.contractStart)}</td>
-                        <td className="px-4 py-3 text-slate-500">{formatDate(t.contractEnd)}</td>
+                        <td className="px-4 py-3 text-slate-500">{formatDate(tender.contractStart)}</td>
+                        <td className="px-4 py-3 text-slate-500">{formatDate(tender.contractEnd)}</td>
                         <td className="px-4 py-3">
-                          <ContractStatusBadge contractEnd={t.contractEnd} />
+                          <ContractStatusBadge contractEnd={tender.contractEnd} />
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-slate-800">
-                          {formatRM(t.tenderValue)}
+                          {formatRM(tender.tenderValue)}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2.5">
                             <button
-                              onClick={() => setDetailsTender(t)}
+                              onClick={() => setDetailsTender(tender)}
                               className="text-xs font-medium text-blue-600 hover:text-blue-700"
                             >
-                              {hasDetails ? 'Edit' : '+ Add'}
+                              {hasDetails ? t('activeProjects.edit') : t('activeProjects.addDetails')}
                             </button>
                             <span className="text-slate-300">·</span>
                             {/* Duty Roster auto-creates-or-selects the one site tied to this
@@ -706,10 +702,10 @@ export default function ActiveProjectsPage() {
                                 this is the only way branch users reach a project's roster now;
                                 there's no more manual "New site" for them to use instead. */}
                             <Link
-                              to={`/duty-roster?tenderId=${encodeURIComponent(t.id)}&clientName=${encodeURIComponent(t.clientName)}&branch=${encodeURIComponent(t.activeBranch || t.department)}`}
+                              to={`/duty-roster?tenderId=${encodeURIComponent(tender.id)}&clientName=${encodeURIComponent(tender.clientName)}&branch=${encodeURIComponent(tender.activeBranch || tender.department)}`}
                               className="text-xs font-medium text-blue-600 hover:text-blue-700"
                             >
-                              Duty Roster
+                              {t('activeProjects.dutyRoster')}
                             </Link>
                             <span className="text-slate-300">·</span>
                             {/* Visible on every row here because it always is one: `projects`
@@ -719,17 +715,17 @@ export default function ActiveProjectsPage() {
                                 else only their own activeBranch's — see renewContract()'s doc
                                 comment in services/tenders.ts. */}
                             <button
-                              onClick={() => setRenewingTender(t)}
+                              onClick={() => setRenewingTender(tender)}
                               className="text-xs font-medium text-blue-600 hover:text-blue-700"
                             >
-                              Renew
+                              {t('activeProjects.renew')}
                             </button>
                             <span className="text-slate-300">·</span>
                             <button
-                              onClick={() => handleCloseOut(t)}
+                              onClick={() => handleCloseOut(tender)}
                               className="text-xs font-medium text-slate-500 hover:text-rose-600"
                             >
-                              Close out
+                              {t('activeProjects.closeOut')}
                             </button>
                           </div>
                         </td>

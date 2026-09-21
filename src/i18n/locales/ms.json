@@ -288,6 +288,7 @@
     "bringOverRoster": "Bawa jadual sedia ada",
     "startNewRoster": "Mulakan jadual baharu",
     "activeProjectValue": "Nilai Projek Aktif",
+    "activeProjectsCount_one": "{{count}} projek aktif",
     "activeProjectsCount_other": "{{count}} projek aktif",
     "estMonthlyCollection": "Anggaran Kutipan Bulanan ({{year}})",
     "estMonthlyCollectionSub": "purata/bulan, dipro-rata mengikut bulan yang dilindungi",
@@ -303,6 +304,7 @@
     "raceTitleValue": "Pertandingan Projek Aktif — Nilai Cawangan Mengikut Masa",
     "showingFilter": "Menunjukkan projek yang sepadan sahaja",
     "clearFilter": "Kosongkan penapis",
+    "goToList": "Pergi ke senarai",
     "noProjectsYet": "Tiada projek aktif lagi.",
     "noProjectsMatchFilter": "Tiada projek sepadan dengan penapis ini.",
     "table": {
@@ -315,6 +317,7 @@
       "value": "Nilai",
       "details": "Butiran"
     },
+    "guardsCount_one": "{{count}} pengawal",
     "guardsCount_other": "{{count}} pengawal",
     "pendingReassignmentTo": "→ menunggu penugasan semula ke {{branch}}",
     "pendingTo": "→ menunggu ke {{branch}}",

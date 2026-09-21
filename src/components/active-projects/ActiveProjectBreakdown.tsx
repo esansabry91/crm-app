@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import type { Tender } from '../../types';
 import { formatRM } from '../../utils/format';
 
@@ -9,14 +11,14 @@ interface BreakdownRow {
   guards: number;
 }
 
-function summarize(items: Tender[], keyOf: (t: Tender) => string): BreakdownRow[] {
+function summarize(items: Tender[], keyOf: (tender: Tender) => string, unassignedLabel: string): BreakdownRow[] {
   const map = new Map<string, BreakdownRow>();
-  for (const t of items) {
-    const key = keyOf(t) || 'Unassigned';
+  for (const item of items) {
+    const key = keyOf(item) || unassignedLabel;
     const row = map.get(key) || { key, count: 0, value: 0, guards: 0 };
     row.count += 1;
-    row.value += t.tenderValue || 0;
-    row.guards += t.guardsDeployed || 0;
+    row.value += item.tenderValue || 0;
+    row.guards += item.guardsDeployed || 0;
     map.set(key, row);
   }
   return Array.from(map.values()).sort((a, b) => b.value - a.value);
@@ -27,11 +29,13 @@ function BreakdownTable({
   sub,
   firstColLabel,
   rows,
+  t,
 }: {
   title: string;
   sub: string;
   firstColLabel: string;
   rows: BreakdownRow[];
+  t: TFunction;
 }) {
   const totalCount = rows.reduce((sum, r) => sum + r.count, 0);
   const totalValue = rows.reduce((sum, r) => sum + r.value, 0);
@@ -44,16 +48,16 @@ function BreakdownTable({
         <p className="text-xs text-slate-400 mt-0.5">{sub}</p>
       </div>
       {rows.length === 0 ? (
-        <p className="text-sm text-slate-400 py-6 text-center">No active projects.</p>
+        <p className="text-sm text-slate-400 py-6 text-center">{t('activeProjects.noActiveProjects')}</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
                 <th className="px-4 py-2 font-medium">{firstColLabel}</th>
-                <th className="px-4 py-2 font-medium text-right">Active Projects</th>
-                <th className="px-4 py-2 font-medium text-right">Guards Deployed</th>
-                <th className="px-4 py-2 font-medium text-right">Total Value</th>
+                <th className="px-4 py-2 font-medium text-right">{t('activeProjects.activeProjectsColumn')}</th>
+                <th className="px-4 py-2 font-medium text-right">{t('activeProjects.guardsDeployed')}</th>
+                <th className="px-4 py-2 font-medium text-right">{t('activeProjects.totalValueColumn')}</th>
               </tr>
             </thead>
             <tbody>
@@ -70,7 +74,7 @@ function BreakdownTable({
             </tbody>
             <tfoot>
               <tr className="border-t border-slate-100 bg-slate-50/60">
-                <td className="px-4 py-2 font-medium text-slate-500">Total</td>
+                <td className="px-4 py-2 font-medium text-slate-500">{t('activeProjects.totalRow')}</td>
                 <td className="px-4 py-2 text-right tabular-nums font-medium text-slate-700">
                   {totalCount}
                 </td>
@@ -98,13 +102,16 @@ function BreakdownTable({
  * separate logic.
  */
 export function BrandBreakdown({ items, scopeLabel }: { items: Tender[]; scopeLabel: string }) {
-  const rows = useMemo(() => summarize(items, (t) => t.brandName), [items]);
+  const { t } = useTranslation();
+  const unassignedLabel = t('activeProjects.unassigned');
+  const rows = useMemo(() => summarize(items, (tender) => tender.brandName, unassignedLabel), [items, unassignedLabel]);
   return (
     <BreakdownTable
-      title="By Brand"
-      sub={`Active project value, count and guards deployed by brand — ${scopeLabel}`}
-      firstColLabel="Brand"
+      title={t('activeProjects.byBrand')}
+      sub={t('activeProjects.byBrandSub', { scope: scopeLabel })}
+      firstColLabel={t('activeProjects.brandColumn')}
       rows={rows}
+      t={t}
     />
   );
 }
@@ -117,13 +124,19 @@ export function BrandBreakdown({ items, scopeLabel }: { items: Tender[]; scopeLa
  * currently selected in the row-level filter above the detail table.
  */
 export function BranchBreakdown({ items }: { items: Tender[] }) {
-  const rows = useMemo(() => summarize(items, (t) => t.activeBranch || t.department), [items]);
+  const { t } = useTranslation();
+  const unassignedLabel = t('activeProjects.unassigned');
+  const rows = useMemo(
+    () => summarize(items, (tender) => tender.activeBranch || tender.department, unassignedLabel),
+    [items, unassignedLabel]
+  );
   return (
     <BreakdownTable
-      title="By Branch"
-      sub="Active project value, count and guards deployed across every branch"
-      firstColLabel="Branch"
+      title={t('activeProjects.byBranch')}
+      sub={t('activeProjects.byBranchSub')}
+      firstColLabel={t('activeProjects.branchColumn')}
       rows={rows}
+      t={t}
     />
   );
 }
