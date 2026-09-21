@@ -30,6 +30,7 @@ import {
 } from '../../services/tenderDocuments';
 import { useTenderSites } from '../../hooks/useTenderSites';
 import { useBranches } from '../../hooks/useBranches';
+import { useAuth } from '../../contexts/AuthContext';
 import LinkedSiteDetailsCard from './LinkedSiteDetailsCard';
 
 interface Props {
@@ -69,6 +70,7 @@ interface Props {
  */
 export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCount, actor }: Props) {
   const { t } = useTranslation();
+  const { profile } = useAuth();
   const [siteName, setSiteName] = useState('');
   const [location, setLocation] = useState('');
   const [stateName, setStateName] = useState('');
@@ -122,7 +124,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
   // Linked Sites (see useTenderSites' own doc comment) — a project with more than one worksite
   // under the same contract. Kept last since it's purely additive UI; every field above this
   // still refers only to the project's first/original site.
-  const { sites: linkedSites, loading: linkedSitesLoading } = useTenderSites(tender?.id ?? null);
+  const { sites: linkedSites, loading: linkedSitesLoading } = useTenderSites(tender?.id ?? null, profile);
   // Branch list for the "Managing Branch" picker below — same source UserManager.tsx and Duty
   // Roster's own "assign to branch" picker use, "HQ" filtered out the same way Duty Roster's
   // does (see public/duty-roster/index.html's branchOptions.filter(b => b !== "HQ")): HQ

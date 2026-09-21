@@ -54,7 +54,7 @@ export default function TaskBoardPage() {
   const { t } = useTranslation();
   const { profile } = useAuth();
   const { tasks, loading, error: loadError } = useTasks(profile);
-  const { users } = useUsers();
+  const { users } = useUsers(profile);
   const { branches } = useBranches();
 
   const isManager = profile?.role === 'branchManager';

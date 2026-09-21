@@ -10,11 +10,13 @@ import {
   runTransaction,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { shouldStampTestData } from './settings';
-import type { Invoice, InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceSiteBill, InvoiceStatus, Role, SiteBillingRate } from '../types';
+import type { Invoice, InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceSiteBill, InvoiceStatus, Role, SiteBillingRate, UserProfile } from '../types';
+import { sitesListPlan } from '../utils/firestoreAccess';
 
 function invoicesCollection() {
   return collection(db, 'invoices');
@@ -675,17 +677,33 @@ function normalizeBranchName(name: string): string {
 
 /** Builds the two lookup maps `backfillInvoiceBranches` and `diagnoseInvoiceBranches` both need:
  *  siteId -> that site's raw branch name string, and normalized branch name -> {id, name} of the
- *  matching Branch record (matching case/whitespace-insensitively; see `normalizeBranchName`). */
-async function loadSiteAndBranchLookups() {
-  const [sitesSnap, branchesSnap] = await Promise.all([
-    getDocs(collection(db, 'sites')),
-    getDocs(collection(db, 'branches')),
-  ]);
+ *  matching Branch record (matching case/whitespace-insensitively; see `normalizeBranchName`).
+ *
+ *  Sites are listed according to sitesListPlan() / firestore.rules' canReadSite() — an unfiltered
+ *  `getDocs(collection(db, 'sites'))` is denied for a Branch Manager (the read rule depends on
+ *  `branch`), even though the Revenue tab exposes this backfill to them. Admins still read every
+ *  site; everyone else reads their own branch plus unassigned sites and merges client-side. */
+async function loadSiteAndBranchLookups(profile: UserProfile) {
+  const sitesCol = collection(db, 'sites');
+  const plan = sitesListPlan(profile);
+  const siteQueries =
+    plan.mode === 'all'
+      ? [getDocs(sitesCol)]
+      : plan.mode === 'branchAndUnassigned'
+        ? [
+            getDocs(query(sitesCol, where('branch', '==', plan.department))),
+            getDocs(query(sitesCol, where('branch', '==', null))),
+          ]
+        : [];
+
+  const [siteSnaps, branchesSnap] = await Promise.all([Promise.all(siteQueries), getDocs(collection(db, 'branches'))]);
 
   const siteBranchById = new Map<string, string>();
-  sitesSnap.forEach((d) => {
-    const branch = (d.data() as { branch?: string }).branch;
-    if (branch) siteBranchById.set(d.id, branch);
+  siteSnaps.forEach((snap) => {
+    snap.forEach((d) => {
+      const branch = (d.data() as { branch?: string }).branch;
+      if (branch) siteBranchById.set(d.id, branch);
+    });
   });
   const branchByNormalizedName = new Map<string, { id: string; name: string }>();
   branchesSnap.forEach((d) => {
@@ -696,10 +714,10 @@ async function loadSiteAndBranchLookups() {
   return { siteBranchById, branchByNormalizedName };
 }
 
-export async function backfillInvoiceBranches(): Promise<BackfillBranchResult> {
+export async function backfillInvoiceBranches(profile: UserProfile): Promise<BackfillBranchResult> {
   const [invoicesSnap, { siteBranchById, branchByNormalizedName }] = await Promise.all([
     getDocs(invoicesCollection()),
-    loadSiteAndBranchLookups(),
+    loadSiteAndBranchLookups(profile),
   ]);
 
   const result: BackfillBranchResult = { total: 0, updated: 0, skippedNoSite: 0, updatedNameOnly: 0 };
@@ -750,10 +768,10 @@ export interface InvoiceBranchDiagnostic {
  * running the backfill) can be diagnosed from the Revenue tab instead of guessing blind. Doesn't
  * write anything.
  */
-export async function diagnoseInvoiceBranches(): Promise<InvoiceBranchDiagnostic[]> {
+export async function diagnoseInvoiceBranches(profile: UserProfile): Promise<InvoiceBranchDiagnostic[]> {
   const [invoicesSnap, { siteBranchById, branchByNormalizedName }] = await Promise.all([
     getDocs(invoicesCollection()),
-    loadSiteAndBranchLookups(),
+    loadSiteAndBranchLookups(profile),
   ]);
 
   const rows: InvoiceBranchDiagnostic[] = [];

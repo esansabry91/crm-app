@@ -17,15 +17,17 @@ const RETRY_DELAY_MS = 2000;
  * `where('assigneeUid', '==', profile.uid)`.
  *
  * This USED to be one unfiltered `collection(db, 'tasks')` listener for everyone, relying on
- * firestore.rules to silently drop whatever a given viewer isn't allowed to see (the same
- * pattern useGuards/useUsers use, where it's fine — see those hooks). It doesn't work here: the
- * /tasks read rule for a non-admin depends on `resource.data.department`/`assigneeUid`, and
- * Cloud Firestore denies a LIST/listen request outright — not per-document — whenever a rule
- * depends on resource.data that the query itself doesn't filter on, because it can't prove no
- * result would violate the rule. An admin's `isAdmin()` branch is unconditionally true regardless
- * of resource.data, so Firestore CAN prove that one is always safe — which is why this looked
- * fine in testing (as an admin) but came back permission-denied for every Branch Manager/
- * Operation Staff account, 100% of the time, refresh or not.
+ * firestore.rules to silently drop whatever a given viewer isn't allowed to see. That pattern is
+ * fine for useGuards — `/guards`' read rule is `isActiveUser() && !isPayroll()`, which does not
+ * depend on resource.data, so Firestore can prove an unfiltered LIST is always safe. It is not
+ * fine here: the /tasks read rule for a non-admin depends on `resource.data.department` /
+ * `assigneeUid`, and Cloud Firestore denies a LIST/listen request outright — not per-document —
+ * whenever a rule depends on resource.data the query itself doesn't filter on. An admin's
+ * `isAdmin()` branch is unconditionally true regardless of resource.data, so Firestore CAN prove
+ * that one is always safe — which is why this looked fine in testing (as an admin) but came
+ * back permission-denied for every Branch Manager / Operation Staff account. `/users` has the
+ * same shape (a Branch Manager's read depends on role + department) — see useUsers() /
+ * usersListPlan() for the matching where() clauses.
  */
 export function useTasks(profile: UserProfile | null) {
   const [tasks, setTasks] = useState<StaffTask[]>([]);
