@@ -17,9 +17,10 @@ const RETRY_DELAY_MS = 2000;
  * `where('assigneeUid', '==', profile.uid)`.
  *
  * This USED to be one unfiltered `collection(db, 'tasks')` listener for everyone, relying on
- * firestore.rules to silently drop whatever a given viewer isn't allowed to see (the same
- * pattern useGuards/useUsers use, where it's fine — see those hooks). It doesn't work here: the
- * /tasks read rule for a non-admin depends on `resource.data.department`/`assigneeUid`, and
+ * firestore.rules to silently drop whatever a given viewer isn't allowed to see. That pattern
+ * is fine for useGuards (/guards reads don't depend on resource.data) but not here — and not
+ * for useUsers either, which now takes a profile for the same reason. The /tasks read rule for
+ * a non-admin depends on `resource.data.department`/`assigneeUid`, and
  * Cloud Firestore denies a LIST/listen request outright — not per-document — whenever a rule
  * depends on resource.data that the query itself doesn't filter on, because it can't prove no
  * result would violate the rule. An admin's `isAdmin()` branch is unconditionally true regardless

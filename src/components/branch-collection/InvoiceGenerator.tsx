@@ -67,7 +67,7 @@ export default function InvoiceGenerator() {
   const { profile } = useAuth();
   const { brands } = useBrands();
   const { branches } = useBranches();
-  const { sites } = useSitesForBilling();
+  const { sites } = useSitesForBilling(profile);
 
   const [siteId, setSiteId] = useState('');
   const site = sites.find((s) => s.id === siteId) || null;

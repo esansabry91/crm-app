@@ -6,8 +6,9 @@ import { assignGuardToSite, type SitePickerOption } from '../../services/guards'
 /**
  * Assigns a Guard Pool guard to a client site/branch, which is what actually moves them to
  * Deployed Guards (see assignGuardToSite()'s doc comment for the two writes this triggers). The
- * site list is whatever `useSitesForPicker` returned — already branch-scoped by firestore.rules,
- * so a non-privileged user only ever sees sites they could reach in Duty Roster anyway.
+ * site list is whatever `useSitesForPicker` returned — already branch-scoped via a
+ * profile-matching query (see subscribeReachableSites), so a non-privileged user only ever
+ * sees sites they could reach in Duty Roster anyway.
  */
 export default function AssignGuardModal({
   open,

@@ -28,9 +28,9 @@ function roleLabel(t: TFunction, role: string): string {
 
 export default function UserManager() {
   const { t } = useTranslation();
-  const { users } = useUsers();
-  const { branches } = useBranches();
   const { profile } = useAuth();
+  const { users } = useUsers(profile);
+  const { branches } = useBranches();
   // A Branch Manager reaches this component too (see the /admin route's allowBranchManager prop
   // in App.tsx and AdminPage.tsx's Team-only tab restriction) — but only ever to manage their own
   // branch's Operation Staff accounts. firestore.rules' /users rules enforce the same scoping
@@ -60,10 +60,10 @@ export default function UserManager() {
   // whatever's actually still sitting in old documents.
   const legacyStaffUsers = users.filter((u) => (u.role as string) === 'staff');
 
-  // A Branch Manager's own /users read rule only ever returns their own profile plus their
-  // branch's dutyStaff accounts (Firestore silently drops docs a query's reader can't read), so
-  // this filter is mostly a defensive/explicit narrowing — it also drops the branch manager's own
-  // profile row from the table, since they're not one of the Operation Staff they're managing.
+  // A Branch Manager's /users query is already scoped to their branch's dutyStaff accounts
+  // (see useUsers) — this filter is a defensive/explicit narrowing that also drops the
+  // branch manager's own profile row from the table, since they're not one of the Operation
+  // Staff they're managing.
   const visibleUsers = isBranchManagerRole
     ? users.filter((u) => u.role === 'dutyStaff' && u.department === myDepartment)
     : users;

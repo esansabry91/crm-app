@@ -30,7 +30,7 @@ export default function PipelinePage() {
   const { tenders, loading } = useTenders(profile);
   const { brands } = useBrands();
   const { branches } = useBranches();
-  const { users } = useUsers();
+  const { users } = useUsers(profile);
 
   const [search, setSearch] = useState('');
   const [brandFilter, setBrandFilter] = useState('all');

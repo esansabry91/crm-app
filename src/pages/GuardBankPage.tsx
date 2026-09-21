@@ -69,7 +69,7 @@ export default function GuardBankPage() {
   const { profile } = useAuth();
   const { guards, loading: guardsLoading } = useGuards();
   const { bufferGuards, loading: bufferLoading } = useBufferGuards();
-  const { sites } = useSitesForPicker();
+  const { sites } = useSitesForPicker(profile);
   const { branches } = useBranches();
 
   const [tab, setTab] = useState<Tab>('Guard Pool');
