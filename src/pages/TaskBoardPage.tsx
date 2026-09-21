@@ -53,7 +53,7 @@ function priorityLabel(priority: TaskPriority, t: TFunction): string {
 export default function TaskBoardPage() {
   const { t } = useTranslation();
   const { profile } = useAuth();
-  const { tasks, loading } = useTasks();
+  const { tasks, loading, error: loadError } = useTasks();
   const { users } = useUsers();
   const { branches } = useBranches();
 
@@ -352,6 +352,16 @@ export default function TaskBoardPage() {
       </header>
 
       <div className="px-6 py-6 max-w-5xl space-y-6">
+        {/* Surfaces useTasks()'s subscription error instead of just silently showing "no open
+            tasks" — see useTasks.ts's doc comment on `error` for the incident (tasks/history
+            going blank after a refresh with nothing in the UI to explain why) this exists to
+            make diagnosable. */}
+        {loadError && (
+          <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+            {t('taskBoard.loadErrorBanner', { error: loadError })}
+          </div>
+        )}
+
         {toast && (
           <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
             {toast}

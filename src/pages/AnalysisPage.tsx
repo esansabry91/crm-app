@@ -47,7 +47,7 @@ export default function AnalysisPage() {
   const { tenders, loading } = useTenders(profile);
   // Scoped to exactly the tenders this viewer can already see — see useTenderHistory's own doc
   // comment for why this reads per-tender rather than a single collectionGroup('history') query.
-  const { entries } = useTenderHistory(tenders);
+  const { entries, error: historyError } = useTenderHistory(tenders);
   const { brands } = useBrands();
   const { branches } = useBranches();
 
@@ -187,6 +187,16 @@ export default function AnalysisPage() {
               sub={t('analysis.ofClosedTenders')}
             />
           </div>
+
+          {/* Surfaces useTenderHistory()'s subscription error — trend/bridge below are the only
+              two things on this page fed by it, so a permission-denied here otherwise just
+              looks identical to "no history yet" with nothing explaining why. See
+              useTenderHistory.ts's doc comment on `error` for the incident this covers. */}
+          {historyError && (
+            <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+              {t('analysis.historyLoadErrorBanner', { error: historyError })}
+            </div>
+          )}
 
           <Card title={t('analysis.trendTitle')}>
             <PipelineTrendChart data={trend} />

@@ -270,6 +270,7 @@
     "ofClosedTenders": "of closed tenders",
     "trendTitle": "Total Pipeline Value Trend",
     "bridgeTitle": "Open Pipeline Value Bridge",
+    "historyLoadErrorBanner": "Couldn't load pipeline history ({{error}}) — the Trend and Bridge charts below may be empty or incomplete. Try refreshing the page.",
     "stageCountTitle": "Number of Tenders by Stage",
     "stageValueTitle": "Pipeline Value by Stage (RM)",
     "wonVsLostTitle": "Won vs Lost Tenders",
@@ -978,6 +979,7 @@
   },
   "taskBoard": {
     "loadingEllipsis": "Loading…",
+    "loadErrorBanner": "Couldn't load tasks ({{error}}). Try refreshing the page.",
     "subtitleManage": "Assign and track your Operation Staff's tasks.",
     "subtitleStaff": "Tasks assigned to you.",
     "cancel": "Cancel",

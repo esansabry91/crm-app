@@ -14,6 +14,12 @@ import type { StaffTask } from '../types';
 export function useTasks() {
   const [tasks, setTasks] = useState<StaffTask[]>([]);
   const [loading, setLoading] = useState(true);
+  // Set only when the subscription itself fails (almost always a Firestore permission-denied —
+  // see firestore.rules' /tasks read rule) — deliberately kept distinct from `tasks` being empty,
+  // which is the normal "nothing assigned" case. Without this, TaskBoardPage had no way to tell
+  // "no tasks" apart from "the read was silently denied and nobody knows why the board looks
+  // empty" — see the doc comment on the banner in TaskBoardPage.tsx for the incident this covers.
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const unsub = onSnapshot(
       collection(db, 'tasks'),
@@ -30,14 +36,16 @@ export function useTasks() {
             return { id: d.id, ...data, progressUpdates: data.progressUpdates || [] };
           })
         );
+        setError(null);
         setLoading(false);
       },
       (err) => {
         console.error('useTasks subscription error', err);
+        setError(err.code ? `${err.code}: ${err.message}` : err.message || String(err));
         setLoading(false);
       }
     );
     return unsub;
   }, []);
-  return { tasks, loading };
+  return { tasks, loading, error };
 }

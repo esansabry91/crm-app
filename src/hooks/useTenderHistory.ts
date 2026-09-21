@@ -25,8 +25,17 @@ import type { Tender, TenderHistoryEntry } from '../types';
 export function useTenderHistory(tenders: Tender[]) {
   const [entriesByTender, setEntriesByTender] = useState<Record<string, TenderHistoryEntry[]>>({});
   const [loading, setLoading] = useState(true);
+  // First error currently in effect, across every per-tender listener — almost always a
+  // Firestore permission-denied on `tenders/{id}/history` (see firestore.rules' /history read
+  // rule, which only allows a non-admin to read entries whose OWN ownerUid still matches theirs;
+  // a tender whose owner was reassigned, or a Won tender delegated to this branch without also
+  // being owned by them, silently fails this instead of erroring loudly). Kept distinct from
+  // `entries` being empty, which is also the normal "no history yet" case — see the banner in
+  // AnalysisPage.tsx for why that distinction matters here.
+  const [error, setError] = useState<string | null>(null);
   const unsubsRef = useRef<Record<string, () => void>>({});
   const seenRef = useRef<Set<string>>(new Set());
+  const errorsRef = useRef<Record<string, string>>({});
 
   // Stable key so the effect below only re-runs when the SET of tender ids actually changes,
   // not on every re-render of the (new-array-each-time) tenders prop.
@@ -42,6 +51,8 @@ export function useTenderHistory(tenders: Tender[]) {
         unsubsRef.current[id]();
         delete unsubsRef.current[id];
         seenRef.current.delete(id);
+        delete errorsRef.current[id];
+        setError(Object.values(errorsRef.current)[0] || null);
         setEntriesByTender((prev) => {
           if (!(id in prev)) return prev;
           const next = { ...prev };
@@ -61,11 +72,15 @@ export function useTenderHistory(tenders: Tender[]) {
             ...prev,
             [id]: snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<TenderHistoryEntry, 'id'>) })),
           }));
+          delete errorsRef.current[id];
+          setError(Object.values(errorsRef.current)[0] || null);
           seenRef.current.add(id);
           if (seenRef.current.size >= currentIds.size) setLoading(false);
         },
         (err) => {
           console.error(`useTenderHistory subscription error (tender ${id})`, err);
+          errorsRef.current[id] = err.code ? `${err.code}: ${err.message}` : err.message || String(err);
+          setError(Object.values(errorsRef.current)[0] || null);
           seenRef.current.add(id);
           if (seenRef.current.size >= currentIds.size) setLoading(false);
         }
@@ -86,5 +101,5 @@ export function useTenderHistory(tenders: Tender[]) {
 
   const entries = Object.values(entriesByTender).flat();
 
-  return { entries, loading };
+  return { entries, loading, error };
 }
