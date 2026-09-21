@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { SiteBillingRate, SiteEquipmentRate } from '../types';
+import type { SiteBillingRate, SiteEquipmentRate, UserProfile } from '../types';
+import { subscribeReachableSites } from './reachableSites';
 
 /** Minimal shape of a Duty Roster `sites/{id}` doc this feature needs — mirrors the same local
  *  pattern TestingDataTool.tsx uses (there's no shared Site type in types.ts; that collection is
@@ -151,15 +152,20 @@ function requiredGuardPosts(site: SiteRequirement): number {
   return maxDaySlots;
 }
 
-export function useSitesForBilling() {
+export function useSitesForBilling(profile: UserProfile | null) {
   const [sites, setSites] = useState<BillingSite[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    const unsub = onSnapshot(
-      collection(db, 'sites'),
-      (snap) => {
+    if (!profile) {
+      setSites([]);
+      setLoading(false);
+      return;
+    }
+    return subscribeReachableSites(
+      profile,
+      (docs) => {
         setSites(
-          snap.docs.map((d) => {
+          docs.map((d) => {
             const data = d.data() as Record<string, unknown>;
             const requirement = data.site as SiteRequirement | undefined;
             return {
@@ -176,10 +182,12 @@ export function useSitesForBilling() {
         );
         setLoading(false);
       },
-      () => setLoading(false)
+      (err) => {
+        console.error('useSitesForBilling subscription error', err);
+        setLoading(false);
+      }
     );
-    return unsub;
-  }, []);
+  }, [profile?.uid, profile?.role, profile?.department]);
   return { sites, loading };
 }
 

@@ -14,7 +14,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { shouldStampTestData } from './settings';
-import type { Invoice, InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceSiteBill, InvoiceStatus, Role, SiteBillingRate } from '../types';
+import { getReachableSites } from './reachableSites';
+import type { Invoice, InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceSiteBill, InvoiceStatus, Role, SiteBillingRate, UserProfile } from '../types';
 
 function invoicesCollection() {
   return collection(db, 'invoices');
@@ -675,15 +676,19 @@ function normalizeBranchName(name: string): string {
 
 /** Builds the two lookup maps `backfillInvoiceBranches` and `diagnoseInvoiceBranches` both need:
  *  siteId -> that site's raw branch name string, and normalized branch name -> {id, name} of the
- *  matching Branch record (matching case/whitespace-insensitively; see `normalizeBranchName`). */
-async function loadSiteAndBranchLookups() {
-  const [sitesSnap, branchesSnap] = await Promise.all([
-    getDocs(collection(db, 'sites')),
+ *  matching Branch record (matching case/whitespace-insensitively; see `normalizeBranchName`).
+ *
+ *  /sites LIST must be scoped to what this profile can actually read — an unfiltered
+ *  `getDocs(collection(db, 'sites'))` is permission-denied for a Branch Manager (same
+ *  resource.data.branch rule as useSiteList / subscribeReachableSites). */
+async function loadSiteAndBranchLookups(profile: UserProfile) {
+  const [siteDocs, branchesSnap] = await Promise.all([
+    getReachableSites(profile),
     getDocs(collection(db, 'branches')),
   ]);
 
   const siteBranchById = new Map<string, string>();
-  sitesSnap.forEach((d) => {
+  siteDocs.forEach((d) => {
     const branch = (d.data() as { branch?: string }).branch;
     if (branch) siteBranchById.set(d.id, branch);
   });
@@ -696,10 +701,10 @@ async function loadSiteAndBranchLookups() {
   return { siteBranchById, branchByNormalizedName };
 }
 
-export async function backfillInvoiceBranches(): Promise<BackfillBranchResult> {
+export async function backfillInvoiceBranches(profile: UserProfile): Promise<BackfillBranchResult> {
   const [invoicesSnap, { siteBranchById, branchByNormalizedName }] = await Promise.all([
     getDocs(invoicesCollection()),
-    loadSiteAndBranchLookups(),
+    loadSiteAndBranchLookups(profile),
   ]);
 
   const result: BackfillBranchResult = { total: 0, updated: 0, skippedNoSite: 0, updatedNameOnly: 0 };
@@ -750,10 +755,10 @@ export interface InvoiceBranchDiagnostic {
  * running the backfill) can be diagnosed from the Revenue tab instead of guessing blind. Doesn't
  * write anything.
  */
-export async function diagnoseInvoiceBranches(): Promise<InvoiceBranchDiagnostic[]> {
+export async function diagnoseInvoiceBranches(profile: UserProfile): Promise<InvoiceBranchDiagnostic[]> {
   const [invoicesSnap, { siteBranchById, branchByNormalizedName }] = await Promise.all([
     getDocs(invoicesCollection()),
-    loadSiteAndBranchLookups(),
+    loadSiteAndBranchLookups(profile),
   ]);
 
   const rows: InvoiceBranchDiagnostic[] = [];

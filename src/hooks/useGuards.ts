@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { BufferGuard, Guard } from '../types';
+import type { BufferGuard, Guard, UserProfile } from '../types';
 import type { SitePickerOption } from '../services/guards';
+import { subscribeReachableSites } from '../services/reachableSites';
 
 /**
  * Subscribes to the whole `guards` collection, unfiltered — Guard Bank splits it into its 4
@@ -53,18 +54,27 @@ export function useBufferGuards() {
 
 /**
  * A lightweight, read-only feed of sites for the "Assign to site" picker — subscribes to the
- * same `sites` collection Duty Roster itself uses (firestore.rules already branch-scopes reads
- * there, so this naturally only shows sites the signed-in user can reach), picking out just the
- * id/name/branch fields the picker needs and skipping archived sites.
+ * same `sites` collection Duty Roster itself uses, picking out just the id/name/branch fields
+ * the picker needs and skipping archived sites.
+ *
+ * Must NOT be an unfiltered collection listen: /sites reads for a Branch Manager or Operation
+ * Staff depend on `resource.data.branch`, so Firestore denies the whole LIST (it does not
+ * silently drop unreadables). subscribeReachableSites() uses the same branch + unassigned
+ * split Duty Roster's useSiteList already uses.
  */
-export function useSitesForPicker() {
+export function useSitesForPicker(profile: UserProfile | null) {
   const [sites, setSites] = useState<SitePickerOption[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    const unsub = onSnapshot(
-      collection(db, 'sites'),
-      (snap) => {
-        const list = snap.docs
+    if (!profile) {
+      setSites([]);
+      setLoading(false);
+      return;
+    }
+    return subscribeReachableSites(
+      profile,
+      (docs) => {
+        const list = docs
           .map((d) => {
             const data = d.data() as {
               name?: string;
@@ -90,7 +100,6 @@ export function useSitesForPicker() {
         setLoading(false);
       }
     );
-    return unsub;
-  }, []);
+  }, [profile?.uid, profile?.role, profile?.department]);
   return { sites, loading };
 }

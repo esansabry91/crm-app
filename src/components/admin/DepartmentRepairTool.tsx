@@ -90,7 +90,7 @@ function FixRow({
 export default function DepartmentRepairTool() {
   const { t } = useTranslation();
   const { profile } = useAuth();
-  const { users } = useUsers();
+  const { users } = useUsers(profile);
   const { tenders } = useTenders(profile);
   const { branches } = useBranches();
 
