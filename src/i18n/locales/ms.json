@@ -5,7 +5,22 @@
     "closeMenu": "Tutup menu",
     "collapseSidebar": "Kuncupkan bar sisi",
     "language": "Bahasa",
-    "optional": "pilihan"
+    "optional": "pilihan",
+    "collapseHeaderDetails": "Kuncupkan butiran pengepala",
+    "expandHeaderDetails": "Kembangkan butiran pengepala"
+  },
+  "protectedRoute": {
+    "loading": "Memuatkan…",
+    "noProfile": "Akaun anda belum mempunyai profil CRM yang disediakan, atau ia telah dinyahaktifkan. Hubungi Admin HQ anda.",
+    "deactivated": "Akaun anda telah dinyahaktifkan. Hubungi Admin HQ anda jika ini tidak dijangka."
+  },
+  "notifications": {
+    "newTenderRegistered": "Tender baharu didaftarkan",
+    "newTenderInPipeline": "Tender baharu dalam saluran anda",
+    "byName": "oleh {{name}}",
+    "stageLabel": "Peringkat: {{stage}}",
+    "dismiss": "Tolak",
+    "viewInPipeline": "Lihat dalam Saluran Tender →"
   },
   "nav": {
     "appName": "Inter Prominent CRM",

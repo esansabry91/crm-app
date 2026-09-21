@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 /**
  * Small chevron toggle sitting next to a page's <h1> — collapses everything below the title
  * (subtitle, filters, and on some pages the stat tiles) down to just the title row. On a
@@ -12,11 +14,12 @@ export default function HeaderCollapseToggle({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <button
       type="button"
       onClick={onToggle}
-      aria-label={expanded ? 'Collapse header details' : 'Expand header details'}
+      aria-label={expanded ? t('common.collapseHeaderDetails') : t('common.expandHeaderDetails')}
       aria-expanded={expanded}
       className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 shrink-0"
     >

@@ -5,7 +5,22 @@
     "closeMenu": "Close menu",
     "collapseSidebar": "Collapse sidebar",
     "language": "Language",
-    "optional": "optional"
+    "optional": "optional",
+    "collapseHeaderDetails": "Collapse header details",
+    "expandHeaderDetails": "Expand header details"
+  },
+  "protectedRoute": {
+    "loading": "Loading…",
+    "noProfile": "Your account doesn't have a CRM profile set up yet, or it has been deactivated. Contact your HQ admin.",
+    "deactivated": "Your account has been deactivated. Contact your HQ admin if this is unexpected."
+  },
+  "notifications": {
+    "newTenderRegistered": "New tender registered",
+    "newTenderInPipeline": "New tender in your pipeline",
+    "byName": "by {{name}}",
+    "stageLabel": "Stage: {{stage}}",
+    "dismiss": "Dismiss",
+    "viewInPipeline": "View in Pipeline →"
   },
   "nav": {
     "appName": "Inter Prominent CRM",

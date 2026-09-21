@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import type { Tender } from '../../types';
@@ -27,6 +28,7 @@ const AUTO_DISMISS_MS = 10000;
  * read rule on the tenders collection (see firestore.rules).
  */
 export default function NewTenderWatcher() {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const navigate = useNavigate();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -82,20 +84,20 @@ export default function NewTenderWatcher() {
 
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80">
-      {toasts.map((t) => (
-        <div key={t.id} className="bg-white border border-slate-200 shadow-lg rounded-xl p-4">
+      {toasts.map((toast) => (
+        <div key={toast.id} className="bg-white border border-slate-200 shadow-lg rounded-xl p-4">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-900">New tender registered</p>
+              <p className="text-sm font-semibold text-slate-900">{t('notifications.newTenderRegistered')}</p>
               <p className="text-sm text-slate-600 mt-0.5 truncate">
-                {t.clientName} · {t.department}
+                {toast.clientName} · {toast.department}
               </p>
-              <p className="text-xs text-slate-400 mt-0.5">by {t.ownerName}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{t('notifications.byName', { name: toast.ownerName })}</p>
             </div>
             <button
               type="button"
-              onClick={() => dismiss(t.id)}
-              aria-label="Dismiss"
+              onClick={() => dismiss(toast.id)}
+              aria-label={t('notifications.dismiss')}
               className="text-slate-400 hover:text-slate-600 text-sm leading-none shrink-0"
             >
               ✕
@@ -105,11 +107,11 @@ export default function NewTenderWatcher() {
             type="button"
             onClick={() => {
               navigate('/pipeline');
-              dismiss(t.id);
+              dismiss(toast.id);
             }}
             className="mt-3 text-xs font-medium text-blue-600 hover:text-blue-700"
           >
-            View in Pipeline →
+            {t('notifications.viewInPipeline')}
           </button>
         </div>
       ))}
