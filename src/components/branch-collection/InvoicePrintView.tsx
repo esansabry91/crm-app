@@ -157,8 +157,8 @@ export default function InvoicePrintView({ data }: { data: InvoicePrintData }) {
         },
         ...(data.additionalSiteBills || []).map((b) => ({
           siteName: b.siteName,
-          lineGroups: b.lineGroups,
-          equipmentRows: b.equipmentRows,
+          lineGroups: b.lineGroups || [],
+          equipmentRows: b.equipmentRows || [],
           billingMode: b.billingMode || 'headcount',
         })),
       ]

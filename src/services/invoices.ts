@@ -257,8 +257,8 @@ export async function createInvoice(input: NewInvoiceInput, actor: Actor): Promi
   const additionalBills: InvoiceSiteBill[] = (input.additionalSiteBills || []).map((b) => ({
     siteId: b.siteId,
     siteName: b.siteName,
-    lineGroups: b.lineGroups,
-    equipmentRows: b.equipmentRows,
+    lineGroups: b.lineGroups || [],
+    equipmentRows: b.equipmentRows || [],
     billingMode: b.billingMode || 'headcount',
     subTotal: sumLineGroups(b.lineGroups) + sumEquipmentRows(b.equipmentRows),
   }));
