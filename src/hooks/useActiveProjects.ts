@@ -3,6 +3,7 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { Tender, UserProfile } from '../types';
 import { isAdminRole } from '../types';
+import { sitesListPlan } from '../utils/firestoreAccess';
 
 /**
  * Subscribes to every Won tender scoped by who's asking — the shared subscription behind both
@@ -96,30 +97,19 @@ interface DutyRosterSiteDoc {
  * unlinked rather than deleted), their active-guard counts are summed rather than picking one
  * arbitrarily.
  *
- * Read pattern mirrors the sites query in public/duty-roster/index.html: admins and HQ (the same
- * 'seesAllBranches' condition useWonTenders already computes) read every site; everyone else
- * reads only their own branch's sites plus any site with no branch set at all. dutyStaff/payroll
- * accounts never reach this page (Active Projects is hidden from both — see the Role doc comment
- * in types.ts), so there's no separate isPayroll case to mirror here.
+ * Query constraints follow sitesListPlan() / firestore.rules' canReadSite(): admins, HQ, and
+ * payroll-like roles can listen unfiltered (their read is unconditional). Everyone else listens
+ * to their own branch plus unassigned sites — matching useSiteList.ts — because an unconstrained
+ * `where('tenderId','in',...)` LIST is denied for a Branch Manager (the rule still depends on
+ * `branch`, and the get()-based canAssignSiteBranchViaTender clause is not query-plannable).
+ * dutyStaff/payroll accounts never reach this page (Active Projects is hidden from both — see
+ * the Role doc comment in types.ts).
+ *
+ * A site delegated to a different branch therefore still won't contribute to "Guards Deployed"
+ * here — same LIST-vs-get() gap as useTenderSites. Own-branch sites are the case this restores.
  */
-// Firestore 'in' queries cap at 30 values — a branch running more Active Projects than that at
-// once (rare, but not impossible for a big branch) just gets its tenderId list split across more
-// than one supplemental query below.
-const TENDER_ID_QUERY_CHUNK = 30;
-
-export function useLiveGuardCountsByTender(
-  profile: UserProfile | null,
-  seesAllBranches: boolean,
-  // tenderIds this branch owns (activeBranch == profile.department) — see the supplemental
-  // tenderId-based queries below for why a non-privileged caller needs to pass these in.
-  ownedTenderIds: string[] = []
-) {
+export function useLiveGuardCountsByTender(profile: UserProfile | null, seesAllBranches: boolean) {
   const [counts, setCounts] = useState<Map<string, number>>(new Map());
-
-  // Stable dependency for the effect below — an array literal from the caller changes identity
-  // every render even when its contents don't, which would otherwise tear down and resubscribe
-  // every query below on every single render.
-  const ownedTenderIdsKey = seesAllBranches ? '' : [...ownedTenderIds].sort().join(',');
 
   useEffect(() => {
     if (!profile) {
@@ -127,27 +117,20 @@ export function useLiveGuardCountsByTender(
       return;
     }
     const base = collection(db, 'sites');
-    const branchQueries = seesAllBranches
-      ? [query(base)]
-      : [query(base, where('branch', '==', profile.department)), query(base, where('branch', '==', null))];
-    // Supplemental queries, non-privileged callers only: a site LINKED to one of this branch's
-    // own tenders but DELEGATED to a different branch (see createTenderSite()'s branchOverride
-    // param / ProjectDetailsModal.tsx's "Managing Branch" picker) won't match either branch
-    // query above — its own `branch` field now names the delegate, not this one — so without
-    // this, a delegated site's active guards would silently drop out of "Guards Deployed" for
-    // the very project that's still this branch's own to run.
-    const ownedTenderIdList = ownedTenderIdsKey ? ownedTenderIdsKey.split(',').filter(Boolean) : [];
-    const tenderIdChunks: string[][] = [];
-    for (let i = 0; i < ownedTenderIdList.length; i += TENDER_ID_QUERY_CHUNK) {
-      tenderIdChunks.push(ownedTenderIdList.slice(i, i + TENDER_ID_QUERY_CHUNK));
+    const plan = sitesListPlan(profile);
+    const queries =
+      seesAllBranches || plan.mode === 'all'
+        ? [query(base)]
+        : plan.mode === 'branchAndUnassigned'
+          ? [query(base, where('branch', '==', plan.department)), query(base, where('branch', '==', null))]
+          : [];
+    if (queries.length === 0) {
+      setCounts(new Map());
+      return;
     }
-    const tenderQueries = tenderIdChunks.map((chunk) => query(base, where('tenderId', 'in', chunk)));
-    const queries = [...branchQueries, ...tenderQueries];
 
-    // Unlike before the tenderId queries existed, buckets can now overlap (an owner's own site
-    // sharing a tenderId also matches one of the branch queries) — key by doc id across every
-    // bucket so recompute() below sums each site's active guards exactly once regardless of how
-    // many queries happened to return it.
+    // Branch + unassigned queries can overlap if a site matches both — key by doc id so each
+    // site is counted once.
     const buckets: Map<string, DutyRosterSiteDoc>[] = queries.map(() => new Map());
     const recompute = () => {
       const merged = new Map<string, DutyRosterSiteDoc>();
@@ -170,11 +153,13 @@ export function useLiveGuardCountsByTender(
         },
         (err) => {
           console.error('useLiveGuardCountsByTender subscription error', err);
+          buckets[i] = new Map();
+          recompute();
         }
       )
     );
     return () => unsubs.forEach((unsub) => unsub());
-  }, [profile?.uid, profile?.department, seesAllBranches, ownedTenderIdsKey]);
+  }, [profile?.uid, profile?.role, profile?.department, seesAllBranches]);
 
   return counts;
 }

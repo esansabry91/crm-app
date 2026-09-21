@@ -90,24 +90,13 @@ export default function ActiveProjectsPage() {
   const { wonTenders: rawWonTenders, loading, seesAllBranches } = useWonTenders(profile);
   const isBranchManager = profile?.role === 'branchManager';
 
-  // This branch's own tenderIds (own activeBranch, still open) — passed to
-  // useLiveGuardCountsByTender() below so it can ALSO pick up a site that's still linked to one
-  // of these projects but has been delegated to a DIFFERENT branch to run (see
-  // ProjectDetailsModal.tsx's "Managing Branch" picker); its own `branch` field no longer
-  // matches this one, so the hook's plain branch-scoped queries alone would silently miss it.
-  // Computed from rawWonTenders (not the liveCount-overlaid `wonTenders` below) to avoid a
-  // circular dependency on liveGuardCounts itself.
-  const ownedTenderIds = useMemo(
-    () => rawWonTenders.filter((tender) => !tender.closedOut && tender.activeBranch === profile?.department).map((tender) => tender.id),
-    [rawWonTenders, profile?.department]
-  );
   // Overlays each tender's guardsDeployed with the Duty Roster site's own live active-guard
   // count where one exists (see useLiveGuardCountsByTender's doc comment) — done once, up front,
   // so every downstream computation below (totals, the per-row list, the brand breakdown, the
   // race/bridge charts) automatically reflects the roster's real headcount without each of them
   // needing to know about sites at all. A tender with no live site yet (or a closed-out one whose
   // site was archived) keeps its manually-typed guardsDeployed untouched.
-  const liveGuardCounts = useLiveGuardCountsByTender(profile, seesAllBranches, ownedTenderIds);
+  const liveGuardCounts = useLiveGuardCountsByTender(profile, seesAllBranches);
   const wonTenders = useMemo(
     () =>
       rawWonTenders.map((tender) => {
