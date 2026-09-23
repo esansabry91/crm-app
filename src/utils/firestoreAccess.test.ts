@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Role, UserProfile } from '../types';
-import { sitesListPlan, usersListPlan } from './firestoreAccess';
+import {
+  isLinkedSiteVisibleInBranchList,
+  recordedReassignmentSiteIds,
+  siteFollowsProjectBranch,
+  sitesListPlan,
+  usersListPlan,
+} from './firestoreAccess';
 
 function profile(role: Role, department = 'Penang Branch'): UserProfile {
   return {
@@ -81,5 +87,59 @@ describe('sitesListPlan', () => {
       mode: 'branchAndUnassigned',
       department: 'Penang Branch',
     });
+  });
+});
+
+describe('recordedReassignmentSiteIds', () => {
+  it('treats a missing field as unknown (legacy request)', () => {
+    assert.equal(recordedReassignmentSiteIds(undefined), null);
+    assert.equal(recordedReassignmentSiteIds(null), null);
+    assert.equal(recordedReassignmentSiteIds({}), null);
+  });
+
+  it('keeps an empty list as recorded — the project had no following sites', () => {
+    assert.deepEqual(recordedReassignmentSiteIds({ siteIds: [] }), []);
+    assert.deepEqual(recordedReassignmentSiteIds({ siteIds: ['site-a', 'site-b'] }), ['site-a', 'site-b']);
+  });
+});
+
+describe('siteFollowsProjectBranch', () => {
+  it('moves a site that is still on the outgoing branch', () => {
+    assert.equal(siteFollowsProjectBranch('Penang Branch', 'Penang Branch'), true);
+    assert.equal(siteFollowsProjectBranch('Kelantan Branch', 'Penang Branch'), false);
+  });
+
+  it('treats a missing branch as unassigned', () => {
+    assert.equal(siteFollowsProjectBranch(undefined, null), true);
+    assert.equal(siteFollowsProjectBranch(null, 'Penang Branch'), false);
+  });
+
+  it('sweeps unassigned sites only on a first assignment', () => {
+    assert.equal(siteFollowsProjectBranch(null, 'Penang Branch', false), false);
+    assert.equal(siteFollowsProjectBranch(null, 'Penang Branch', true), true);
+    assert.equal(siteFollowsProjectBranch('Kelantan Branch', 'Penang Branch', true), false);
+  });
+});
+
+describe('isLinkedSiteVisibleInBranchList', () => {
+  const tenderId = 'tender-1';
+
+  it('keeps this tender\'s own-branch and unassigned sites', () => {
+    assert.equal(
+      isLinkedSiteVisibleInBranchList({ tenderId, branch: 'Penang Branch' }, tenderId, 'Penang Branch'),
+      true
+    );
+    assert.equal(isLinkedSiteVisibleInBranchList({ tenderId, branch: null }, tenderId, 'Penang Branch'), true);
+  });
+
+  it('drops other tenders and sites delegated to another branch', () => {
+    assert.equal(
+      isLinkedSiteVisibleInBranchList({ tenderId: 'other', branch: 'Penang Branch' }, tenderId, 'Penang Branch'),
+      false
+    );
+    assert.equal(
+      isLinkedSiteVisibleInBranchList({ tenderId, branch: 'Kelantan Branch' }, tenderId, 'Penang Branch'),
+      false
+    );
   });
 });

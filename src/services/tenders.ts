@@ -14,12 +14,21 @@ import {
   updateDoc,
   where,
   Timestamp,
+  type DocumentReference,
+  type DocumentSnapshot,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { auth, db } from '../firebase';
 import { releaseGuardsFromSite } from './guards';
 import { shouldStampTestData } from './settings';
-import type { Role, Stage, Tender, TenderEquipmentItem, TenderSiteDetails } from '../types';
+import type { Role, Stage, Tender, TenderEquipmentItem, TenderSiteDetails, UserProfile } from '../types';
 import { isAdminRole } from '../types';
+import {
+  REASSIGNMENT_SITES_UNAVAILABLE,
+  isLinkedSiteVisibleInBranchList,
+  recordedReassignmentSiteIds,
+  siteFollowsProjectBranch,
+  sitesListPlan,
+} from '../utils/firestoreAccess';
 
 /** Actor performing an action — `role` is optional only for call-site back-compat; every real
  *  caller passes it. */
@@ -1120,27 +1129,103 @@ export async function setActiveBranch(tenderId: string, activeBranch: string) {
   await updateDoc(doc(db, 'tenders', tenderId), { activeBranch, updatedAt: Date.now() });
 }
 
+async function loadCallerProfile(): Promise<UserProfile | null> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return null;
+  const snap = await getDoc(doc(db, 'users', uid));
+  if (!snap.exists()) return null;
+  return { uid, ...(snap.data() as Omit<UserProfile, 'uid'>) };
+}
+
+interface LinkedSiteDoc {
+  id: string;
+  ref: DocumentReference;
+  branch: string | null | undefined;
+  createdAt: string;
+}
+
+function toLinkedSite(snap: DocumentSnapshot): LinkedSiteDoc | null {
+  if (!snap.exists()) return null;
+  const data = snap.data() as { branch?: string | null; createdAt?: string };
+  return {
+    id: snap.id,
+    ref: snap.ref,
+    branch: data.branch,
+    createdAt: data.createdAt || '',
+  };
+}
+
+/** Unfiltered tenderId LIST. Allowed only for callers whose /sites read does not depend on
+ *  resource.data (admin, HQ, payroll, HR). A Branch Manager is denied. */
+async function listAllSitesForTender(tenderId: string): Promise<LinkedSiteDoc[]> {
+  const snap = await getDocs(query(collection(db, 'sites'), where('tenderId', '==', tenderId)));
+  return snap.docs.map((d) => toLinkedSite(d)).filter((d): d is LinkedSiteDoc => d !== null);
+}
+
+/**
+ * Sites linked to this tender that the signed-in caller is allowed to LIST.
+ *
+ * `where('tenderId','==',tenderId)` is only valid when the caller's /sites read does not
+ * depend on resource.data (admin, HQ, payroll, HR — sitesListPlan mode 'all'). For a Branch
+ * Manager that query is permission-denied: Firestore rejects the whole LIST rather than
+ * dropping unreadable documents. Close-out, reopen, and primary-site label sync used to
+ * catch that error and no-op, so a Branch Manager could close a project while its roster
+ * stayed active and its guards stayed deployed. Those callers now read their own branch
+ * plus unassigned sites and filter tenderId locally, matching useSiteList.
+ *
+ * A site delegated to a different branch still cannot be listed this way (the get()-based
+ * rule that allows it is not query-plannable). acceptReassignment() does not use this
+ * helper; it reads site ids recorded on the pending request.
+ */
+async function listSitesLinkedToTender(tenderId: string): Promise<LinkedSiteDoc[]> {
+  const plan = sitesListPlan(await loadCallerProfile());
+  if (plan.mode === 'all') return listAllSitesForTender(tenderId);
+  if (plan.mode === 'none') {
+    console.error('listSitesLinkedToTender: signed-in user cannot list sites; skipping', tenderId);
+    return [];
+  }
+
+  const sitesCol = collection(db, 'sites');
+  const [ownSnap, unassignedSnap] = await Promise.all([
+    getDocs(query(sitesCol, where('branch', '==', plan.department))),
+    getDocs(query(sitesCol, where('branch', '==', null))),
+  ]);
+  const seen = new Map<string, LinkedSiteDoc>();
+  for (const d of [...ownSnap.docs, ...unassignedSnap.docs]) {
+    const data = d.data() as { tenderId?: string | null; branch?: string | null; createdAt?: string };
+    if (!isLinkedSiteVisibleInBranchList(data, tenderId, plan.department)) continue;
+    if (seen.has(d.id)) continue;
+    const linked = toLinkedSite(d);
+    if (linked) seen.set(d.id, linked);
+  }
+  return [...seen.values()];
+}
+
+async function loadRecordedSites(siteIds: string[]): Promise<LinkedSiteDoc[]> {
+  const snaps = await Promise.all(siteIds.map((id) => getDoc(doc(db, 'sites', id))));
+  const loaded: LinkedSiteDoc[] = [];
+  for (const snap of snaps) {
+    const linked = toLinkedSite(snap);
+    if (linked) loaded.push(linked);
+  }
+  return loaded;
+}
+
 /**
  * Moves every Duty Roster site linked to this tender that's still actually "following" it over
- * to `toBranch` — a site already delegated to a different branch (see createTenderSite()'s
- * branchOverride param / ProjectDetailsModal.tsx's "Managing Branch" picker) is deliberately left
- * alone. Shared by acceptReassignment()'s 'bring-over' choice and assignFirstActiveBranch()
- * below — both are "the duty roster follows the project" moves, just with (acceptReassignment)
- * or without (assignFirstActiveBranch) a contested branch on the other end to protect first.
+ * to `toBranch` — a site already delegated to a different branch is deliberately left alone.
+ * Used by assignFirstActiveBranch() only. acceptReassignment() does not call this: the
+ * receiving Branch Manager cannot run the tenderId LIST this uses, and instead GETs the site
+ * ids recorded on the pending request.
  *
  * "Still following" normally means the site's own `branch` still equals `fromBranch` (including
- * both being null). `alsoSweepUnassigned` widens that, ONLY for assignFirstActiveBranch()'s
- * first-ever-assignment case below: a site whose `branch` is null gets swept regardless of what
- * `fromBranch` computed to, not just when it happens to equal it. That case exists because
- * `fromBranch` there falls back to the tender's `department` field, so a site that never actually
- * inherited a branch (created before `department` propagated, or any other way it ended up null)
- * would otherwise silently fail the exact-match check and get left behind forever — every later
- * reassignment's `fromBranch` is computed from the tender's OWN prior branch, which this site can
- * then never match either, so a mismatch here isn't self-correcting. A site genuinely delegated
- * elsewhere always has a real (non-null) branch of its own, so it's never affected by this widening.
- * acceptReassignment()'s 'bring-over' call below deliberately does NOT pass this — an established
- * project's site left "Unassigned (visible to everyone)" on purpose should stay that way through an
- * ordinary later branch-to-branch move, not get silently claimed by whichever branch accepts next.
+ * both being null). `alsoSweepUnassigned` widens that, ONLY for the first-ever-assignment case:
+ * a site whose `branch` is null gets swept regardless of what `fromBranch` computed to. That
+ * case exists because `fromBranch` there falls back to the tender's `department` field, so a
+ * site that never actually inherited a branch would otherwise silently fail the exact-match
+ * check and get left behind forever. A site genuinely delegated elsewhere always has a real
+ * (non-null) branch of its own, so it's never affected by this widening. An ordinary later
+ * branch-to-branch move leaves a deliberately unassigned site where it is.
  */
 async function moveFollowingSitesToBranch(
   tenderId: string,
@@ -1148,12 +1233,12 @@ async function moveFollowingSitesToBranch(
   toBranch: string,
   alsoSweepUnassigned = false
 ): Promise<void> {
-  const snap = await getDocs(query(collection(db, 'sites'), where('tenderId', '==', tenderId)));
-  const sitesFollowingProject = snap.docs.filter((d) => {
-    const currentBranch = (d.data().branch as string | null | undefined) ?? null;
-    if (currentBranch === (fromBranch ?? null)) return true;
-    return alsoSweepUnassigned && currentBranch === null;
-  });
+  // Admin-only (first assignment). The tenderId LIST is allowed for that caller and must
+  // not depend on a profile read — an empty result here would orphan the roster.
+  const linked = await listAllSitesForTender(tenderId);
+  const sitesFollowingProject = linked.filter((d) =>
+    siteFollowsProjectBranch(d.branch, fromBranch, alsoSweepUnassigned)
+  );
   await Promise.all(
     sitesFollowingProject.map((d) => updateDoc(d.ref, { branch: toBranch, updatedAt: Date.now() }))
   );
@@ -1213,8 +1298,15 @@ export async function resetTenderSiteMode(tenderId: string) {
  * entry, same as setActiveBranch(): this doesn't change value or sales stage.
  */
 export async function requestReassignBranch(tenderId: string, toBranch: string, fromBranch: string | null) {
+  // Record the following site ids NOW, while an admin (the only role that can request this)
+  // can still LIST every site by tenderId. The receiving Branch Manager cannot run that
+  // query — see listSitesLinkedToTender's doc comment — so acceptReassignment() GETs these
+  // ids instead.
+  const from = fromBranch || null;
+  const linked = await listAllSitesForTender(tenderId);
+  const siteIds = linked.filter((d) => siteFollowsProjectBranch(d.branch, from)).map((d) => d.id);
   await updateDoc(doc(db, 'tenders', tenderId), {
-    pendingReassignment: { toBranch, fromBranch: fromBranch || null, requestedAt: Date.now() },
+    pendingReassignment: { toBranch, fromBranch: from, requestedAt: Date.now(), siteIds },
     updatedAt: Date.now(),
   });
 }
@@ -1263,11 +1355,34 @@ export async function acceptReassignment(
   toBranch: string,
   choice: 'bring-over' | 'new'
 ) {
-  if (choice === 'bring-over') {
-    await moveFollowingSitesToBranch(tenderId, fromBranch, toBranch);
+  // The sites to touch are the ones recorded on the request. They still live on the FROM
+  // branch, so the receiving Branch Manager's own branch LIST would miss them, and a
+  // tenderId LIST is permission-denied (see listSitesLinkedToTender). Per-id gets succeed
+  // via isAcceptingPendingReassignment() for as long as pendingReassignment is still set —
+  // which is why the tender write stays AFTER these site writes.
+  const tenderSnap = await getDoc(doc(db, 'tenders', tenderId));
+  const pending = tenderSnap.exists()
+    ? (tenderSnap.data().pendingReassignment as { siteIds?: string[] } | null)
+    : null;
+  const recorded = recordedReassignmentSiteIds(pending);
+
+  let linked: LinkedSiteDoc[];
+  if (recorded) {
+    linked = await loadRecordedSites(recorded);
+  } else if (sitesListPlan(await loadCallerProfile()).mode === 'all') {
+    // Requests saved before siteIds existed. Admin/HQ can still discover the sites with a
+    // tenderId LIST. A Branch Manager cannot — tell them to have an admin re-request.
+    linked = await listAllSitesForTender(tenderId);
   } else {
-    const snap = await getDocs(query(collection(db, 'sites'), where('tenderId', '==', tenderId)));
-    const sitesFollowingProject = snap.docs.filter((d) => (d.data().branch ?? null) === (fromBranch ?? null));
+    throw new Error(REASSIGNMENT_SITES_UNAVAILABLE);
+  }
+
+  const sitesFollowingProject = linked.filter((d) => siteFollowsProjectBranch(d.branch, fromBranch));
+  if (choice === 'bring-over') {
+    await Promise.all(
+      sitesFollowingProject.map((d) => updateDoc(d.ref, { branch: toBranch, updatedAt: Date.now() }))
+    );
+  } else {
     await Promise.all(
       sitesFollowingProject.map((d) =>
         updateDoc(d.ref, { tenderId: null, archived: true, archivedAt: Date.now(), updatedAt: Date.now() })
@@ -1349,14 +1464,12 @@ export async function updateActiveProjectDetails(
  *  Roster tab for it), in which case there's nothing to sync onto and this quietly no-ops. */
 async function syncPrimarySiteLabel(tenderId: string, clientName: string, siteName: string): Promise<void> {
   try {
-    const snap = await getDocs(query(collection(db, 'sites'), where('tenderId', '==', tenderId)));
-    if (snap.empty) return;
-    const docs = snap.docs
-      .map((d) => ({ id: d.id, createdAt: (d.data().createdAt as string) || '' }))
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    const primary = docs[0];
-    if (!primary) return;
-    await updateDoc(doc(db, 'sites', primary.id), {
+    const docs = await listSitesLinkedToTender(tenderId);
+    if (docs.length === 0) return;
+    // Same "earliest createdAt is primary" rule useTenderSites uses. For a Branch Manager that
+    // list is own-branch + unassigned only, which is also the set that hook treats as primary.
+    const primary = [...docs].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    await updateDoc(primary.ref, {
       name: siteName,
       clientName,
       updatedAt: new Date().toISOString(),
@@ -1410,9 +1523,9 @@ export async function reopenProject(tenderId: string) {
  */
 async function setLinkedSitesArchived(tenderId: string, archived: boolean) {
   try {
-    const snap = await getDocs(query(collection(db, 'sites'), where('tenderId', '==', tenderId)));
+    const linked = await listSitesLinkedToTender(tenderId);
     await Promise.all(
-      snap.docs.map((d) =>
+      linked.map((d) =>
         updateDoc(
           d.ref,
           archived ? { archived: true, archivedAt: Date.now() } : { archived: false, archivedAt: null }
@@ -1427,10 +1540,13 @@ async function setLinkedSitesArchived(tenderId: string, archived: boolean) {
     // would risk double-booking rather than reflecting reality — reopening only restores the
     // site, staff re-assign guards to it manually if the reopened project still needs them.
     if (archived) {
-      await Promise.all(snap.docs.map((d) => releaseGuardsFromSite(d.id)));
+      await Promise.all(linked.map((d) => releaseGuardsFromSite(d.id)));
     }
-  } catch {
-    // Best-effort — see doc comment above.
+  } catch (err) {
+    // Best-effort — see doc comment above. Logged so a permissions failure isn't invisible
+    // the way the old tenderId LIST was (it threw, this catch swallowed it, and the roster
+    // stayed active).
+    console.error('setLinkedSitesArchived failed', err);
   }
 }
 

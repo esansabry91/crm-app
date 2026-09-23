@@ -14,6 +14,7 @@ import {
   closeOutProject,
   requestReassignBranch,
 } from '../services/tenders';
+import { REASSIGNMENT_SITES_UNAVAILABLE } from '../utils/firestoreAccess';
 import RenewContractModal from '../components/active-projects/RenewContractModal';
 import TenderFormModal from '../components/tenders/TenderFormModal';
 import { formatDate, formatRM } from '../utils/format';
@@ -378,7 +379,14 @@ export default function ActiveProjectsPage() {
         ? window.confirm(t('activeProjects.confirmBringOver', { client: tender.clientName, branch: toBranch }))
         : window.confirm(t('activeProjects.confirmNewRoster', { client: tender.clientName, branch: toBranch }));
     if (!confirmed) return;
-    acceptReassignment(tender.id, tender.activeBranch || tender.department || null, toBranch, choice);
+    acceptReassignment(tender.id, tender.activeBranch || tender.department || null, toBranch, choice).catch((err) => {
+      const code = err instanceof Error ? err.message : '';
+      window.alert(
+        code === REASSIGNMENT_SITES_UNAVAILABLE
+          ? t('activeProjects.reassignmentSitesUnavailable')
+          : t('activeProjects.reassignmentFailed')
+      );
+    });
   };
 
   const handleCloseOut = (tender: Tender) => {
