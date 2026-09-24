@@ -1055,7 +1055,7 @@
     "pageSubtitle": "Jana, jejak dan kutip invois di semua cawangan.",
     "generateInvoiceHost": {
       "newInvoice": "Invois Baharu",
-      "addHistoricalInvoice": "Tambah Invois Lampau"
+      "addHistoricalInvoice": "Invois Manual"
     },
     "revenueTrendChart": {
       "empty": "Tiada data untuk dipaparkan lagi.",
@@ -1236,9 +1236,17 @@
       "checkedFraction": "({{checked}}/{{count}} disemak)",
       "noneMatchFilters": "Tiada invois sepadan dengan penapis ini lagi.",
       "revenueBySite": "Hasil mengikut lokasi",
-      "revenueBySiteDesc": "Sepanjang masa, penapis sama seperti di atas. Invois gabungan (satu invois membilkan beberapa lokasi projek yang sama — lihat Jana Invois di Kutipan Cawangan) mempunyai jumlahnya dipecahkan mengikut lokasi yang dibilkan, berkadar dengan bahagian setiap lokasi dalam invois tersebut — jadi lajur ini sentiasa berjumlah sama dengan angka \"Jumlah hasil (sepanjang masa)\" di atas, dan bilangan Invois sesuatu lokasi merangkumi setiap invois gabungan yang melibatkannya, bukan hanya yang dibilkan kepadanya sahaja.",
+      "revenueBySiteDesc": "Sepanjang masa, penapis sama seperti di atas. Invois gabungan (satu invois membilkan beberapa lokasi projek yang sama — lihat Jana Invois di Kutipan Cawangan) mempunyai jumlahnya dipecahkan mengikut lokasi yang dibilkan, berkadar dengan bahagian setiap lokasi dalam invois tersebut — jadi lajur ini sentiasa berjumlah sama dengan angka \"Jumlah hasil (sepanjang masa)\" di atas, dan bilangan Invois sesuatu lokasi merangkumi setiap invois gabungan yang melibatkannya, bukan hanya yang dibilkan kepadanya sahaja. Invois Manual (tiada lokasi Roster Tugas dikaitkan) dikumpulkan mengikut Projek Aktifnya, bukan mengikut lokasi.",
       "colSite": "Lokasi",
       "colPercentOfTotal": "% daripada jumlah",
+      "invoiceChecklist": "Senarai semak penyerahan invois",
+      "invoiceChecklistDesc": "Setiap projek aktif (penapis jenama/cawangan panel ini di atas masih terpakai), untuk bulan yang dipilih. Projek yang mempunyai lebih daripada satu lokasi Roster Tugas biasanya mendapat satu baris bagi setiap lokasi di sini — melainkan satu invois untuk bulan tersebut sudah merangkumi kesemua lokasinya sekali (invois gabungan, atau Invois Manual yang dikaitkan dengan keseluruhan projek), dalam hal ini ia kekal sebagai satu baris.",
+      "checklistMonthLabel": "Bulan",
+      "colProjectSite": "Projek / Lokasi",
+      "colStatus": "Status",
+      "statusSubmitted": "Telah dihantar",
+      "statusNotSubmitted": "Belum dihantar",
+      "noActiveProjects": "Tiada projek aktif sepadan dengan penapis ini.",
       "dataMaintenance": "Penyelenggaraan data",
       "dataMaintenanceDesc": "Invois yang disimpan sebelum penapis cawangan wujud tiada branchId, jadi ia dikecualikan apabila cawangan tertentu dipilih di sini atau di Senarai Penghutang (ia masih dipaparkan dengan baik di bawah \"Semua cawangan\"). Ini mencari lokasi setiap invois sedemikian untuk mengisi cawangannya — selamat dijalankan lebih daripada sekali, ia hanya menyentuh invois yang masih tiada branchId.",
       "backfillingEllipsis": "Mengisi data…",

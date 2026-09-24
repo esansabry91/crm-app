@@ -1064,7 +1064,7 @@
     "pageSubtitle": "Generate, track, and collect on invoices across every branch.",
     "generateInvoiceHost": {
       "newInvoice": "New Invoice",
-      "addHistoricalInvoice": "Add Historical Invoice"
+      "addHistoricalInvoice": "Manual Invoice"
     },
     "revenueTrendChart": {
       "empty": "No data to display yet.",
@@ -1245,9 +1245,17 @@
       "checkedFraction": "({{checked}}/{{count}} checked)",
       "noneMatchFilters": "No invoices match these filters yet.",
       "revenueBySite": "Revenue by site",
-      "revenueBySiteDesc": "All time, same filters as above. A combined invoice (one invoice billing several sites of the same project — see Branch Collection's Generate Invoice) has its total split across the sites it billed, proportional to each site's own share of the invoice — so this column always adds up to the \"Total revenue (all time)\" figure above, and a site's own Invoices count includes every combined invoice it was part of, not just the ones billed to it alone.",
+      "revenueBySiteDesc": "All time, same filters as above. A combined invoice (one invoice billing several sites of the same project — see Branch Collection's Generate Invoice) has its total split across the sites it billed, proportional to each site's own share of the invoice — so this column always adds up to the \"Total revenue (all time)\" figure above, and a site's own Invoices count includes every combined invoice it was part of, not just the ones billed to it alone. A Manual Invoice (no linked Duty Roster site) is grouped by its Active Project instead of a site.",
       "colSite": "Site",
       "colPercentOfTotal": "% of total",
+      "invoiceChecklist": "Invoice submission checklist",
+      "invoiceChecklistDesc": "Every active project (this panel's own brand/branch filters above still apply), for the selected month. A project with more than one Duty Roster site normally gets one row per site here — unless a single invoice for that month already covers every one of its sites together (a combined invoice, or a Manual Invoice tied to the project as a whole), in which case it stays one row.",
+      "checklistMonthLabel": "Month",
+      "colProjectSite": "Project / Site",
+      "colStatus": "Status",
+      "statusSubmitted": "Submitted",
+      "statusNotSubmitted": "Not submitted",
+      "noActiveProjects": "No active projects match these filters.",
       "dataMaintenance": "Data maintenance",
       "dataMaintenanceDesc": "Invoices saved before the branch filter existed have no branchId, so they're excluded whenever a specific branch is selected here or in the Debtor List (they still show up fine under \"All branches\"). This looks up each such invoice's site to fill in its branch — safe to run more than once, it only touches invoices still missing branchId.",
       "backfillingEllipsis": "Backfilling…",

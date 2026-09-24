@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   subscribeInvoices,
@@ -11,6 +11,8 @@ import {
   type BackfillStatusResult,
 } from '../../services/invoices';
 import { useBranches, useBrands } from '../../hooks/useBranches';
+import { useWonTenders } from '../../hooks/useActiveProjects';
+import { subscribeReachableSites } from '../../services/reachableSites';
 import { useAuth } from '../../contexts/AuthContext';
 import { isAdminRole } from '../../types';
 import type { Invoice } from '../../types';
@@ -75,8 +77,44 @@ interface MonthRow {
   checkedCount: number;
 }
 
+/** One Duty Roster site linked to a project, for the invoice-submission checklist below —
+ *  intentionally minimal (id + name only) since the checklist only needs to know a project's
+ *  site count and enumerate them, not anything about guards/branch/etc. */
+interface ChecklistSite {
+  id: string;
+  name: string;
+}
+
+/** One project's (or, when split, one site's) row in the invoice-submission checklist — see the
+ *  invoiceChecklist useMemo's doc comment for exactly when a project splits into per-site rows. */
+interface ChecklistSiteRow {
+  siteId: string;
+  siteName: string;
+  submitted: boolean;
+  invoiceCount: number;
+}
+
+interface ChecklistProjectRow {
+  tenderId: string;
+  projectName: string;
+  /** Present only when this project's sites are being invoiced separately for the selected month
+   *  (or haven't been invoiced at all yet) — one entry per Duty Roster site. Null for a
+   *  single-site project, or when one invoice already covers every one of its sites together, in
+   *  which case the project itself is the row (see `submitted`/`invoiceCount` below). */
+  siteRows: ChecklistSiteRow[] | null;
+  /** Whether this project's invoicing for the month is fully done — for a project with
+   *  siteRows, true only once every site row is submitted. */
+  submitted: boolean;
+  /** Total invoices matched to this project (by tenderId) for the selected month — meaningless
+   *  as a per-site breakdown when siteRows is set, so only rendered for the collapsed case. */
+  invoiceCount: number;
+}
+
 interface SiteRow {
   siteId: string | null;
+  /** Set instead of siteId for a row grouped by Active Project rather than by Duty Roster site —
+   *  see the bySite useMemo's doc comment below. Null for an ordinary site-tied row. */
+  tenderId: string | null;
   siteName: string;
   /** This site's share of revenue across every matching invoice — see
    *  getInvoiceSiteAllocations()'s doc comment in services/invoices.ts for how a combined
@@ -104,6 +142,12 @@ export default function RevenuePanel() {
   const { brands } = useBrands();
   const { branches } = useBranches();
   const { profile } = useAuth();
+  // Resolves a migrated/historical invoice's tenderId to its Active Project's current name for
+  // the Revenue by site table below — see bySite's own doc comment. useWonTenders() returns every
+  // Won tender regardless of closedOut, so this still resolves a project that's since moved to
+  // Past Projects.
+  const { wonTenders } = useWonTenders(profile);
+  const tenderNameById = useMemo(() => new Map(wonTenders.map((wt) => [wt.id, wt.clientName])), [wonTenders]);
   const canFilterByBranch = isAdminRole(profile?.role);
   // The branch filter itself stays admin-only (per the original spec), but the backfill/
   // diagnostics tools below it are safe for a Branch Manager to run too — firestore.rules
@@ -201,23 +245,34 @@ export default function RevenuePanel() {
     return Array.from(map.values()).sort((a, b) => (a.monthKey < b.monthKey ? 1 : -1));
   }, [filtered]);
 
-  // Revenue attributed to each site touched by the (brand/branch-filtered) invoices above —
-  // see getInvoiceSiteAllocations()'s doc comment for how a combined invoice's total is split
-  // across the sites it billed. All-time, same scope as the "Total revenue (all time)" stat card
-  // below, so the two stay mutually consistent (this table's revenue column sums to that figure).
+  // Revenue attributed to each site (or, for a migrated/historical invoice, each Active Project)
+  // touched by the (brand/branch-filtered) invoices above — see getInvoiceSiteAllocations()'s doc
+  // comment for how a combined invoice's total is split across the sites it billed. All-time, same
+  // scope as the "Total revenue (all time)" stat card below, so the two stay mutually consistent
+  // (this table's revenue column sums to that figure).
+  //
+  // A "New Invoice" (generated from Duty Roster) is always tied to a specific site — those rows
+  // group by alloc.siteId exactly as before. A "Manual Invoice" (see createMigratedInvoice(), the
+  // Generate Invoice tab formerly labeled "Add historical invoice") carries no Duty Roster site at
+  // all — alloc.siteId is null for it — because it's tied to a whole Active Project (tenderId)
+  // instead, so those rows group by tenderId, resolved to that project's current client name via
+  // tenderNameById. Grouping by the id (not by clientName text) means two migrated invoices for the
+  // same project always land in the same row even if their typed-in clientName ever drifted
+  // slightly; falling back to the invoice's own clientName only kicks in if the project itself
+  // isn't resolvable (e.g. no longer visible to this viewer), and the translated placeholder only
+  // if even that's blank.
   const bySite = useMemo(() => {
     const map = new Map<string, SiteRow>();
     for (const inv of filtered) {
       for (const alloc of getInvoiceSiteAllocations(inv)) {
-        // Invoices migrated from before the CRM tracked a Duty Roster site (see
-        // createMigratedInvoice()) carry no siteId/siteName — they're tied to a whole
-        // project/client instead. Falling back to the invoice's own clientName there (rather
-        // than a generic "Unknown site" label) keeps this table meaningful for those rows; the
-        // translated fallback only kicks in for the rarer case where even clientName is blank.
-        const displayName = alloc.siteName || inv.clientName || t('branchCollection.revenuePanel.unknownSite');
-        const key = alloc.siteId || `name:${displayName}`;
+        const isProjectTied = !alloc.siteId;
+        const displayName = isProjectTied
+          ? (inv.tenderId && tenderNameById.get(inv.tenderId)) || inv.clientName || t('branchCollection.revenuePanel.unknownSite')
+          : alloc.siteName;
+        const key = isProjectTied ? `tender:${inv.tenderId || displayName}` : `site:${alloc.siteId}`;
         const row = map.get(key) || {
           siteId: alloc.siteId,
+          tenderId: isProjectTied ? inv.tenderId : null,
           siteName: displayName,
           revenue: 0,
           invoiceCount: 0,
@@ -228,7 +283,98 @@ export default function RevenuePanel() {
       }
     }
     return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
-  }, [filtered, t]);
+  }, [filtered, t, tenderNameById]);
+
+  // Every Duty Roster site currently linked to a tender, keyed by tenderId, for the invoice
+  // checklist below. Uses the same "everything this profile can LIST" plan as
+  // useLiveGuardCountsByTender (Active Projects' own guard-count source) rather than
+  // useTenderSites (which is scoped to one tenderId at a time, for a single open modal) — the
+  // checklist needs every project's sites at once. Archived sites are excluded, matching how an
+  // active project's Duty Roster only ever shows its live site(s).
+  const [sitesByTender, setSitesByTender] = useState<Map<string, ChecklistSite[]>>(new Map());
+  useEffect(() => {
+    if (!profile) {
+      setSitesByTender(new Map());
+      return;
+    }
+    return subscribeReachableSites(
+      profile,
+      (docs) => {
+        const map = new Map<string, ChecklistSite[]>();
+        for (const d of docs) {
+          const data = d.data() as { name?: string; tenderId?: string | null; archived?: boolean };
+          if (!data.tenderId || data.archived) continue;
+          const list = map.get(data.tenderId) || [];
+          list.push({ id: d.id, name: data.name || 'Untitled site' });
+          map.set(data.tenderId, list);
+        }
+        map.forEach((list) => list.sort((a, b) => a.name.localeCompare(b.name)));
+        setSitesByTender(map);
+      },
+      (err) => console.error('RevenuePanel sites subscription error', err)
+    );
+  }, [profile]);
+
+  const [checklistMonth, setChecklistMonth] = useState(() => currentMonthKey());
+
+  // Active (not closed-out) projects in scope for the checklist — same brand/branch filters as
+  // the rest of this panel, so switching a filter above narrows the checklist too.
+  const activeProjectsForChecklist = useMemo(
+    () =>
+      wonTenders
+        .filter((tnd) => !tnd.closedOut)
+        .filter((tnd) => !brandFilter || tnd.brandId === brandFilter)
+        .filter((tnd) => !effectiveBranchFilter || tnd.activeBranch === effectiveBranchFilter),
+    [wonTenders, brandFilter, effectiveBranchFilter]
+  );
+
+  // Which active projects have had their invoice(s) submitted for the selected month, and which
+  // haven't yet — one row per project, EXCEPT a multi-site project whose sites are being invoiced
+  // separately this month (or haven't been invoiced at all yet), which expands into one row per
+  // site nested under it. A project's sites stay collapsed into a single row only when one
+  // invoice already reaches every one of them together: either a combined invoice (see
+  // InvoiceSiteBill's doc comment in types.ts) whose additionalSiteBills cover every site, or a
+  // Manual Invoice (see createMigratedInvoice()), which — having no Duty Roster site at all — is
+  // inherently a whole-project submission rather than any one site's.
+  const invoiceChecklist = useMemo<ChecklistProjectRow[]>(() => {
+    const rows = activeProjectsForChecklist.map((project): ChecklistProjectRow => {
+      const monthInvoices = filtered.filter((inv) => inv.tenderId === project.id && monthKeyOf(inv) === checklistMonth);
+      const sites = sitesByTender.get(project.id) || [];
+      const invoiceCount = monthInvoices.length;
+
+      if (sites.length <= 1) {
+        return { tenderId: project.id, projectName: project.clientName, siteRows: null, submitted: invoiceCount > 0, invoiceCount };
+      }
+
+      const wholeProjectCovered = monthInvoices.some((inv) => {
+        if (!inv.siteId) return true; // Manual Invoice — tied to the project, not a specific site.
+        const covered = new Set(getInvoiceSiteAllocations(inv).map((a) => a.siteId).filter(Boolean));
+        return sites.every((s) => covered.has(s.id));
+      });
+      if (wholeProjectCovered) {
+        return { tenderId: project.id, projectName: project.clientName, siteRows: null, submitted: true, invoiceCount };
+      }
+
+      const siteRows: ChecklistSiteRow[] = sites.map((site) => {
+        const matching = monthInvoices.filter((inv) => getInvoiceSiteAllocations(inv).some((a) => a.siteId === site.id));
+        return { siteId: site.id, siteName: site.name, submitted: matching.length > 0, invoiceCount: matching.length };
+      });
+      return {
+        tenderId: project.id,
+        projectName: project.clientName,
+        siteRows,
+        submitted: siteRows.every((r) => r.submitted),
+        invoiceCount,
+      };
+    });
+
+    // Not-yet-fully-submitted projects first — the actionable ones — then alphabetically within
+    // each group.
+    return rows.sort((a, b) => {
+      if (a.submitted !== b.submitted) return a.submitted ? 1 : -1;
+      return a.projectName.localeCompare(b.projectName);
+    });
+  }, [activeProjectsForChecklist, filtered, sitesByTender, checklistMonth]);
 
   const thisMonthKey = currentMonthKey();
   const thisMonth = byMonth.find((r) => r.monthKey === thisMonthKey) || {
@@ -407,7 +553,7 @@ export default function RevenuePanel() {
             </thead>
             <tbody>
               {bySite.map((row) => (
-                <tr key={row.siteId || row.siteName} className="border-b border-slate-50 last:border-0">
+                <tr key={row.siteId || row.tenderId || row.siteName} className="border-b border-slate-50 last:border-0">
                   <td className="py-2 pr-4">{row.siteName}</td>
                   <td className="py-2 pr-4 text-right">{row.invoiceCount}</td>
                   <td className="py-2 pr-4 text-right font-medium">{row.revenue.toFixed(2)}</td>
@@ -420,6 +566,80 @@ export default function RevenuePanel() {
                 <tr>
                   <td colSpan={4} className="py-4 text-xs text-slate-400">
                     {t('branchCollection.revenuePanel.noneMatchFilters')}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="flex items-center justify-between gap-4 flex-wrap mb-1">
+          <h3 className="text-sm font-semibold text-slate-800">{t('branchCollection.revenuePanel.invoiceChecklist')}</h3>
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            {t('branchCollection.revenuePanel.checklistMonthLabel')}
+            <input
+              type="month"
+              value={checklistMonth}
+              onChange={(e) => setChecklistMonth(e.target.value || currentMonthKey())}
+              className="input text-sm"
+            />
+          </label>
+        </div>
+        <p className="text-xs text-slate-400 mt-0.5 mb-3">{t('branchCollection.revenuePanel.invoiceChecklistDesc')}</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
+                <th className="py-2 pr-4 font-medium">{t('branchCollection.revenuePanel.colProjectSite')}</th>
+                <th className="py-2 pr-4 font-medium text-right">{t('branchCollection.revenuePanel.colInvoices')}</th>
+                <th className="py-2 font-medium text-right">{t('branchCollection.revenuePanel.colStatus')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoiceChecklist.map((row) => (
+                <Fragment key={row.tenderId}>
+                  {row.siteRows ? (
+                    <>
+                      <tr className="border-b border-slate-50">
+                        <td colSpan={3} className="pt-2.5 pb-1 pr-4 text-xs font-semibold text-slate-500">
+                          {row.projectName}
+                        </td>
+                      </tr>
+                      {row.siteRows.map((site) => (
+                        <tr key={site.siteId} className="border-b border-slate-50 last:border-0">
+                          <td className="py-2 pr-4 pl-4 text-slate-600">{site.siteName}</td>
+                          <td className="py-2 pr-4 text-right">{site.invoiceCount}</td>
+                          <td className="py-2 text-right">
+                            <span className={site.submitted ? 'text-xs font-medium text-emerald-700' : 'text-xs font-medium text-amber-700'}>
+                              {site.submitted
+                                ? t('branchCollection.revenuePanel.statusSubmitted')
+                                : t('branchCollection.revenuePanel.statusNotSubmitted')}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </>
+                  ) : (
+                    <tr className="border-b border-slate-50 last:border-0">
+                      <td className="py-2 pr-4">{row.projectName}</td>
+                      <td className="py-2 pr-4 text-right">{row.invoiceCount}</td>
+                      <td className="py-2 text-right">
+                        <span className={row.submitted ? 'text-xs font-medium text-emerald-700' : 'text-xs font-medium text-amber-700'}>
+                          {row.submitted
+                            ? t('branchCollection.revenuePanel.statusSubmitted')
+                            : t('branchCollection.revenuePanel.statusNotSubmitted')}
+                        </span>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+              {invoiceChecklist.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="py-4 text-xs text-slate-400">
+                    {t('branchCollection.revenuePanel.noActiveProjects')}
                   </td>
                 </tr>
               )}
