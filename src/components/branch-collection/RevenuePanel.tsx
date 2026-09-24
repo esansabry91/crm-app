@@ -11,13 +11,14 @@ import {
   type BackfillStatusResult,
 } from '../../services/invoices';
 import { useBranches, useBrands } from '../../hooks/useBranches';
-import { useWonTenders } from '../../hooks/useActiveProjects';
+import { useLiveGuardCountsByTender, useWonTenders } from '../../hooks/useActiveProjects';
 import { subscribeReachableSites } from '../../services/reachableSites';
 import { useAuth } from '../../contexts/AuthContext';
 import { isAdminRole } from '../../types';
-import type { Invoice } from '../../types';
+import type { Invoice, Tender } from '../../types';
 import StatCard from '../analytics/StatCard';
 import RevenueTrendChart, { type RevenueTrendPoint } from './RevenueTrendChart';
+import ProjectDetailsModal from '../active-projects/ProjectDetailsModal';
 import { formatRM } from '../../utils/format';
 
 // Kept in English, matching DebtorList's own monthLabel() precedent — a plain date-formatting
@@ -97,6 +98,9 @@ interface ChecklistSiteRow {
 interface ChecklistProjectRow {
   tenderId: string;
   projectName: string;
+  /** The full project record, kept only so the "Details" link can open the same
+   *  ProjectDetailsModal Active Projects itself uses, without a second Tender lookup. */
+  tender: Tender;
   /** Present only when this project's sites are being invoiced separately for the selected month
    *  (or haven't been invoiced at all yet) — one entry per Duty Roster site. Null for a
    *  single-site project, or when one invoice already covers every one of its sites together, in
@@ -146,8 +150,12 @@ export default function RevenuePanel() {
   // the Revenue by site table below — see bySite's own doc comment. useWonTenders() returns every
   // Won tender regardless of closedOut, so this still resolves a project that's since moved to
   // Past Projects.
-  const { wonTenders } = useWonTenders(profile);
+  const { wonTenders, seesAllBranches } = useWonTenders(profile);
   const tenderNameById = useMemo(() => new Map(wonTenders.map((wt) => [wt.id, wt.clientName])), [wonTenders]);
+  // Live guard count + the project record itself, both needed to open the same ProjectDetailsModal
+  // Active Projects uses, from the "Details" link on each invoice-checklist row below.
+  const liveGuardCounts = useLiveGuardCountsByTender(profile, seesAllBranches);
+  const [detailsTender, setDetailsTender] = useState<Tender | null>(null);
   const canFilterByBranch = isAdminRole(profile?.role);
   // The branch filter itself stays admin-only (per the original spec), but the backfill/
   // diagnostics tools below it are safe for a Branch Manager to run too — firestore.rules
@@ -349,7 +357,7 @@ export default function RevenuePanel() {
       const invoiceCount = monthInvoices.length;
 
       if (sites.length <= 1) {
-        return { tenderId: project.id, projectName: project.clientName, siteRows: null, submitted: invoiceCount > 0, invoiceCount };
+        return { tenderId: project.id, projectName: project.clientName, tender: project, siteRows: null, submitted: invoiceCount > 0, invoiceCount };
       }
 
       const wholeProjectCovered = monthInvoices.some((inv) => {
@@ -358,7 +366,7 @@ export default function RevenuePanel() {
         return sites.every((s) => covered.has(s.id));
       });
       if (wholeProjectCovered) {
-        return { tenderId: project.id, projectName: project.clientName, siteRows: null, submitted: true, invoiceCount };
+        return { tenderId: project.id, projectName: project.clientName, tender: project, siteRows: null, submitted: true, invoiceCount };
       }
 
       const siteRows: ChecklistSiteRow[] = sites.map((site) => {
@@ -368,6 +376,7 @@ export default function RevenuePanel() {
       return {
         tenderId: project.id,
         projectName: project.clientName,
+        tender: project,
         siteRows,
         submitted: siteRows.every((r) => r.submitted),
         invoiceCount,
@@ -610,12 +619,30 @@ export default function RevenuePanel() {
                     <>
                       <tr className="border-b border-slate-50">
                         <td colSpan={3} className="pt-2.5 pb-1 pr-4 text-xs font-semibold text-slate-500">
-                          {row.projectName}
+                          <div className="flex items-center gap-2">
+                            <span>{row.projectName}</span>
+                            <button
+                              onClick={() => setDetailsTender(row.tender)}
+                              className="text-xs font-medium normal-case text-blue-600 hover:text-blue-700"
+                            >
+                              {t('branchCollection.revenuePanel.viewDetails')}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                       {row.siteRows.map((site) => (
                         <tr key={site.siteId} className="border-b border-slate-50 last:border-0">
-                          <td className="py-2 pr-4 pl-4 text-slate-600">{site.siteName}</td>
+                          <td className="py-2 pr-4 pl-4 text-slate-600">
+                            <div className="flex items-center gap-2">
+                              <span>{site.siteName}</span>
+                              <button
+                                onClick={() => setDetailsTender(row.tender)}
+                                className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                              >
+                                {t('branchCollection.revenuePanel.viewDetails')}
+                              </button>
+                            </div>
+                          </td>
                           <td className="py-2 pr-4 text-right">{site.invoiceCount}</td>
                           <td className="py-2 text-right">
                             <span className={site.submitted ? 'text-xs font-medium text-emerald-700' : 'text-xs font-medium text-amber-700'}>
@@ -629,7 +656,17 @@ export default function RevenuePanel() {
                     </>
                   ) : (
                     <tr className="border-b border-slate-50 last:border-0">
-                      <td className="py-2 pr-4">{row.projectName}</td>
+                      <td className="py-2 pr-4">
+                        <div className="flex items-center gap-2">
+                          <span>{row.projectName}</span>
+                          <button
+                            onClick={() => setDetailsTender(row.tender)}
+                            className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                          >
+                            {t('branchCollection.revenuePanel.viewDetails')}
+                          </button>
+                        </div>
+                      </td>
                       <td className="py-2 pr-4 text-right">{row.invoiceCount}</td>
                       <td className="py-2 text-right">
                         <span className={row.submitted ? 'text-xs font-medium text-emerald-700' : 'text-xs font-medium text-amber-700'}>
@@ -744,6 +781,16 @@ export default function RevenuePanel() {
             )}
           </div>
         </div>
+      )}
+
+      {profile && (
+        <ProjectDetailsModal
+          open={detailsTender !== null}
+          tender={detailsTender}
+          onClose={() => setDetailsTender(null)}
+          liveGuardCount={detailsTender ? liveGuardCounts.get(detailsTender.id) : undefined}
+          actor={{ uid: profile.uid, name: profile.name, role: profile.role }}
+        />
       )}
     </div>
   );
