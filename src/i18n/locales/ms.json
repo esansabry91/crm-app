@@ -1240,7 +1240,7 @@
       "colSite": "Lokasi",
       "colPercentOfTotal": "% daripada jumlah",
       "invoiceChecklist": "Senarai semak penyerahan invois",
-      "invoiceChecklistDesc": "Setiap projek aktif (penapis jenama/cawangan panel ini di atas masih terpakai), untuk bulan yang dipilih. Projek yang mempunyai lebih daripada satu lokasi Roster Tugas biasanya mendapat satu baris bagi setiap lokasi di sini — melainkan satu invois untuk bulan tersebut sudah merangkumi kesemua lokasinya sekali (invois gabungan, atau Invois Manual yang dikaitkan dengan keseluruhan projek), dalam hal ini ia kekal sebagai satu baris.",
+      "invoiceChecklistDesc": "Setiap projek aktif yang kontraknya telah bermula pada bulan yang dipilih (penapis jenama/cawangan panel ini di atas masih terpakai). Projek yang mempunyai lebih daripada satu lokasi Roster Tugas biasanya mendapat satu baris bagi setiap lokasi di sini — melainkan satu invois untuk bulan tersebut sudah merangkumi kesemua lokasinya sekali (invois gabungan, atau Invois Manual yang dikaitkan dengan keseluruhan projek), dalam hal ini ia kekal sebagai satu baris.",
       "checklistMonthLabel": "Bulan",
       "colProjectSite": "Projek / Lokasi",
       "colStatus": "Status",

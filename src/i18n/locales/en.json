@@ -1249,7 +1249,7 @@
       "colSite": "Site",
       "colPercentOfTotal": "% of total",
       "invoiceChecklist": "Invoice submission checklist",
-      "invoiceChecklistDesc": "Every active project (this panel's own brand/branch filters above still apply), for the selected month. A project with more than one Duty Roster site normally gets one row per site here — unless a single invoice for that month already covers every one of its sites together (a combined invoice, or a Manual Invoice tied to the project as a whole), in which case it stays one row.",
+      "invoiceChecklistDesc": "Every active project whose contract has started by the selected month (this panel's own brand/branch filters above still apply). A project with more than one Duty Roster site normally gets one row per site here — unless a single invoice for that month already covers every one of its sites together (a combined invoice, or a Manual Invoice tied to the project as a whole), in which case it stays one row.",
       "checklistMonthLabel": "Month",
       "colProjectSite": "Project / Site",
       "colStatus": "Status",

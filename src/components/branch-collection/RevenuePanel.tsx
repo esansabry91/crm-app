@@ -318,14 +318,20 @@ export default function RevenuePanel() {
   const [checklistMonth, setChecklistMonth] = useState(() => currentMonthKey());
 
   // Active (not closed-out) projects in scope for the checklist — same brand/branch filters as
-  // the rest of this panel, so switching a filter above narrows the checklist too.
+  // the rest of this panel, so switching a filter above narrows the checklist too, PLUS a
+  // contractStart cutoff: a project whose contract hasn't started yet as of the selected month
+  // has no invoicing to expect yet, so it stays off the checklist entirely for that month rather
+  // than showing as a permanent, misleading "Not submitted" from the month it was first Won
+  // onward. A project with no contractStart on file (shouldn't normally happen — see Tender's
+  // own contractStart field) is kept rather than hidden, so a data gap never silently drops it.
   const activeProjectsForChecklist = useMemo(
     () =>
       wonTenders
         .filter((tnd) => !tnd.closedOut)
         .filter((tnd) => !brandFilter || tnd.brandId === brandFilter)
-        .filter((tnd) => !effectiveBranchFilter || tnd.activeBranch === effectiveBranchFilter),
-    [wonTenders, brandFilter, effectiveBranchFilter]
+        .filter((tnd) => !effectiveBranchFilter || tnd.activeBranch === effectiveBranchFilter)
+        .filter((tnd) => !tnd.contractStart || tnd.contractStart.slice(0, 7) <= checklistMonth),
+    [wonTenders, brandFilter, effectiveBranchFilter, checklistMonth]
   );
 
   // Which active projects have had their invoice(s) submitted for the selected month, and which
