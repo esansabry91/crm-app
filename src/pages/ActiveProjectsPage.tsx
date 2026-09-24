@@ -61,22 +61,33 @@ function ContractStatusBadge({ contractEnd }: { contractEnd: string }) {
   }
   if (days < 0) {
     return (
-      <span
-        className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
-        style={{ backgroundColor: `${VIZ.status.critical}1a`, color: VIZ.status.critical }}
-      >
-        {t('activeProjects.contractEndedBadge')}
-      </span>
+      <div>
+        <span
+          className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
+          style={{ backgroundColor: `${VIZ.status.critical}1a`, color: VIZ.status.critical }}
+        >
+          {t('activeProjects.contractEndedBadge')}
+        </span>
+        {/* Nudges whoever's looking at a lapsed contract toward one of the two actions this same
+            row's Details column already offers (Renew or Close out) — a reminder, not a new
+            action of its own. */}
+        <p className="text-[10px] text-slate-400 mt-1">{t('activeProjects.contractEndedRemark')}</p>
+      </div>
     );
   }
   if (days <= ENDING_SOON_DAYS) {
     return (
-      <span
-        className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
-        style={{ backgroundColor: `${VIZ.status.warning}26`, color: '#9a6400' }}
-      >
-        {t('activeProjects.endingInDays', { days })}
-      </span>
+      <div>
+        <span
+          className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
+          style={{ backgroundColor: `${VIZ.status.warning}26`, color: '#9a6400' }}
+        >
+          {t('activeProjects.endingInDays', { days })}
+        </span>
+        {/* Same idea as contractEndedRemark above, one step earlier — points at the Renew action
+            before the contract actually lapses. */}
+        <p className="text-[10px] text-slate-400 mt-1">{t('activeProjects.endingSoonRemark')}</p>
+      </div>
     );
   }
   return (
