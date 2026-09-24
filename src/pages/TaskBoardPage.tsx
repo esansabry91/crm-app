@@ -79,8 +79,9 @@ export default function TaskBoardPage() {
   // Admin-only branch filter for the list — a Branch Manager never needs one, since
   // firestore.rules already only ever hands them their own department's tasks.
   const [branchFilter, setBranchFilter] = useState<string>(ALL_BRANCHES);
-  // Assignee/priority filters narrow what's shown in the table only — the stat tiles above
-  // always reflect the true Open/Completed/Productivity totals, independent of these.
+  // The assignee filter narrows the stat tiles too — picking someone turns Open/Completed/
+  // Productivity into that person's own numbers (see assigneeScopedOpenTasks/
+  // assigneeScopedCompletedTasks below). The priority filter narrows only the table itself.
   const [assigneeFilter, setAssigneeFilter] = useState<string>(ALL_ASSIGNEES);
   const [priorityFilter, setPriorityFilter] = useState<'all' | TaskPriority>('all');
   // Which row's progress log is currently expanded (one at a time) — and the draft text for
@@ -124,10 +125,6 @@ export default function TaskBoardPage() {
         .sort((a, b) => b.createdAt - a.createdAt),
     [visibleTasks]
   );
-  const awaitingConfirmationCount = useMemo(
-    () => openTasks.filter((t) => t.status === 'staffCompleted').length,
-    [openTasks]
-  );
 
   // "Completed" is scoped to closedAt falling in the current calendar month — this is the part
   // that resets every 1st. A task closed in an earlier month simply stops matching here; it's
@@ -140,9 +137,9 @@ export default function TaskBoardPage() {
     [visibleTasks]
   );
 
-  // Everyone who currently has at least one task in scope — built from the (unfiltered)
+  // Everyone who currently has at least one task in scope — built from the (assignee-unfiltered)
   // open+completed sets, not the full staff roster, so the dropdown never lists someone with
-  // nothing assigned right now.
+  // nothing assigned right now, and never empties itself out once a name is picked.
   const assigneeFilterOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const t of [...openTasks, ...completedThisMonth]) {
@@ -153,35 +150,43 @@ export default function TaskBoardPage() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [openTasks, completedThisMonth]);
 
-  // Narrow what's actually rendered in the table — the Open/Completed COUNTS on the stat tiles
-  // above stay unfiltered (true totals); only the list itself, and the tab labels beside it,
-  // reflect these two filters.
-  const filteredOpenTasks = useMemo(
-    () =>
-      openTasks.filter(
-        (t) =>
-          (assigneeFilter === ALL_ASSIGNEES || t.assigneeUid === assigneeFilter) &&
-          (priorityFilter === 'all' || t.priority === priorityFilter)
-      ),
-    [openTasks, assigneeFilter, priorityFilter]
+  // Assignee-scoped open/completed sets — what the stat tiles (Open/Completed/Productivity) and
+  // the "awaiting confirmation" sub-label read from. Scoped to the assignee filter only (not
+  // priority), so picking a name out of "All assignees" turns the tiles into that person's own
+  // numbers; the table itself narrows further by priority below.
+  const assigneeScopedOpenTasks = useMemo(
+    () => openTasks.filter((t) => assigneeFilter === ALL_ASSIGNEES || t.assigneeUid === assigneeFilter),
+    [openTasks, assigneeFilter]
   );
-  const filteredCompletedTasks = useMemo(
-    () =>
-      completedThisMonth.filter(
-        (t) =>
-          (assigneeFilter === ALL_ASSIGNEES || t.assigneeUid === assigneeFilter) &&
-          (priorityFilter === 'all' || t.priority === priorityFilter)
-      ),
-    [completedThisMonth, assigneeFilter, priorityFilter]
+  const assigneeScopedCompletedTasks = useMemo(
+    () => completedThisMonth.filter((t) => assigneeFilter === ALL_ASSIGNEES || t.assigneeUid === assigneeFilter),
+    [completedThisMonth, assigneeFilter]
+  );
+  const awaitingConfirmationCount = useMemo(
+    () => assigneeScopedOpenTasks.filter((t) => t.status === 'staffCompleted').length,
+    [assigneeScopedOpenTasks]
   );
 
-  // Of everything currently relevant (this month's closures + the standing open backlog), what
-  // fraction has actually been finished. Deliberately uses the same two numbers as the tiles
-  // beside it, so the figure is easy to sanity-check at a glance.
+  // What's actually rendered in the table — the assignee-scoped sets above, narrowed further by
+  // priority; the tab labels beside the table reflect these same counts.
+  const filteredOpenTasks = useMemo(
+    () => assigneeScopedOpenTasks.filter((t) => priorityFilter === 'all' || t.priority === priorityFilter),
+    [assigneeScopedOpenTasks, priorityFilter]
+  );
+  const filteredCompletedTasks = useMemo(
+    () => assigneeScopedCompletedTasks.filter((t) => priorityFilter === 'all' || t.priority === priorityFilter),
+    [assigneeScopedCompletedTasks, priorityFilter]
+  );
+
+  // Of everything currently relevant to the selected assignee (this month's closures + the
+  // standing open backlog), what fraction has actually been finished. Deliberately uses the same
+  // two numbers as the tiles beside it, so the figure is easy to sanity-check at a glance.
   const productivity =
-    openTasks.length + completedThisMonth.length === 0
+    assigneeScopedOpenTasks.length + assigneeScopedCompletedTasks.length === 0
       ? null
-      : Math.round((completedThisMonth.length / (openTasks.length + completedThisMonth.length)) * 100);
+      : Math.round(
+          (assigneeScopedCompletedTasks.length / (assigneeScopedOpenTasks.length + assigneeScopedCompletedTasks.length)) * 100
+        );
 
   function resetForm() {
     setTitle('');
@@ -331,17 +336,17 @@ export default function TaskBoardPage() {
         <div className={clsx('grid gap-3 mt-4 max-w-3xl', isStaff ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3')}>
           <StatCard
             label={t('taskBoard.openTasksLabel')}
-            value={String(openTasks.length)}
+            value={String(assigneeScopedOpenTasks.length)}
             sub={awaitingConfirmationCount > 0 ? t('taskBoard.awaitingConfirmationSub', { count: awaitingConfirmationCount }) : undefined}
             accent="#283278"
-            action={{ label: t('taskBoard.goToList'), onClick: () => setView('open'), disabled: openTasks.length === 0 }}
+            action={{ label: t('taskBoard.goToList'), onClick: () => setView('open'), disabled: assigneeScopedOpenTasks.length === 0 }}
           />
           <StatCard
             label={t('taskBoard.completedTasksLabel')}
-            value={String(completedThisMonth.length)}
+            value={String(assigneeScopedCompletedTasks.length)}
             sub={t('taskBoard.completedSub')}
             accent="#0f766e"
-            action={{ label: t('taskBoard.goToList'), onClick: () => setView('completed'), disabled: completedThisMonth.length === 0 }}
+            action={{ label: t('taskBoard.goToList'), onClick: () => setView('completed'), disabled: assigneeScopedCompletedTasks.length === 0 }}
           />
           {/* Operation Staff don't get a productivity readout on their own tasks — this is a
               management metric for whoever's assigning the work, not the person doing it. */}
