@@ -171,7 +171,10 @@ export default function App() {
           <Route
             path="/branch-collection"
             element={
-              <ProtectedRoute hideFromStaff>
+              // allowOperationAdmin: Operation Admin now reaches this page too, scoped by
+              // BranchCollectionPage.tsx itself to just Generate Invoice and Invoices (see
+              // ProtectedRoute.tsx's allowOperationAdmin doc comment).
+              <ProtectedRoute hideFromStaff allowOperationAdmin>
                 <AppLayout>
                   <BranchCollectionPage />
                 </AppLayout>

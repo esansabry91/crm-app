@@ -99,6 +99,21 @@ service cloud.firestore {
         && userDoc(request.auth.uid).data.active != false;
     }
 
+    // True only for a signed-in, active user with role "operationAdmin" — the same
+    // Duty-Roster-only role as dutyStaff (see the Role doc comment in types.ts and
+    // isOwnBranchOperationStaff() above), except also let into Branch Collection, scoped
+    // client-side (BranchCollectionPage.tsx) to just the Generate Invoice and Invoices tabs —
+    // granted alongside isBranchManager() on /invoices' create/update rules and
+    // /invoiceCounters' write rule below so that scoping is actually enforced server-side too,
+    // not just hidden in the UI. Never granted on Debtor List/Revenue's own data (Revenue reads
+    // straight off /invoices too, but nothing there is write-gated, so keeping this role off
+    // those tabs is purely the client-side restriction in BranchCollectionPage.tsx).
+    function isOperationAdmin() {
+      return isSignedIn()
+        && userDoc(request.auth.uid).data.role == 'operationAdmin'
+        && userDoc(request.auth.uid).data.active != false;
+    }
+
     // This user's own department (branch name, or "HQ").
     function myDepartment() {
       return userDoc(request.auth.uid).data.department;
@@ -262,14 +277,19 @@ service cloud.firestore {
       allow read: if isActiveUser() && !isPayrollLike();
       // Finance can update (record payments / change status on an existing invoice) but never
       // create — see isFinance()'s doc comment above for why the two rules deliberately differ.
-      allow create: if isActiveUser() && (isAdmin() || isBranchManager());
+      // Operation Admin gets full create/update parity with Branch Manager (see
+      // isOperationAdmin()'s doc comment above) — Generate Invoice and the Invoices tab's Edit/
+      // Void actions are the only two tabs it's let into client-side, and this is what actually
+      // enforces that server-side.
+      allow create: if isActiveUser() && (isAdmin() || isBranchManager() || isOperationAdmin());
       // Finance is restricted to the fields updateInvoiceStatus() actually writes (recording a
       // payment): it can never void a wrongly-generated invoice or edit its content (line items,
       // client details, etc — see updateInvoiceContent()/voidInvoice() in services/invoices.ts),
-      // both of which stay Admin/Developer/Branch Manager only, matching who can create one in
-      // the first place. financeUpdateOnlyTouches() above is what enforces that split.
+      // both of which stay Admin/Developer/Branch Manager/Operation Admin only, matching who can
+      // create one in the first place. financeUpdateOnlyTouches() above is what enforces that
+      // split.
       allow update: if isActiveUser()
-        && (isAdmin() || isBranchManager() || (isFinance() && financeUpdateOnlyTouches()));
+        && (isAdmin() || isBranchManager() || isOperationAdmin() || (isFinance() && financeUpdateOnlyTouches()));
       allow delete: if isAdmin();
     }
 
@@ -280,7 +300,7 @@ service cloud.firestore {
     // need to be writable by whoever can create invoices.
     match /invoiceCounters/{counterId} {
       allow read: if isActiveUser() && !isPayrollLike();
-      allow write: if isActiveUser() && (isAdmin() || isBranchManager());
+      allow write: if isActiveUser() && (isAdmin() || isBranchManager() || isOperationAdmin());
     }
 
     // ---- App-wide settings (currently just Testing Mode) ----

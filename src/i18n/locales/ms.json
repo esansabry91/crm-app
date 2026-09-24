@@ -1158,6 +1158,7 @@
       "title": "Invois ({{count}})",
       "allBrands": "Semua jenama",
       "allBranches": "Semua cawangan",
+      "allMonths": "Semua bulan",
       "statusChip": "Status: {{status}}",
       "clearFilters": "Kosongkan penapis",
       "goToList": "Pergi ke senarai",

@@ -1167,6 +1167,7 @@
       "title": "Invoices ({{count}})",
       "allBrands": "All brands",
       "allBranches": "All branches",
+      "allMonths": "All months",
       "statusChip": "Status: {{status}}",
       "clearFilters": "Clear filters",
       "goToList": "Go to list",

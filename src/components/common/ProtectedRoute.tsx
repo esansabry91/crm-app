@@ -9,6 +9,7 @@ export default function ProtectedRoute({
   adminOnly = false,
   allowBranchManager = false,
   hideFromStaff = false,
+  allowOperationAdmin = false,
   hidePayrollOnly = false,
   hideHr = false,
   hideFromFinance = false,
@@ -32,6 +33,15 @@ export default function ProtectedRoute({
    * hidePayrollOnly below), so they're gated by this too.
    */
   hideFromStaff?: boolean;
+  /**
+   * Only meaningful alongside hideFromStaff — additionally lets an 'operationAdmin' account
+   * through, while dutyStaff/payroll/hr still bounce to Duty Roster. Used only by Branch
+   * Collection's route: Operation Admin is otherwise gated identically to dutyStaff (see
+   * hideFromStaff's own doc comment), except it's now also let into Branch Collection, scoped
+   * client-side (BranchCollectionPage.tsx) to just the Generate Invoice and Invoices tabs, and
+   * server-side (firestore.rules' isOperationAdmin()) to the matching /invoices writes.
+   */
+  allowOperationAdmin?: boolean;
   /**
    * Narrower than hideFromStaff: blocks ONLY Payroll, leaving dutyStaff (and every other role)
    * through. Used by Guard Bank, which every role can reach except Payroll — Payroll's Duty
@@ -90,6 +100,7 @@ export default function ProtectedRoute({
 
   if (
     hideFromStaff &&
+    !(allowOperationAdmin && profile?.role === 'operationAdmin') &&
     (profile?.role === 'dutyStaff' ||
       profile?.role === 'operationAdmin' ||
       profile?.role === 'payroll' ||

@@ -305,6 +305,15 @@ function NavContent({
             </NavSection>
           </>
         )}
+        {/* Operation Admin only (not dutyStaff) — see ProtectedRoute.tsx's allowOperationAdmin
+            and BranchCollectionPage.tsx's own tab scoping to Generate Invoice + Invoices. */}
+        {profile?.role === 'operationAdmin' && (
+          <NavSection title={t('nav.sections.branchCollection')}>
+            <NavLink to="/branch-collection" className={navItemClass} onClick={onNavigate}>
+              <span aria-hidden>🧾</span> {t('nav.links.invoicesRevenue')}
+            </NavLink>
+          </NavSection>
+        )}
         {profile?.role === 'payroll' && (
           <NavSection title={t('nav.sections.branchOperation')}>
             <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>

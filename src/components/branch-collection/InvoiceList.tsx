@@ -40,13 +40,32 @@ const STATUS_ACCENT: Record<InvoiceStatus, string> = {
   void: '#475569',
 };
 
-/** Admin/Developer or a Branch Manager — the same set that can create an invoice in the first
- *  place (see the /invoices create rule in firestore.rules) — is who's trusted to void one or
- *  make a limited content edit. Finance can still record payments (the Status action below)
- *  but never these two, both client-side here and enforced server-side via
+/** Admin/Developer, a Branch Manager, or Operation Admin — the same set that can create an
+ *  invoice in the first place (see the /invoices create rule in firestore.rules) — is who's
+ *  trusted to void one or make a limited content edit. Finance can still record payments (the
+ *  Status action below) but never these two, both client-side here and enforced server-side via
  *  financeUpdateOnlyTouches() in firestore.rules. */
 function canManageInvoices(role: string | undefined | null): boolean {
-  return isAdminRole(role) || role === 'branchManager';
+  return isAdminRole(role) || role === 'branchManager' || role === 'operationAdmin';
+}
+
+/** The yyyy-mm billing-month key an invoice belongs to for the Month filter below — same
+ *  precedence as RevenuePanel.tsx's own monthKeyOf(): prefers billingMonthKey, added alongside
+ *  this feature, and falls back to invoiceDate's own month for invoices saved before that field
+ *  existed. */
+function monthKeyOf(inv: Invoice): string {
+  return inv.billingMonthKey || (inv.invoiceDate || '').slice(0, 7) || 'unknown';
+}
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function monthLabel(monthKey: string): string {
+  const [y, m] = monthKey.split('-').map(Number);
+  if (!y || !m || m < 1 || m > 12) return monthKey;
+  return `${MONTH_NAMES[m - 1]} ${y}`;
 }
 
 function formatShortDate(iso: string): string {
@@ -674,9 +693,9 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
 }
 
 /** Lists every generated invoice, lets you view/print one (reusing InvoicePrintView), update its
- *  payment status, and — for Admin/Developer/Branch Manager only — void a wrongly-generated one
- *  or make a limited content correction (see canManageInvoices above). Invoices themselves are
- *  created from InvoiceGenerator — this component never creates one. */
+ *  payment status, and — for Admin/Developer/Branch Manager/Operation Admin only — void a
+ *  wrongly-generated one or make a limited content correction (see canManageInvoices above).
+ *  Invoices themselves are created from InvoiceGenerator — this component never creates one. */
 export default function InvoiceList() {
   const { t } = useTranslation();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -689,6 +708,7 @@ export default function InvoiceList() {
   const [activeRow, setActiveRow] = useState<{ id: string; panel: 'status' | 'void' | 'edit' } | null>(null);
   const [brandFilter, setBrandFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
+  const [monthFilter, setMonthFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | ''>('');
 
   useEffect(() => subscribeInvoices(setInvoices), []);
@@ -699,15 +719,29 @@ export default function InvoiceList() {
 
   const effectiveBranchFilter = canFilterByBranch ? branchFilter : '';
 
-  // Brand/branch-scoped, but NOT status-scoped — this is what the stat tiles' counts are built
-  // from, since the tiles are what pick the status filter in the first place (a status-scoped
-  // base would make every tile but the selected one read 0).
-  const scoped = useMemo(
+  // Brand/branch-scoped only (not month or status) — the base the Month dropdown's own options
+  // are built from, so narrowing brand/branch narrows which months show up to pick from, without
+  // whatever month is currently selected filtering itself out of that list.
+  const brandBranchScoped = useMemo(
     () =>
       invoices
         .filter((inv) => !brandFilter || inv.brandId === brandFilter)
         .filter((inv) => !effectiveBranchFilter || inv.branchId === effectiveBranchFilter),
     [invoices, brandFilter, effectiveBranchFilter]
+  );
+
+  // Every billing month present in the brand/branch-scoped invoices above, most recent first.
+  const availableMonths = useMemo(
+    () => Array.from(new Set(brandBranchScoped.map(monthKeyOf))).sort((a, b) => (a < b ? 1 : -1)),
+    [brandBranchScoped]
+  );
+
+  // Brand/branch/month-scoped, but NOT status-scoped — this is what the stat tiles' counts are
+  // built from, since the tiles are what pick the status filter in the first place (a
+  // status-scoped base would make every tile but the selected one read 0).
+  const scoped = useMemo(
+    () => brandBranchScoped.filter((inv) => !monthFilter || monthKeyOf(inv) === monthFilter),
+    [brandBranchScoped, monthFilter]
   );
 
   const filteredInvoices = useMemo(
@@ -788,16 +822,25 @@ export default function InvoiceList() {
             ))}
           </select>
         )}
+        <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} className="input text-sm">
+          <option value="">{t('branchCollection.invoiceList.allMonths')}</option>
+          {availableMonths.map((m) => (
+            <option key={m} value={m}>
+              {monthLabel(m)}
+            </option>
+          ))}
+        </select>
         {statusFilter && (
           <span className="text-xs font-medium text-slate-600 bg-slate-100 rounded px-2 py-1">
             {t('branchCollection.invoiceList.statusChip', { status: statusLabel(statusFilter, t) })}
           </span>
         )}
-        {(brandFilter || effectiveBranchFilter || statusFilter) && (
+        {(brandFilter || effectiveBranchFilter || monthFilter || statusFilter) && (
           <button
             onClick={() => {
               setBrandFilter('');
               setBranchFilter('');
+              setMonthFilter('');
               setStatusFilter('');
             }}
             className="text-xs text-slate-500 hover:underline"

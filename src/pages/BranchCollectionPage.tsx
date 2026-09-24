@@ -27,10 +27,17 @@ export default function BranchCollectionPage() {
   // Invoices/Debtor List/Revenue — it can record payments there same as branchManager (see
   // isFinance() in firestore.rules), but never creates a new invoice, so Generate Invoice
   // stays out of reach entirely rather than just unused.
-  const tabs = useMemo<readonly Tab[]>(
-    () => (profile?.role === 'finance' ? ALL_TABS.filter((tabId) => tabId !== 'Generate Invoice') : ALL_TABS),
-    [profile?.role]
-  );
+  //
+  // Operation Admin reaches this page too now (see ProtectedRoute.tsx's allowOperationAdmin on
+  // the /branch-collection route), but the other way around from Finance — only Generate
+  // Invoice and Invoices, never Debtor List or Revenue, matching the /invoices create/update
+  // parity it was given in firestore.rules (isOperationAdmin()) without extending to those two
+  // tabs' own data.
+  const tabs = useMemo<readonly Tab[]>(() => {
+    if (profile?.role === 'finance') return ALL_TABS.filter((tabId) => tabId !== 'Generate Invoice');
+    if (profile?.role === 'operationAdmin') return ALL_TABS.filter((tabId) => tabId === 'Generate Invoice' || tabId === 'Invoices');
+    return ALL_TABS;
+  }, [profile?.role]);
   const [tab, setTab] = useState<Tab>(profile?.role === 'finance' ? 'Invoices' : 'Generate Invoice');
 
   return (
