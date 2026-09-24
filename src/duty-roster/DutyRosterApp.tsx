@@ -95,13 +95,12 @@ export default function DutyRosterApp() {
   }
 
   const deepLinkParams = useMemo(() => parseDeepLinkParams(searchParams), [searchParams]);
-  useTenderDeepLink(deepLinkParams, sites, viewer, currentSiteId, {
+  useTenderDeepLink(deepLinkParams, sites, !sitesLoading, viewer, currentSiteId, {
     onSwitchSite: selectSite,
     onSiteCreated: (result) => {
       selectSite(result.id);
       setPendingCreationLog({ siteId: result.id, text: result.logText });
     },
-    onToast: showToast,
   });
 
   const [ym, setYm] = useState(todayYM);

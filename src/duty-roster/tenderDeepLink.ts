@@ -1,15 +1,18 @@
 /**
  * Duty Roster page shell — the tender ("Active Project") deep link. Ported from
  * public/duty-roster/index.html's deep-link param read (lines 1284-1287),
- * findAnySiteForTenderId() (5857-5862), handleTenderDeepLinkIfNeeded() (5864-5911), and
- * createSite() (5819-5833).
+ * handleTenderDeepLinkIfNeeded() (5864-5911), and createSite() (5819-5833).
+ * The old findAnySiteForTenderId() tenderId LIST is intentionally not ported — see
+ * chooseDeepLinkSite() in tenderDeepLinkPlan.ts.
  *
  * Confirmed (see the inventory this was built from) that the handoff from Active
  * Projects/LinkedSiteDetailsCard into this page is a PLAIN URL query string
  * (`?tenderId=&clientName=&branch=&siteId=`, forwarded verbatim by DutyRosterPage.tsx onto the
- * iframe's own `src` today) — never `postMessage`. That makes this module pure
- * `URLSearchParams` parsing plus two Firestore calls (an existence check, and the actual
- * create), portable as-is once the page stops being an iframe (Task #22).
+ * iframe's own `src` today) — never `postMessage`. That makes this module
+ * `URLSearchParams` parsing plus, when the reachable site list has no match, one Firestore
+ * create. Whether a site already exists is decided from that list (see chooseDeepLinkSite),
+ * not from a `where('tenderId','==',…)` LIST — that query is permission-denied for a Branch
+ * Manager, and catching the error used to look like "no site" and create a duplicate.
  *
  * Deliberately NOT ported: the offline/local-only fallback branches this logic has in the
  * original (`bootLocalFallback()`'s own copy, and `currentConfig()`'s transient pre-load stub —
@@ -24,12 +27,13 @@
  * that either found or is about to create the real site, never speculatively.
  */
 import { useEffect, useRef } from "react";
-import { collection, doc, getDocs, limit, query, setDoc, where } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import type { SiteConfig } from "./types";
 import { newId, nowIso, defaultSite } from "./rosterModel";
 import type { RosterViewer } from "./rosterViewer";
 import type { SiteListEntry } from "./siteListData";
+import { chooseDeepLinkSite } from "./tenderDeepLinkPlan";
 
 export interface DeepLinkParams {
   tenderId: string | null;
@@ -48,27 +52,6 @@ export function parseDeepLinkParams(search: string | URLSearchParams): DeepLinkP
     clientName: params.get("clientName"),
     branch: params.get("branch"),
   };
-}
-
-/** findAnySiteForTenderId() — is there ALREADY a Duty Roster site for this tenderId anywhere,
- * even in a branch this viewer's own branch-scoped `useSiteList()` doesn't cover? Needed because
- * a non-privileged viewer's site list is branch-scoped (see useSiteList.ts) — "no site with this
- * tenderId in MY list" does not mean "no site exists", it can just mean the real one's `branch`
- * field points somewhere this viewer's listener doesn't reach. Without this check, two people
- * opening the same project's Duty Roster link from two different branches would each get their
- * own createSite() call, silently producing a duplicate. `firestore.rules`' read rule already
- * widens access to a Won tender's current branch/owner/HQ for any of its linked sites regardless
- * of that site's OWN branch, so this plain query correctly finds it instead of erroring for
- * exactly the people who'd actually hit this path. */
-export async function findAnySiteForTenderId(tenderId: string): Promise<{ id: string; branch: string | null } | null> {
-  try {
-    const snap = await getDocs(query(collection(db, "sites"), where("tenderId", "==", tenderId), limit(1)));
-    if (snap.empty) return null;
-    const data = snap.docs[0].data() as Pick<SiteConfig, "branch">;
-    return { id: snap.docs[0].id, branch: data.branch || null };
-  } catch {
-    return null;
-  }
 }
 
 export interface CreateSiteResult {
@@ -121,17 +104,27 @@ export interface UseTenderDeepLinkCallbacks {
    * `result.logText` to the (now-current) month's log via its own persist path, matching every
    * other "write, then log" outcome shape elsewhere in this port. */
   onSiteCreated: (result: CreateSiteResult) => void;
-  onToast: (message: string) => void;
 }
 
-/** handleTenderDeepLinkIfNeeded() — acts on the deep link once `sites` reflects reality: selects
- * the matching site if one already exists, otherwise creates it (bare-tenderId case only — a
- * `siteId`-targeted deep link never creates a fallback, see the doc comment on `DeepLinkParams`).
- * No-ops once handled (latched in `handledRef`, which — unlike `useState` — must never itself
- * trigger a re-render or reset across renders), and no-ops entirely when there's no deep link at
- * all. Re-evaluates whenever `sites` changes, matching the original being re-invoked on every
- * site-list snapshot update, until it latches. */
-export function useTenderDeepLink(params: DeepLinkParams, sites: SiteListEntry[], viewer: RosterViewer, currentSiteId: string | null, callbacks: UseTenderDeepLinkCallbacks): void {
+/** handleTenderDeepLinkIfNeeded() — acts on the deep link once the reachable site list has
+ * finished its first snapshot (`sitesReady`). Selects the matching site if one is already in
+ * that list, otherwise creates it (bare-tenderId case only — a `siteId`-targeted deep link
+ * never creates a fallback, see the doc comment on `DeepLinkParams`).
+ *
+ * Must not run the create branch while `sites` is still the initial empty array, or while only
+ * one of a Branch Manager's two listeners (own branch / unassigned) has answered. That used to
+ * latch `handledRef` immediately and then call a tenderId LIST that Firestore denies for anyone
+ * whose /sites read depends on `branch`. The denial was swallowed, so createSite() ran and
+ * wrote a second roster. No-ops once handled (latched in `handledRef`). A `siteId` that isn't
+ * in the list yet stays unlatched so a later snapshot can still select it. */
+export function useTenderDeepLink(
+  params: DeepLinkParams,
+  sites: SiteListEntry[],
+  sitesReady: boolean,
+  viewer: RosterViewer,
+  currentSiteId: string | null,
+  callbacks: UseTenderDeepLinkCallbacks
+): void {
   const handledRef = useRef(false);
   const inFlightRef = useRef(false);
   const callbacksRef = useRef(callbacks);
@@ -140,48 +133,33 @@ export function useTenderDeepLink(params: DeepLinkParams, sites: SiteListEntry[]
   useEffect(() => {
     if (handledRef.current || inFlightRef.current) return;
 
-    if (params.siteId) {
-      // Targeting one specific already-created site — no create-if-missing fallback: if it
-      // isn't in `sites` yet, this viewer just can't reach it (wrong branch, archived and
-      // hidden, or a bad id) — leave `handledRef` false and let the normal site list/empty
-      // state speak for itself rather than guessing.
-      const existing = sites.find((s) => s.id === params.siteId);
-      if (existing) {
-        handledRef.current = true;
-        if (currentSiteId !== existing.id) callbacksRef.current.onSwitchSite(existing.id);
-      }
-      return;
-    }
+    const choice = chooseDeepLinkSite({
+      sitesReady,
+      sites,
+      siteId: params.siteId,
+      tenderId: params.tenderId,
+    });
+    if (choice.action === "wait" || choice.action === "idle") return;
 
-    if (!params.tenderId) return;
-    const tenderId = params.tenderId;
-    const existing = sites.find((s) => s.tenderId === tenderId);
-    if (existing) {
+    if (choice.action === "select") {
       handledRef.current = true;
-      if (currentSiteId !== existing.id) callbacksRef.current.onSwitchSite(existing.id);
+      if (currentSiteId !== choice.siteId) callbacksRef.current.onSwitchSite(choice.siteId);
       return;
     }
 
-    // Set BEFORE the async check below — later site-list updates (this effect re-runs on every
-    // one, while `sites` keeps changing) must not re-enter this while the check is still in
-    // flight, or they'd race into the exact double-create this check exists to prevent.
+    // Latch before the write so a site-list update while createSite() is in flight cannot
+    // start a second one.
     handledRef.current = true;
     inFlightRef.current = true;
-    findAnySiteForTenderId(tenderId)
-      .then((found) => {
-        if (found) {
-          // A site already exists, just under a branch `sites` doesn't currently cover — don't
-          // create a duplicate. It won't be selectable here either way (this viewer's
-          // branch-scoped listener still won't return it); surface that plainly.
-          callbacksRef.current.onToast("This project already has a Duty Roster site under a different branch — ask an Admin to check its branch assignment.");
-          return;
-        }
-        return createSite(params.clientName || "New site", params.branch, tenderId, params.clientName, viewer).then((result) => {
-          callbacksRef.current.onSiteCreated(result);
-        });
+    createSite(params.clientName || "New site", params.branch, params.tenderId, params.clientName, viewer)
+      .then((result) => {
+        callbacksRef.current.onSiteCreated(result);
+      })
+      .catch((err) => {
+        console.error("tender deep link createSite failed", err);
       })
       .finally(() => {
         inFlightRef.current = false;
       });
-  }, [params.siteId, params.tenderId, params.clientName, params.branch, sites, currentSiteId, viewer]);
+  }, [params.siteId, params.tenderId, params.clientName, params.branch, sites, sitesReady, currentSiteId, viewer]);
 }

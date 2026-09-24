@@ -12,6 +12,11 @@
  * merged client-side, exactly like the original. A privileged/payroll-like viewer's read access
  * doesn't depend on `branch` at all, so one unfiltered listener covers them.
  *
+ * `loading` stays true until EVERY listener has delivered its first snapshot (or errored).
+ * Clearing it when the first of the two branch queries returns would hand callers a partial
+ * list. useTenderDeepLink() treats "list ready and this tenderId is absent" as "create a site",
+ * so a half-loaded list creates a duplicate roster.
+ *
  * PORTING NOTE (Task #22 composition dependency): the original auto-selected an initial/fallback
  * current site (`state.currentSiteId`) as part of this same subscription callback, reading a
  * `localStorage.getItem("dutyRosterLastSite")` preference and falling back to the first site in
@@ -70,6 +75,7 @@ export function useSiteList(viewer: RosterViewer): UseSiteListResult {
 
     const buckets: SiteListEntry[][] = queries.map(() => []);
     const configBuckets: Record<string, SiteConfig>[] = queries.map(() => ({}));
+    const settled = queries.map(() => false);
 
     function recombine() {
       const seen = new Set<string>();
@@ -85,7 +91,7 @@ export function useSiteList(viewer: RosterViewer): UseSiteListResult {
       merged.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
       setSites(merged);
       setConfigsCache(Object.assign({}, ...configBuckets));
-      setLoading(false);
+      if (settled.every(Boolean)) setLoading(false);
     }
 
     const unsubs: Unsubscribe[] = queries.map((q, i) =>
@@ -99,11 +105,13 @@ export function useSiteList(viewer: RosterViewer): UseSiteListResult {
             configBuckets[i][d.id] = deepClone(data);
             buckets[i].push(toEntry(d.id, data));
           });
+          settled[i] = true;
           recombine();
         },
         () => {
           buckets[i] = [];
           configBuckets[i] = {};
+          settled[i] = true;
           recombine();
         }
       )
