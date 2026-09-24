@@ -356,10 +356,13 @@ export default function EmployeeFeedbackPage() {
           </button>
         </div>
 
-        <FeedbackForm type={tab} t={t} />
+        {/* A receiver sees the received list FIRST, then the submission form below it — so
+            checking what's already come in doesn't require scrolling past the form every time.
+            Every other role never sees a list at all, so their form stays right after the tabs. */}
+        {!canReceive && <FeedbackForm type={tab} t={t} />}
 
         {canReceive && (
-          <div className="pt-2">
+          <div>
             <h2 className="text-sm font-semibold text-slate-800 mb-3">
               {tab === 'suggestion' ? t('employeeFeedback.receivedSuggestions') : t('employeeFeedback.receivedComplaints')}
             </h2>
@@ -373,6 +376,8 @@ export default function EmployeeFeedbackPage() {
             />
           </div>
         )}
+
+        {canReceive && <FeedbackForm type={tab} t={t} />}
       </div>
     </div>
   );
