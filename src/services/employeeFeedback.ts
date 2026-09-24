@@ -1,4 +1,4 @@
-import { collection, doc, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
+import { collection, doc, onSnapshot, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { EmployeeFeedback, EmployeeFeedbackSender, FeedbackCategory, FeedbackType } from '../types';
 
@@ -45,22 +45,23 @@ export async function submitEmployeeFeedback(input: SubmitEmployeeFeedbackInput)
 }
 
 /**
- * Live listener over every /employeeFeedback doc of the given type (Suggestion or Complaint) —
- * receiver roles only (CEO, Director, HQ Admin, Tender Controller, HR Manager — see
- * firestore.rules' isFeedbackReceiver()); every other role's read is denied server-side no
- * matter what this is called with. Deliberately filters by `type` alone with no `orderBy` in the
- * query — same composite-index-avoidance reasoning as subscribeInvoices() in
- * services/invoices.ts — and sorts client-side by createdAt (newest first) once the snapshot
- * arrives, rather than requiring a composite index that can't be created from this environment.
+ * Live listener over the ENTIRE /employeeFeedback collection, both Suggestion and Complaint
+ * together, unfiltered — receiver roles only (CEO, Director, HQ Admin, Tender Controller, HR
+ * Manager — see firestore.rules' isFeedbackReceiver()); every other role's read is denied
+ * server-side no matter what this is called with. An unfiltered listen is safe here (no
+ * composite-index/query-plannability concern — contrast subscribeInvoices() in
+ * services/invoices.ts, which DOES need to filter) because isFeedbackReceiver() depends only on
+ * the CALLER's own /users doc, never on resource.data, so Firestore can always prove the rule
+ * regardless of which documents come back. Returns everything so EmployeeFeedbackPage.tsx can
+ * compute its Suggestion/Complaint stat tiles and its month/category filters across both types
+ * at once, then slice by type/category/month entirely client-side — sorted newest first.
  */
-export function subscribeEmployeeFeedback(
-  type: FeedbackType,
+export function subscribeAllEmployeeFeedback(
   callback: (items: EmployeeFeedback[]) => void,
   onError?: (err: Error) => void
 ): () => void {
-  const q = query(feedbackCollection(), where('type', '==', type));
   return onSnapshot(
-    q,
+    feedbackCollection(),
     (snap) => {
       const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<EmployeeFeedback, 'id'>) }));
       rows.sort((a, b) => b.createdAt - a.createdAt);
