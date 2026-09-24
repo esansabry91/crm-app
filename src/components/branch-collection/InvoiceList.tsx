@@ -711,7 +711,7 @@ export default function InvoiceList() {
   const [monthFilter, setMonthFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | ''>('');
 
-  useEffect(() => subscribeInvoices(setInvoices), []);
+  useEffect(() => subscribeInvoices(setInvoices, profile), [profile]);
 
   function togglePanel(id: string, panel: 'status' | 'void' | 'edit') {
     setActiveRow((prev) => (prev && prev.id === id && prev.panel === panel ? null : { id, panel }));

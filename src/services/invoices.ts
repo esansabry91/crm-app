@@ -5,11 +5,11 @@ import {
   getDoc,
   getDocs,
   onSnapshot,
-  orderBy,
   query,
   runTransaction,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -493,10 +493,32 @@ export async function createMigratedInvoice(input: NewMigratedInvoiceInput, acto
   return { id: newInvoiceRef.id };
 }
 
-export function subscribeInvoices(callback: (invoices: Invoice[]) => void): () => void {
-  const q = query(invoicesCollection(), orderBy('createdAt', 'desc'));
+/**
+ * Subscribes to every invoice this viewer is allowed to see — matches firestore.rules' /invoices
+ * read rule exactly: Admin/Developer/CEO/Director/Tender Controller and Finance see every branch
+ * unscoped, while a Branch Manager or Operation Admin only ever sees their OWN branch's invoices
+ * (`where('branchName', '==', profile.department)`), same as everywhere else in this app scopes a
+ * Branch Manager to their own department (see isTaskManager() in firestore.rules for the same
+ * pattern). `profile` is optional only so a stray caller that forgets it fails open to the old
+ * unscoped behavior rather than crashing — every real call site (InvoiceList/DebtorList/
+ * RevenuePanel) passes the signed-in profile from useAuth().
+ *
+ * Deliberately does NOT combine the branch `where` with `orderBy('createdAt', 'desc')` — Cloud
+ * Firestore would require a composite index for that pair, which can't be created from outside
+ * the Firebase console, so this sorts the snapshot client-side instead (same output, no index
+ * needed) — see useTasks.ts's own doc comment for the matching lesson on why a security rule that
+ * depends on resource.data needs the QUERY itself to filter on that field, not just the rule.
+ */
+export function subscribeInvoices(callback: (invoices: Invoice[]) => void, profile?: UserProfile | null): () => void {
+  const branchScope =
+    (profile?.role === 'branchManager' || profile?.role === 'operationAdmin') && profile.department
+      ? profile.department
+      : null;
+  const q = branchScope ? query(invoicesCollection(), where('branchName', '==', branchScope)) : invoicesCollection();
   return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Invoice, 'id'>) })));
+    const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Invoice, 'id'>) }));
+    rows.sort((a, b) => b.createdAt - a.createdAt);
+    callback(rows);
   });
 }
 

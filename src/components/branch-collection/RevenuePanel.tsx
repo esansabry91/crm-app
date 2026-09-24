@@ -161,12 +161,16 @@ export default function RevenuePanel() {
   const liveGuardCounts = useLiveGuardCountsByTender(profile, seesAllBranches);
   const [detailsTender, setDetailsTender] = useState<Tender | null>(null);
   const canFilterByBranch = isAdminRole(profile?.role);
-  // The branch filter itself stays admin-only (per the original spec), but the backfill/
-  // diagnostics tools below it are safe for a Branch Manager to run too — firestore.rules
-  // already lets a Branch Manager create/update invoices, and getReachableSites() only LISTs
-  // sites they can actually read (own branch + unassigned), so running this only ever resolves
-  // invoices against data they can already reach.
-  const canManageInvoiceData = canFilterByBranch || profile?.role === 'branchManager';
+  // Admin-only, full stop — including the backfill/diagnostics tools below, which a Branch
+  // Manager used to also get. Those tools work by scanning EVERY invoice for ones still missing
+  // branchId/branchName (an unscoped getDocs(invoices)), which is exactly the kind of read
+  // /invoices' rule no longer grants a Branch Manager or Operation Admin now that they're
+  // branch-scoped (resource.data.branchName == myDepartment() — see firestore.rules and
+  // subscribeInvoices()'s doc comment in services/invoices.ts): a not-yet-backfilled invoice is,
+  // by definition, one whose branchName doesn't match their department yet, so a branch-scoped
+  // read could never find it to fix it anyway. Admin keeps the cross-branch view needed to run
+  // this safely.
+  const canManageInvoiceData = canFilterByBranch;
   const [brandFilter, setBrandFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
   const [granularity, setGranularity] = useState<Granularity>('monthly');
@@ -177,7 +181,7 @@ export default function RevenuePanel() {
   const [statusFixBusy, setStatusFixBusy] = useState(false);
   const [statusFixResult, setStatusFixResult] = useState<BackfillStatusResult | null>(null);
 
-  useEffect(() => subscribeInvoices(setInvoices), []);
+  useEffect(() => subscribeInvoices(setInvoices, profile), [profile]);
 
   async function runBackfill() {
     if (!profile) return;

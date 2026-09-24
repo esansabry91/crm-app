@@ -70,10 +70,12 @@ const BUCKET_ACCENT: Record<OverdueBucket, string> = {
  *
  *  Filterable by brand (everyone) and branch (admin/developer only — see Branch's doc comment in
  *  types.ts for why an invoice may not have a branchId at all, e.g. one generated before this
- *  filter existed or with no linked site). The branch filter is restricted rather than removed
- *  for non-admins because branch managers can otherwise already see every branch's invoices here
- *  (the /invoices read rule is firm-wide for any active non-Payroll user, not branch-scoped) — an
- *  admin-only decision, not a data-access one. */
+ *  filter existed or with no linked site). The branch filter itself stays admin-only as a UI
+ *  nicety (an admin/Finance account is the only one that ever HAS more than one branch's worth of
+ *  invoices to narrow down) — a Branch Manager or Operation Admin never sees another branch's
+ *  invoices here in the first place, since subscribeInvoices() itself only ever queries their own
+ *  branch for those two roles (see its doc comment in services/invoices.ts, and the matching
+ *  /invoices read rule in firestore.rules). */
 export default function DebtorList() {
   const { t } = useTranslation();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -85,7 +87,7 @@ export default function DebtorList() {
   const [branchFilter, setBranchFilter] = useState('');
   const [bucketFilter, setBucketFilter] = useState<OverdueBucket | ''>('');
 
-  useEffect(() => subscribeInvoices(setInvoices), []);
+  useEffect(() => subscribeInvoices(setInvoices, profile), [profile]);
 
   // A non-admin never gets to apply a branch filter — if one was somehow left selected (e.g. the
   // account's role changed mid-session) it stops taking effect rather than silently hiding rows.

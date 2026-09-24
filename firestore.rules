@@ -266,15 +266,22 @@ service cloud.firestore {
     }
 
     // ---- Branch Collection (billing / invoicing) ----
-    // Financial records — readable by any active non-Payroll/HR user (Payroll's and HR's Duty
-    // Roster access is strictly view/export and has nothing to do with billing). Only
-    // Admin/Developer/CEO/Director/Tender Controller or a Branch Manager can create one; Finance
-    // can additionally update an existing one (record payments) but never create — see
-    // isFinance()'s doc comment above. Never Payroll/HR, never dutyStaff/Support-only roles (none
-    // of them already reach this collection anyway — see AppLayout.tsx/ProtectedRoute's
-    // hideFromStaff gating on the Branch Collection tab).
+    // Financial records. Admin/Developer/CEO/Director/Tender Controller and Finance read every
+    // invoice regardless of branch (Finance oversees collections across every branch — see its
+    // doc comment above); a Branch Manager or Operation Admin reads ONLY their own branch's
+    // invoices (resource.data.branchName == myDepartment() — same name-based scoping as
+    // isTaskManager() above), matching the branch-scoped query subscribeInvoices() now runs for
+    // those two roles (see its own doc comment in services/invoices.ts for why the query has to
+    // filter on branchName itself, not just this rule). Never Payroll/HR, never dutyStaff — none
+    // of them reach this collection anyway (see AppLayout.tsx/ProtectedRoute's hideFromStaff
+    // gating on the Branch Collection tab).
     match /invoices/{invoiceId} {
-      allow read: if isActiveUser() && !isPayrollLike();
+      allow read: if isActiveUser()
+        && (
+          isAdmin()
+          || isFinance()
+          || ((isBranchManager() || isOperationAdmin()) && resource.data.branchName == myDepartment())
+        );
       // Finance can update (record payments / change status on an existing invoice) but never
       // create — see isFinance()'s doc comment above for why the two rules deliberately differ.
       // Operation Admin gets full create/update parity with Branch Manager (see
