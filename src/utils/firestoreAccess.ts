@@ -50,7 +50,8 @@ export function sitesListPlan(profile: UserProfile | null | undefined): SitesLis
     isAdminRole(profile.role) ||
     profile.department === 'HQ' ||
     profile.role === 'payroll' ||
-    profile.role === 'hr'
+    profile.role === 'hr' ||
+    profile.role === 'hrManager'
   ) {
     return { mode: 'all' };
   }

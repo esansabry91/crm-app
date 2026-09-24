@@ -104,7 +104,8 @@ export default function ProtectedRoute({
     (profile?.role === 'dutyStaff' ||
       profile?.role === 'operationAdmin' ||
       profile?.role === 'payroll' ||
-      profile?.role === 'hr')
+      profile?.role === 'hr' ||
+      profile?.role === 'hrManager')
   ) {
     return <Navigate to="/duty-roster" replace />;
   }
@@ -113,7 +114,7 @@ export default function ProtectedRoute({
     return <Navigate to="/duty-roster" replace />;
   }
 
-  if (hideHr && profile?.role === 'hr') {
+  if (hideHr && (profile?.role === 'hr' || profile?.role === 'hrManager')) {
     return <Navigate to="/duty-roster" replace />;
   }
 

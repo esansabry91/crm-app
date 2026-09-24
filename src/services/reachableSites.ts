@@ -16,7 +16,7 @@ import { db } from '../firebase';
 import { isAdminRole, type UserProfile } from '../types';
 
 export function canListAllSites(profile: UserProfile): boolean {
-  return isAdminRole(profile.role) || profile.department === 'HQ' || profile.role === 'payroll' || profile.role === 'hr';
+  return isAdminRole(profile.role) || profile.department === 'HQ' || profile.role === 'payroll' || profile.role === 'hr' || profile.role === 'hrManager';
 }
 
 function sitesListQueries(profile: UserProfile): Query<DocumentData>[] {

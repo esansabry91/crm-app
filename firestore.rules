@@ -53,13 +53,15 @@ service cloud.firestore {
         && userDoc(request.auth.uid).data.active != false;
     }
 
-    // True only for a signed-in, active user with role "hr" — same strictly view/export-only,
-    // every-branch Duty Roster reach as isPayroll() above (see isPayrollLike() below), PLUS full
-    // normal access to Guard Bank (/guards, /bufferGuards), which is why those two collections'
-    // rules deliberately check isPayroll() alone rather than isPayrollLike().
+    // True only for a signed-in, active user with role "hr" OR "hrManager" — "hrManager" ("HR
+    // Manager" in the UI) is deliberately just "hr" under a different job title (see the Role doc
+    // comment in src/types.ts), so it gets identical treatment here: same strictly view/export-
+    // only, every-branch Duty Roster reach as isPayroll() above (see isPayrollLike() below), PLUS
+    // full normal access to Guard Bank (/guards, /bufferGuards), which is why those two
+    // collections' rules deliberately check isPayroll() alone rather than isPayrollLike().
     function isHr() {
       return isSignedIn()
-        && userDoc(request.auth.uid).data.role == 'hr'
+        && (userDoc(request.auth.uid).data.role == 'hr' || userDoc(request.auth.uid).data.role == 'hrManager')
         && userDoc(request.auth.uid).data.active != false;
     }
 
@@ -726,6 +728,77 @@ service cloud.firestore {
     // Remove button in GuardBankPage.tsx being admin-gated client-side too.
     match /bufferGuards/{id} {
       allow read, create, update: if isActiveUser() && !isPayroll();
+      allow delete: if isAdmin();
+    }
+
+    // ---- Employee Feedback (src/pages/EmployeeFeedbackPage.tsx) ----
+    // Anonymous Suggestion/Complaint box, reachable by every active role regardless of role (see
+    // the Role doc comment / FEEDBACK_RECEIVER_ROLES in src/types.ts). Split across two paired
+    // collections rather than one document with mixed-visibility fields — see the doc comment
+    // above canSeeFeedbackSender() in src/types.ts for why: Firestore rules are document-level/
+    // all-or-nothing, so there's no way to let e.g. a Tender Controller read a submission's
+    // content while hiding just its sender from them.
+    //   - /employeeFeedback/{feedbackId}        — content, readable by the 5 receiver roles below.
+    //   - /employeeFeedbackSenders/{feedbackId} — sender identity, SAME id, CEO/Director only.
+    // Both are written together in one writeBatch by submitEmployeeFeedback() (services/
+    // employeeFeedback.ts), never independently, so a submission can never exist half-anonymized.
+
+    // True only for a signed-in, active user with one of the 5 roles allowed to VIEW feedback at
+    // all — mirrors FEEDBACK_RECEIVER_ROLES in src/types.ts exactly (keep the two in sync by
+    // hand if this ever changes). Deliberately its own list, not isAdmin() — isAdmin() also
+    // matches 'developer', which the user explicitly asked to leave out of who can see real
+    // staff feedback. Depends only on the CALLER's own /users doc, never resource.data, so an
+    // unfiltered LIST/listen against /employeeFeedback stays provable for every receiver role,
+    // same reasoning as isAdmin()'s own doc comment above.
+    function isFeedbackReceiver() {
+      return isSignedIn()
+        && (
+          userDoc(request.auth.uid).data.role == 'ceo'
+          || userDoc(request.auth.uid).data.role == 'director'
+          || userDoc(request.auth.uid).data.role == 'admin'
+          || userDoc(request.auth.uid).data.role == 'tenderController'
+          || userDoc(request.auth.uid).data.role == 'hrManager'
+        )
+        && userDoc(request.auth.uid).data.active != false;
+    }
+
+    // True only for a signed-in, active user with role "ceo" or "director" — the only two roles
+    // that ever see a feedback submission's sender identity (see canSeeFeedbackSender() in
+    // src/types.ts).
+    function canSeeFeedbackSender() {
+      return isSignedIn()
+        && (userDoc(request.auth.uid).data.role == 'ceo' || userDoc(request.auth.uid).data.role == 'director')
+        && userDoc(request.auth.uid).data.active != false;
+    }
+
+    match /employeeFeedback/{feedbackId} {
+      allow read: if isFeedbackReceiver();
+      // Every signed-in, active user — any role — can submit, anonymously: nothing about the
+      // sender is ever written to this doc (see /employeeFeedbackSenders below instead). Pinned
+      // to exactly the fields submitEmployeeFeedback() writes, so a tampered client can never
+      // smuggle a sender field, or anything else, onto this side of a submission.
+      allow create: if isActiveUser()
+        && (request.resource.data.type == 'suggestion' || request.resource.data.type == 'complaint')
+        && request.resource.data.category in ['payroll', 'process', 'operation', 'arrangement', 'welfare']
+        && request.resource.data.keys().hasOnly(['type', 'category', 'message', 'createdAt']);
+      // Immutable once submitted. Delete is admin-only, reserved for genuine moderation (the
+      // in-app warning tells submitters no hateful/attacking content is allowed and action will
+      // be taken if found) — never routine use.
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    match /employeeFeedbackSenders/{feedbackId} {
+      allow read: if canSeeFeedbackSender();
+      // Written in the same writeBatch as its paired /employeeFeedback doc above — same audience
+      // (any active user), since the client is the one pairing the two ids together. senderUid
+      // must be the caller's own uid, mirroring the ownerUid/createdByUid pattern used elsewhere
+      // in this file (tenders, quotations) so a submission's identity half can never be filed
+      // under someone else's name.
+      allow create: if isActiveUser()
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['senderUid', 'senderName']);
+      allow update: if false;
       allow delete: if isAdmin();
     }
   }

@@ -18,6 +18,7 @@ const ROLE_LABEL_KEYS: Record<string, string> = {
   developer: 'admin.roles.developer',
   finance: 'admin.roles.finance',
   hr: 'admin.roles.hr',
+  hrManager: 'admin.roles.hrManager',
   ceo: 'admin.roles.ceo',
   director: 'admin.roles.director',
   tenderController: 'admin.roles.tenderController',
@@ -227,6 +228,7 @@ export default function UserManager() {
                 <option value="operationAdmin">{t('admin.userManager.roleOptionOperationAdmin')}</option>
                 <option value="payroll">{t('admin.userManager.roleOptionPayroll')}</option>
                 <option value="hr">{t('admin.userManager.roleOptionHr')}</option>
+                <option value="hrManager">{t('admin.userManager.roleOptionHrManager')}</option>
                 <option value="developer">{t('admin.userManager.roleOptionDeveloper')}</option>
                 <option value="finance">{t('admin.userManager.roleOptionFinance')}</option>
               </select>
@@ -292,6 +294,7 @@ export default function UserManager() {
                         <option value="operationAdmin">{t('admin.roles.operationAdmin')}</option>
                         <option value="payroll">{t('admin.roles.payroll')}</option>
                         <option value="hr">{t('admin.roles.hr')}</option>
+                        <option value="hrManager">{t('admin.roles.hrManager')}</option>
                         <option value="developer">{t('admin.roles.developer')}</option>
                         <option value="finance">{t('admin.roles.finance')}</option>
                       </select>

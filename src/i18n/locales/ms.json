@@ -44,7 +44,8 @@
       "pastProjects": "Projek Lepas",
       "archive": "Arkib",
       "quotationCalculator": "Kalkulator Sebut Harga",
-      "adminSettings": "Tetapan Pentadbir"
+      "adminSettings": "Tetapan Pentadbir",
+      "employeeFeedback": "Maklum Balas Pekerja"
     },
     "roles": {
       "admin": "Pentadbir Ibu Pejabat",
@@ -56,6 +57,7 @@
       "operationAdmin": "Admin Operasi",
       "payroll": "Gaji",
       "hr": "Sumber Manusia",
+      "hrManager": "Pengurus Sumber Manusia",
       "finance": "Kewangan",
       "branchManager": "Pengurus Cawangan"
     },
@@ -2040,6 +2042,7 @@
       "developer": "Pemaju",
       "finance": "Kewangan",
       "hr": "HR",
+      "hrManager": "Pengurus HR",
       "ceo": "CEO",
       "director": "Pengarah",
       "tenderController": "Pengawal Tender"
@@ -2094,6 +2097,7 @@
       "roleOptionOperationAdmin": "Admin Operasi — akses sama seperti Kakitangan Operasi",
       "roleOptionPayroll": "Gaji — Roster Tugas sahaja, lihat & eksport sahaja, semua cawangan",
       "roleOptionHr": "HR — sama seperti Gaji, ditambah akses penuh ke Bank Pengawal",
+      "roleOptionHrManager": "Pengurus HR — akses sama seperti HR",
       "roleOptionDeveloper": "Pemaju — akses penuh seperti Admin HQ, tetapi setiap rekod yang dicipta ditanda automatik sebagai data ujian",
       "roleOptionFinance": "Kewangan — Kutipan Cawangan sahaja (Invois, Senarai Penghutang, Hasil)",
       "creatingEllipsis": "Mencipta…",
@@ -2251,5 +2255,36 @@
       "guardsReleasedNote_other": "Membebaskan {{count}} pengawal sebenar semula ke Kumpulan Pengawal.",
       "errorCouldNotDelete": "Tidak dapat memadam data ujian."
     }
+  },
+  "employeeFeedback": {
+    "title": "Maklum Balas Pekerja",
+    "subtitle": "Kongsi cadangan atau bangkitkan aduan — identiti anda kekal tanpa nama.",
+    "warning": "Butiran penghantar akan kekal tanpa nama, tetapi sebarang komen kebencian atau serangan tidak dibenarkan — tindakan akan diambil jika ditemui.",
+    "tabs": {
+      "suggestion": "Cadangan",
+      "complaint": "Aduan"
+    },
+    "categoryLabel": "Kategori",
+    "categoryPayroll": "Gaji",
+    "categoryProcess": "Proses",
+    "categoryOperation": "Operasi",
+    "categoryArrangement": "Susunan",
+    "categoryWelfare": "Kebajikan",
+    "messageLabel": "Mesej",
+    "messagePlaceholderSuggestion": "Kongsi cadangan anda…",
+    "messagePlaceholderComplaint": "Terangkan aduan anda…",
+    "errorMessageRequired": "Masukkan mesej sebelum menghantar.",
+    "errorCouldNotSubmit": "Tidak dapat menghantar — sila cuba lagi.",
+    "submitSuccess": "Terima kasih — maklum balas anda telah dihantar secara tanpa nama.",
+    "submitting": "Menghantar…",
+    "submitSuggestion": "Hantar Cadangan",
+    "submitComplaint": "Hantar Aduan",
+    "receivedSuggestions": "Cadangan diterima",
+    "receivedComplaints": "Aduan diterima",
+    "noSuggestionsYet": "Belum ada cadangan dihantar.",
+    "noComplaintsYet": "Belum ada aduan dihantar.",
+    "loading": "Memuatkan…",
+    "senderAnonymous": "Penghantar: Tanpa nama",
+    "senderLabel": "Penghantar: {{name}}"
   }
 }

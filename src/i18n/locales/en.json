@@ -44,7 +44,8 @@
       "pastProjects": "Past Projects",
       "archive": "Archive",
       "quotationCalculator": "Quotation Calculator",
-      "adminSettings": "Admin Settings"
+      "adminSettings": "Admin Settings",
+      "employeeFeedback": "Employee Feedback"
     },
     "roles": {
       "admin": "HQ Admin",
@@ -56,6 +57,7 @@
       "operationAdmin": "Operation Admin",
       "payroll": "Payroll",
       "hr": "HR",
+      "hrManager": "HR Manager",
       "finance": "Finance",
       "branchManager": "Branch Manager"
     },
@@ -2049,6 +2051,7 @@
       "developer": "Developer",
       "finance": "Finance",
       "hr": "HR",
+      "hrManager": "HR Manager",
       "ceo": "CEO",
       "director": "Director",
       "tenderController": "Tender Controller"
@@ -2103,6 +2106,7 @@
       "roleOptionOperationAdmin": "Operation Admin — same access as Operation Staff",
       "roleOptionPayroll": "Payroll — Duty Roster only, view & export only, all branches",
       "roleOptionHr": "HR — same as Payroll, plus full access to Guard Bank",
+      "roleOptionHrManager": "HR Manager — same access as HR",
       "roleOptionDeveloper": "Developer — full access like HQ Admin, but every record it creates is auto-tagged as test data",
       "roleOptionFinance": "Finance — Branch Collection only (Invoices, Debtor List, Revenue)",
       "creatingEllipsis": "Creating…",
@@ -2260,5 +2264,36 @@
       "guardsReleasedNote_other": "Released {{count}} real guards back to the Guard Pool.",
       "errorCouldNotDelete": "Could not delete test data."
     }
+  },
+  "employeeFeedback": {
+    "title": "Employee Feedback",
+    "subtitle": "Share a suggestion or raise a complaint — your identity stays anonymous.",
+    "warning": "Sender details will remain anonymous, but no hatred or attacking comments are allowed — action will be taken if found.",
+    "tabs": {
+      "suggestion": "Suggestion",
+      "complaint": "Complaint"
+    },
+    "categoryLabel": "Category",
+    "categoryPayroll": "Payroll",
+    "categoryProcess": "Process",
+    "categoryOperation": "Operation",
+    "categoryArrangement": "Arrangement",
+    "categoryWelfare": "Welfare",
+    "messageLabel": "Message",
+    "messagePlaceholderSuggestion": "Share your suggestion…",
+    "messagePlaceholderComplaint": "Describe your complaint…",
+    "errorMessageRequired": "Enter a message before submitting.",
+    "errorCouldNotSubmit": "Could not submit — please try again.",
+    "submitSuccess": "Thank you — your feedback has been submitted anonymously.",
+    "submitting": "Submitting…",
+    "submitSuggestion": "Submit Suggestion",
+    "submitComplaint": "Submit Complaint",
+    "receivedSuggestions": "Suggestions received",
+    "receivedComplaints": "Complaints received",
+    "noSuggestionsYet": "No suggestions submitted yet.",
+    "noComplaintsYet": "No complaints submitted yet.",
+    "loading": "Loading…",
+    "senderAnonymous": "Sender: Anonymous",
+    "senderLabel": "Sender: {{name}}"
   }
 }

@@ -14,14 +14,15 @@ import GuardBankPage from './pages/GuardBankPage';
 import QuotationCalculatorPage from './pages/QuotationCalculatorPage';
 import AdminPage from './pages/AdminPage';
 import BranchCollectionPage from './pages/BranchCollectionPage';
+import EmployeeFeedbackPage from './pages/EmployeeFeedbackPage';
 import NewTenderWatcher from './components/notifications/NewTenderWatcher';
 import TenderAssignedWatcher from './components/notifications/TenderAssignedWatcher';
 
-/** An "Operation Staff"/"Operation Admin", "Payroll", or "HR" account can only ever reach Duty
- *  Roster, a "Finance" account can only ever reach Branch Collection; everyone else's home is
- *  Pipeline. */
+/** An "Operation Staff"/"Operation Admin", "Payroll", "HR", or "HR Manager" account can only ever
+ *  reach Duty Roster, a "Finance" account can only ever reach Branch Collection; everyone else's
+ *  home is Pipeline. */
 function defaultRouteFor(role: string | undefined): string {
-  if (role === 'dutyStaff' || role === 'operationAdmin' || role === 'payroll' || role === 'hr') return '/duty-roster';
+  if (role === 'dutyStaff' || role === 'operationAdmin' || role === 'payroll' || role === 'hr' || role === 'hrManager') return '/duty-roster';
   if (role === 'finance') return '/branch-collection';
   return '/pipeline';
 }
@@ -177,6 +178,20 @@ export default function App() {
               <ProtectedRoute hideFromStaff allowOperationAdmin>
                 <AppLayout>
                   <BranchCollectionPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/employee-feedback"
+            element={
+              // No restrictive props at all — every role reaches this (anonymous Suggestion/
+              // Complaint box). Who additionally sees SUBMITTED feedback once inside (the 5
+              // FEEDBACK_RECEIVER_ROLES in types.ts) is gated by EmployeeFeedbackPage.tsx itself
+              // and, server-side, by firestore.rules' isFeedbackReceiver() — never by route access.
+              <ProtectedRoute>
+                <AppLayout>
+                  <EmployeeFeedbackPage />
                 </AppLayout>
               </ProtectedRoute>
             }

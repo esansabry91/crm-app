@@ -41,6 +41,7 @@ function roleLabelKey(role: string | undefined): string {
     case 'operationAdmin':
     case 'payroll':
     case 'hr':
+    case 'hrManager':
     case 'finance':
       return role;
     default:
@@ -235,7 +236,8 @@ function NavContent({
           profile?.role !== 'operationAdmin' &&
           profile?.role !== 'payroll' &&
           profile?.role !== 'finance' &&
-          profile?.role !== 'hr' && (
+          profile?.role !== 'hr' &&
+          profile?.role !== 'hrManager' && (
           <>
             <NavSection title={t('nav.sections.clientAcquisition')}>
               <NavLink to="/pipeline" className={navItemClass} onClick={onNavigate}>
@@ -321,9 +323,10 @@ function NavContent({
             </NavLink>
           </NavSection>
         )}
-        {/* HR is Payroll's Duty Roster reach PLUS full Guard Bank access — see the Role doc
-            comment in types.ts and isHr()/isPayrollLike() in firestore.rules. */}
-        {profile?.role === 'hr' && (
+        {/* HR (and HR Manager, which mirrors it identically — see the Role doc comment in
+            types.ts) is Payroll's Duty Roster reach PLUS full Guard Bank access — see
+            isHr()/isPayrollLike() in firestore.rules. */}
+        {(profile?.role === 'hr' || profile?.role === 'hrManager') && (
           <>
             <NavSection title={t('nav.sections.branchOperation')}>
               <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
@@ -344,6 +347,16 @@ function NavContent({
             </NavLink>
           </NavSection>
         )}
+        {/* Employee Feedback — reachable by every role, unconditionally, unlike every other link
+            above (each scoped to a subset of roles). Rendered exactly once here rather than
+            duplicated into each role-specific block above, so an admin-tier/branchManager
+            account can never end up with two copies of it. Same "no section title" mt-3
+            first:mt-0 wrapper as Admin Settings just below, for the same reason. */}
+        <div className="mt-3 first:mt-0">
+          <NavLink to="/employee-feedback" className={navItemClass} onClick={onNavigate}>
+            <span aria-hidden>💬</span> {t('nav.links.employeeFeedback')}
+          </NavLink>
+        </div>
         {/* Admin Settings gets no section title of its own, matching before this restructure —
             now also reachable by a Branch Manager (see the /admin route's allowBranchManager
             prop in App.tsx), scoped there to just the Team tab. Wrapped in the same mt-3

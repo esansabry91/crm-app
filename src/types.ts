@@ -47,6 +47,16 @@
  * Staff" — same access, same restrictions, different label. Follow the same pattern as
  * ceo/director/tenderController above: add it alongside 'dutyStaff' wherever that role is
  * checked, never swap one string for the other.
+ *
+ * 'hrManager' ("HR Manager" in the UI) is, in the exact same spirit as 'operationAdmin' above,
+ * just 'hr' under a different job title — same view/export-only every-branch Duty Roster access,
+ * same full Guard Bank access, same isHr()/isPayrollLike() treatment in firestore.rules. Add it
+ * alongside 'hr' wherever that role is checked (ProtectedRoute.tsx, AppLayout.tsx, App.tsx's
+ * defaultRouteFor, sitesListPlan()/canListAllSites() for the every-branch Duty Roster reach), never
+ * swap one string for the other. The one place the two roles differ is Employee Feedback (see
+ * FEEDBACK_RECEIVER_ROLES further below): 'hrManager' is one of its 5 receiver roles, while 'hr'
+ * is not — there's no prior 'hr' behavior to mirror on that one feature, so this is a deliberate,
+ * bespoke addition rather than the usual "add it alongside 'hr'" rule.
  */
 export type Role =
   | 'admin'
@@ -57,6 +67,7 @@ export type Role =
   | 'developer'
   | 'finance'
   | 'hr'
+  | 'hrManager'
   | 'ceo'
   | 'director'
   | 'tenderController';
@@ -897,4 +908,70 @@ export interface StaffTask {
   progressUpdates: TaskProgressUpdate[];
   /** Same meaning and lifecycle as Tender.isTestData — see its doc comment. */
   isTestData?: boolean;
+}
+
+// ---- Employee Feedback (src/pages/EmployeeFeedbackPage.tsx) ----
+
+/** Suggestion (green) or Complaint (red) sub-tab — see EmployeeFeedbackPage.tsx. */
+export type FeedbackType = 'suggestion' | 'complaint';
+
+/** The fixed category dropdown offered on both Suggestion and Complaint submissions. */
+export type FeedbackCategory = 'payroll' | 'process' | 'operation' | 'arrangement' | 'welfare';
+
+/**
+ * The exact 5 roles that can VIEW Employee Feedback submissions at all ("receivers" — every
+ * other role can only ever submit, never see the list): CEO, Director, HQ Admin (the literal
+ * 'admin' role), Tender Controller, and HR Manager. A deliberate, bespoke list rather than
+ * isAdminRole() — the user asked for exactly these 5 and pointedly did NOT include 'developer',
+ * so a dedicated test/dev account never sees real staff feedback. Kept as a plain array (not
+ * folded into isAdminRole()) so this list and the mirrored isFeedbackReceiver() role check in
+ * firestore.rules can be eyeballed against each other and kept in sync by hand if it ever
+ * changes.
+ */
+export const FEEDBACK_RECEIVER_ROLES: Role[] = ['ceo', 'director', 'admin', 'tenderController', 'hrManager'];
+
+export function isFeedbackReceiver(role: Role | string | undefined | null): boolean {
+  return FEEDBACK_RECEIVER_ROLES.includes(role as Role);
+}
+
+/**
+ * Only CEO and Director ever see WHO sent a piece of feedback — every other receiver role above
+ * (HQ Admin, Tender Controller, HR Manager) reads the content but never the sender's identity.
+ * This is why a submission is split across TWO Firestore collections instead of one document
+ * with mixed-visibility fields — Firestore security rules are document-level/all-or-nothing,
+ * they can't redact individual fields per role within a single doc:
+ *   - /employeeFeedback/{id}        — the content every receiver role reads (type, category,
+ *                                     message, createdAt). No sender info lives here at all.
+ *   - /employeeFeedbackSenders/{id} — the SAME id, holding just senderUid/senderName, readable
+ *                                     only by CEO/Director. Written in the same writeBatch as its
+ *                                     paired /employeeFeedback doc (see submitEmployeeFeedback()
+ *                                     in services/employeeFeedback.ts) so the two can never exist
+ *                                     independently of each other.
+ * Every signed-in active user, any role, can CREATE both — anyone can submit a suggestion or
+ * complaint — but only isFeedbackReceiver() roles can ever read /employeeFeedback, and only
+ * CEO/Director can ever read /employeeFeedbackSenders (see firestore.rules).
+ */
+export function canSeeFeedbackSender(role: Role | string | undefined | null): boolean {
+  return role === 'ceo' || role === 'director';
+}
+
+/** One suggestion or complaint — the content half of a submission (see the doc comment above
+ *  canSeeFeedbackSender() for why sender identity lives in a separate paired doc instead of a
+ *  field here). Anonymous by design: nothing on this document ties it back to who submitted it. */
+export interface EmployeeFeedback {
+  id: string;
+  type: FeedbackType;
+  category: FeedbackCategory;
+  message: string;
+  createdAt: number;
+}
+
+/** The sender-identity half of a submission — same document id as its paired
+ *  /employeeFeedback/{id} doc, readable only by CEO/Director (see canSeeFeedbackSender() above
+ *  and the /employeeFeedbackSenders rules in firestore.rules). Never joined back onto
+ *  EmployeeFeedback client-side for any other role. */
+export interface EmployeeFeedbackSender {
+  id: string;
+  senderUid: string;
+  senderName: string;
 }
