@@ -53,12 +53,16 @@ export function useUsers(profile: UserProfile | null) {
     } else if (profile.role === 'branchManager') {
       // Both filters are required for Firestore to prove the LIST matches
       // isOwnBranchOperationStaff() — department-only would also match this manager's own
-      // profile and any other non-dutyStaff account in the branch, which the rule rejects,
-      // denying the whole query. Sort client-side so we don't also need name in the composite
-      // index (see firestore.indexes.json).
+      // profile and any other non-dutyStaff/operationAdmin account in the branch, which the rule
+      // rejects, denying the whole query. 'in' (not '==') so this also picks up 'operationAdmin'
+      // accounts — dutyStaff's own role under a different job title (see the Role doc comment in
+      // types.ts) — Firestore can still prove this matches isOwnBranchOperationStaff()'s
+      // `data.role == 'dutyStaff' || data.role == 'operationAdmin'` since every value in the 'in'
+      // list independently satisfies that OR. Sort client-side so we don't also need name in the
+      // composite index (see firestore.indexes.json).
       const q = query(
         collection(db, 'users'),
-        where('role', '==', 'dutyStaff'),
+        where('role', 'in', ['dutyStaff', 'operationAdmin']),
         where('department', '==', profile.department)
       );
       unsub = onSnapshot(
