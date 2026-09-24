@@ -97,10 +97,12 @@ export default function UserManager() {
       setError(t('admin.userManager.errorNameAndEmailRequired'));
       return;
     }
-    // Branch managers can only ever create Operation Staff in their own branch — force these
-    // regardless of component state, as a belt-and-suspenders match to the server-side
-    // isOwnBranchOperationStaff() check in firestore.rules (which would reject anything else).
-    const effectiveRole: Role = isBranchManagerRole ? 'dutyStaff' : role;
+    // Branch managers can only ever create Operation Staff or Operation Admin — the two roles
+    // isOwnBranchOperationStaff() in firestore.rules allows them to create — always in their own
+    // branch. The department is forced regardless of component state; the role is constrained to
+    // just these two (never trusting `role` state outright) as a belt-and-suspenders match to
+    // that same server-side check, which would reject anything else.
+    const effectiveRole: Role = isBranchManagerRole ? (role === 'operationAdmin' ? 'operationAdmin' : 'dutyStaff') : role;
     const effectiveDepartment = isBranchManagerRole ? myDepartment : department;
     if (isBranchManagerRole && !effectiveDepartment) {
       setError(t('admin.userManager.errorNoBranchAssigned'));
@@ -205,9 +207,10 @@ export default function UserManager() {
           />
           {isBranchManagerRole ? (
             <>
-              <div className="input flex items-center bg-slate-50 text-slate-500">
-                {t('admin.userManager.operationStaffFixed')}
-              </div>
+              <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="input">
+                <option value="dutyStaff">{t('admin.userManager.roleOptionDutyStaff')}</option>
+                <option value="operationAdmin">{t('admin.userManager.roleOptionOperationAdmin')}</option>
+              </select>
               <div className="input flex items-center bg-slate-50 text-slate-500">
                 {t('admin.userManager.yourBranchFixed', { department: myDepartment || '—' })}
               </div>
