@@ -1247,6 +1247,7 @@
       "revenueBySite": "Revenue by site",
       "revenueBySiteDesc": "All time, same filters as above. A combined invoice (one invoice billing several sites of the same project — see Branch Collection's Generate Invoice) has its total split across the sites it billed, proportional to each site's own share of the invoice — so this column always adds up to the \"Total revenue (all time)\" figure above, and a site's own Invoices count includes every combined invoice it was part of, not just the ones billed to it alone. A Manual Invoice (no linked Duty Roster site) is grouped by its Active Project instead of a site.",
       "colSite": "Site",
+      "colContractStart": "Contract start",
       "colPercentOfTotal": "% of total",
       "invoiceChecklist": "Invoice submission checklist",
       "invoiceChecklistDesc": "Every active project whose contract has started by the selected month (this panel's own brand/branch filters above still apply). A project with more than one Duty Roster site normally gets one row per site here — unless a single invoice for that month already covers every one of its sites together (a combined invoice, or a Manual Invoice tied to the project as a whole), in which case it stays one row.",

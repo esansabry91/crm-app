@@ -19,7 +19,7 @@ import type { Invoice, Tender } from '../../types';
 import StatCard from '../analytics/StatCard';
 import RevenueTrendChart, { type RevenueTrendPoint } from './RevenueTrendChart';
 import ProjectDetailsModal from '../active-projects/ProjectDetailsModal';
-import { formatRM } from '../../utils/format';
+import { formatDate, formatRM } from '../../utils/format';
 
 // Kept in English, matching DebtorList's own monthLabel() precedent — a plain date-formatting
 // utility producing a chart-axis/table label, not sentence-level UI prose.
@@ -98,9 +98,6 @@ interface ChecklistSiteRow {
 interface ChecklistProjectRow {
   tenderId: string;
   projectName: string;
-  /** The full project record, kept only so the "Details" link can open the same
-   *  ProjectDetailsModal Active Projects itself uses, without a second Tender lookup. */
-  tender: Tender;
   /** Present only when this project's sites are being invoiced separately for the selected month
    *  (or haven't been invoiced at all yet) — one entry per Duty Roster site. Null for a
    *  single-site project, or when one invoice already covers every one of its sites together, in
@@ -116,8 +113,11 @@ interface ChecklistProjectRow {
 
 interface SiteRow {
   siteId: string | null;
-  /** Set instead of siteId for a row grouped by Active Project rather than by Duty Roster site —
-   *  see the bySite useMemo's doc comment below. Null for an ordinary site-tied row. */
+  /** The Active Project this row belongs to, when resolvable — set directly from the invoice's
+   *  own tenderId for a Manual-Invoice-grouped row (see the bySite useMemo's doc comment below),
+   *  or looked up via the site's own tenderId link for an ordinary site-tied row. Null only when
+   *  neither resolves (e.g. a site that's since been deleted). Powers the "Details" link and
+   *  Contract Start column in the Revenue by site table. */
   tenderId: string | null;
   siteName: string;
   /** This site's share of revenue across every matching invoice — see
@@ -152,8 +152,12 @@ export default function RevenuePanel() {
   // Past Projects.
   const { wonTenders, seesAllBranches } = useWonTenders(profile);
   const tenderNameById = useMemo(() => new Map(wonTenders.map((wt) => [wt.id, wt.clientName])), [wonTenders]);
+  // Full project records by id — every Won tender regardless of closedOut (same as
+  // tenderNameById above), so the "Details" link and Contract Start column in Revenue by site
+  // below still resolve a project that's since moved to Past Projects.
+  const tenderById = useMemo(() => new Map(wonTenders.map((wt) => [wt.id, wt])), [wonTenders]);
   // Live guard count + the project record itself, both needed to open the same ProjectDetailsModal
-  // Active Projects uses, from the "Details" link on each invoice-checklist row below.
+  // Active Projects uses, from the "Details" link on each Revenue by site row below.
   const liveGuardCounts = useLiveGuardCountsByTender(profile, seesAllBranches);
   const [detailsTender, setDetailsTender] = useState<Tender | null>(null);
   const canFilterByBranch = isAdminRole(profile?.role);
@@ -253,6 +257,44 @@ export default function RevenuePanel() {
     return Array.from(map.values()).sort((a, b) => (a.monthKey < b.monthKey ? 1 : -1));
   }, [filtered]);
 
+  // Every Duty Roster site this profile can reach, subscribed once and split into two lookups:
+  // sitesByTender (currently-linked, non-archived sites grouped by tenderId — what the invoice
+  // checklist below needs to enumerate a project's live sites) and siteToTenderId (every site,
+  // archived included, mapped back to its tenderId — what Revenue by site below needs to resolve
+  // an ordinary site-tied row to its project, even one whose site has since been archived or
+  // whose project has since closed out). Uses the same "everything this profile can LIST" plan as
+  // useLiveGuardCountsByTender (Active Projects' own guard-count source) rather than
+  // useTenderSites (which is scoped to one tenderId at a time, for a single open modal).
+  const [sitesByTender, setSitesByTender] = useState<Map<string, ChecklistSite[]>>(new Map());
+  const [siteToTenderId, setSiteToTenderId] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (!profile) {
+      setSitesByTender(new Map());
+      setSiteToTenderId(new Map());
+      return;
+    }
+    return subscribeReachableSites(
+      profile,
+      (docs) => {
+        const byTender = new Map<string, ChecklistSite[]>();
+        const toTenderId = new Map<string, string>();
+        for (const d of docs) {
+          const data = d.data() as { name?: string; tenderId?: string | null; archived?: boolean };
+          if (!data.tenderId) continue;
+          toTenderId.set(d.id, data.tenderId);
+          if (data.archived) continue;
+          const list = byTender.get(data.tenderId) || [];
+          list.push({ id: d.id, name: data.name || 'Untitled site' });
+          byTender.set(data.tenderId, list);
+        }
+        byTender.forEach((list) => list.sort((a, b) => a.name.localeCompare(b.name)));
+        setSitesByTender(byTender);
+        setSiteToTenderId(toTenderId);
+      },
+      (err) => console.error('RevenuePanel sites subscription error', err)
+    );
+  }, [profile]);
+
   // Revenue attributed to each site (or, for a migrated/historical invoice, each Active Project)
   // touched by the (brand/branch-filtered) invoices above — see getInvoiceSiteAllocations()'s doc
   // comment for how a combined invoice's total is split across the sites it billed. All-time, same
@@ -260,15 +302,16 @@ export default function RevenuePanel() {
   // (this table's revenue column sums to that figure).
   //
   // A "New Invoice" (generated from Duty Roster) is always tied to a specific site — those rows
-  // group by alloc.siteId exactly as before. A "Manual Invoice" (see createMigratedInvoice(), the
-  // Generate Invoice tab formerly labeled "Add historical invoice") carries no Duty Roster site at
-  // all — alloc.siteId is null for it — because it's tied to a whole Active Project (tenderId)
-  // instead, so those rows group by tenderId, resolved to that project's current client name via
-  // tenderNameById. Grouping by the id (not by clientName text) means two migrated invoices for the
-  // same project always land in the same row even if their typed-in clientName ever drifted
-  // slightly; falling back to the invoice's own clientName only kicks in if the project itself
-  // isn't resolvable (e.g. no longer visible to this viewer), and the translated placeholder only
-  // if even that's blank.
+  // group by alloc.siteId exactly as before, resolved back to their project via siteToTenderId
+  // for the Contract Start column and "Details" link. A "Manual Invoice" (see
+  // createMigratedInvoice(), the Generate Invoice tab formerly labeled "Add historical invoice")
+  // carries no Duty Roster site at all — alloc.siteId is null for it — because it's tied to a
+  // whole Active Project (tenderId) instead, so those rows group by tenderId, resolved to that
+  // project's current client name via tenderNameById. Grouping by the id (not by clientName text)
+  // means two migrated invoices for the same project always land in the same row even if their
+  // typed-in clientName ever drifted slightly; falling back to the invoice's own clientName only
+  // kicks in if the project itself isn't resolvable (e.g. no longer visible to this viewer), and
+  // the translated placeholder only if even that's blank.
   const bySite = useMemo(() => {
     const map = new Map<string, SiteRow>();
     for (const inv of filtered) {
@@ -280,7 +323,7 @@ export default function RevenuePanel() {
         const key = isProjectTied ? `tender:${inv.tenderId || displayName}` : `site:${alloc.siteId}`;
         const row = map.get(key) || {
           siteId: alloc.siteId,
-          tenderId: isProjectTied ? inv.tenderId : null,
+          tenderId: isProjectTied ? inv.tenderId : (alloc.siteId && siteToTenderId.get(alloc.siteId)) || null,
           siteName: displayName,
           revenue: 0,
           invoiceCount: 0,
@@ -291,37 +334,7 @@ export default function RevenuePanel() {
       }
     }
     return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
-  }, [filtered, t, tenderNameById]);
-
-  // Every Duty Roster site currently linked to a tender, keyed by tenderId, for the invoice
-  // checklist below. Uses the same "everything this profile can LIST" plan as
-  // useLiveGuardCountsByTender (Active Projects' own guard-count source) rather than
-  // useTenderSites (which is scoped to one tenderId at a time, for a single open modal) — the
-  // checklist needs every project's sites at once. Archived sites are excluded, matching how an
-  // active project's Duty Roster only ever shows its live site(s).
-  const [sitesByTender, setSitesByTender] = useState<Map<string, ChecklistSite[]>>(new Map());
-  useEffect(() => {
-    if (!profile) {
-      setSitesByTender(new Map());
-      return;
-    }
-    return subscribeReachableSites(
-      profile,
-      (docs) => {
-        const map = new Map<string, ChecklistSite[]>();
-        for (const d of docs) {
-          const data = d.data() as { name?: string; tenderId?: string | null; archived?: boolean };
-          if (!data.tenderId || data.archived) continue;
-          const list = map.get(data.tenderId) || [];
-          list.push({ id: d.id, name: data.name || 'Untitled site' });
-          map.set(data.tenderId, list);
-        }
-        map.forEach((list) => list.sort((a, b) => a.name.localeCompare(b.name)));
-        setSitesByTender(map);
-      },
-      (err) => console.error('RevenuePanel sites subscription error', err)
-    );
-  }, [profile]);
+  }, [filtered, t, tenderNameById, siteToTenderId]);
 
   const [checklistMonth, setChecklistMonth] = useState(() => currentMonthKey());
 
@@ -357,7 +370,7 @@ export default function RevenuePanel() {
       const invoiceCount = monthInvoices.length;
 
       if (sites.length <= 1) {
-        return { tenderId: project.id, projectName: project.clientName, tender: project, siteRows: null, submitted: invoiceCount > 0, invoiceCount };
+        return { tenderId: project.id, projectName: project.clientName, siteRows: null, submitted: invoiceCount > 0, invoiceCount };
       }
 
       const wholeProjectCovered = monthInvoices.some((inv) => {
@@ -366,7 +379,7 @@ export default function RevenuePanel() {
         return sites.every((s) => covered.has(s.id));
       });
       if (wholeProjectCovered) {
-        return { tenderId: project.id, projectName: project.clientName, tender: project, siteRows: null, submitted: true, invoiceCount };
+        return { tenderId: project.id, projectName: project.clientName, siteRows: null, submitted: true, invoiceCount };
       }
 
       const siteRows: ChecklistSiteRow[] = sites.map((site) => {
@@ -376,7 +389,6 @@ export default function RevenuePanel() {
       return {
         tenderId: project.id,
         projectName: project.clientName,
-        tender: project,
         siteRows,
         submitted: siteRows.every((r) => r.submitted),
         invoiceCount,
@@ -561,25 +573,42 @@ export default function RevenuePanel() {
             <thead>
               <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
                 <th className="py-2 pr-4 font-medium">{t('branchCollection.revenuePanel.colSite')}</th>
+                <th className="py-2 pr-4 font-medium">{t('branchCollection.revenuePanel.colContractStart')}</th>
                 <th className="py-2 pr-4 font-medium text-right">{t('branchCollection.revenuePanel.colInvoices')}</th>
                 <th className="py-2 pr-4 font-medium text-right">{t('branchCollection.revenuePanel.colRevenueRM')}</th>
                 <th className="py-2 font-medium text-right">{t('branchCollection.revenuePanel.colPercentOfTotal')}</th>
               </tr>
             </thead>
             <tbody>
-              {bySite.map((row) => (
-                <tr key={row.siteId || row.tenderId || row.siteName} className="border-b border-slate-50 last:border-0">
-                  <td className="py-2 pr-4">{row.siteName}</td>
-                  <td className="py-2 pr-4 text-right">{row.invoiceCount}</td>
-                  <td className="py-2 pr-4 text-right font-medium">{row.revenue.toFixed(2)}</td>
-                  <td className="py-2 text-right text-slate-500">
-                    {overall.revenue > 0 ? `${((row.revenue / overall.revenue) * 100).toFixed(1)}%` : '—'}
-                  </td>
-                </tr>
-              ))}
+              {bySite.map((row) => {
+                const tender = row.tenderId ? tenderById.get(row.tenderId) : undefined;
+                return (
+                  <tr key={row.siteId || row.tenderId || row.siteName} className="border-b border-slate-50 last:border-0">
+                    <td className="py-2 pr-4">
+                      <div className="flex items-center gap-2">
+                        <span>{row.siteName}</span>
+                        {tender && (
+                          <button
+                            onClick={() => setDetailsTender(tender)}
+                            className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                          >
+                            {t('branchCollection.revenuePanel.viewDetails')}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-4 text-slate-500">{tender?.contractStart ? formatDate(tender.contractStart) : '—'}</td>
+                    <td className="py-2 pr-4 text-right">{row.invoiceCount}</td>
+                    <td className="py-2 pr-4 text-right font-medium">{row.revenue.toFixed(2)}</td>
+                    <td className="py-2 text-right text-slate-500">
+                      {overall.revenue > 0 ? `${((row.revenue / overall.revenue) * 100).toFixed(1)}%` : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
               {bySite.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="py-4 text-xs text-slate-400">
+                  <td colSpan={5} className="py-4 text-xs text-slate-400">
                     {t('branchCollection.revenuePanel.noneMatchFilters')}
                   </td>
                 </tr>
@@ -619,30 +648,12 @@ export default function RevenuePanel() {
                     <>
                       <tr className="border-b border-slate-50">
                         <td colSpan={3} className="pt-2.5 pb-1 pr-4 text-xs font-semibold text-slate-500">
-                          <div className="flex items-center gap-2">
-                            <span>{row.projectName}</span>
-                            <button
-                              onClick={() => setDetailsTender(row.tender)}
-                              className="text-xs font-medium normal-case text-blue-600 hover:text-blue-700"
-                            >
-                              {t('branchCollection.revenuePanel.viewDetails')}
-                            </button>
-                          </div>
+                          {row.projectName}
                         </td>
                       </tr>
                       {row.siteRows.map((site) => (
                         <tr key={site.siteId} className="border-b border-slate-50 last:border-0">
-                          <td className="py-2 pr-4 pl-4 text-slate-600">
-                            <div className="flex items-center gap-2">
-                              <span>{site.siteName}</span>
-                              <button
-                                onClick={() => setDetailsTender(row.tender)}
-                                className="text-xs font-medium text-blue-600 hover:text-blue-700"
-                              >
-                                {t('branchCollection.revenuePanel.viewDetails')}
-                              </button>
-                            </div>
-                          </td>
+                          <td className="py-2 pr-4 pl-4 text-slate-600">{site.siteName}</td>
                           <td className="py-2 pr-4 text-right">{site.invoiceCount}</td>
                           <td className="py-2 text-right">
                             <span className={site.submitted ? 'text-xs font-medium text-emerald-700' : 'text-xs font-medium text-amber-700'}>
@@ -656,17 +667,7 @@ export default function RevenuePanel() {
                     </>
                   ) : (
                     <tr className="border-b border-slate-50 last:border-0">
-                      <td className="py-2 pr-4">
-                        <div className="flex items-center gap-2">
-                          <span>{row.projectName}</span>
-                          <button
-                            onClick={() => setDetailsTender(row.tender)}
-                            className="text-xs font-medium text-blue-600 hover:text-blue-700"
-                          >
-                            {t('branchCollection.revenuePanel.viewDetails')}
-                          </button>
-                        </div>
-                      </td>
+                      <td className="py-2 pr-4">{row.projectName}</td>
                       <td className="py-2 pr-4 text-right">{row.invoiceCount}</td>
                       <td className="py-2 text-right">
                         <span className={row.submitted ? 'text-xs font-medium text-emerald-700' : 'text-xs font-medium text-amber-700'}>
