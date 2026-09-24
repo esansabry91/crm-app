@@ -5,22 +5,7 @@
     "closeMenu": "Tutup menu",
     "collapseSidebar": "Kuncupkan bar sisi",
     "language": "Bahasa",
-    "optional": "pilihan",
-    "collapseHeaderDetails": "Kuncupkan butiran pengepala",
-    "expandHeaderDetails": "Kembangkan butiran pengepala"
-  },
-  "protectedRoute": {
-    "loading": "Memuatkan…",
-    "noProfile": "Akaun anda belum mempunyai profil CRM yang disediakan, atau ia telah dinyahaktifkan. Hubungi Admin HQ anda.",
-    "deactivated": "Akaun anda telah dinyahaktifkan. Hubungi Admin HQ anda jika ini tidak dijangka."
-  },
-  "notifications": {
-    "newTenderRegistered": "Tender baharu didaftarkan",
-    "newTenderInPipeline": "Tender baharu dalam saluran anda",
-    "byName": "oleh {{name}}",
-    "stageLabel": "Peringkat: {{stage}}",
-    "dismiss": "Tolak",
-    "viewInPipeline": "Lihat dalam Saluran Tender →"
+    "optional": "pilihan"
   },
   "nav": {
     "appName": "Inter Prominent CRM",
@@ -53,6 +38,7 @@
       "director": "Pengarah",
       "tenderController": "Pengawal Tender",
       "dutyStaff": "Kakitangan Operasi",
+      "operationAdmin": "Admin Operasi",
       "payroll": "Gaji",
       "hr": "Sumber Manusia",
       "finance": "Kewangan",
@@ -269,7 +255,6 @@
     "ofClosedTenders": "daripada tender ditutup",
     "trendTitle": "Trend Jumlah Nilai Saluran Tender",
     "bridgeTitle": "Jambatan Nilai Saluran Tender Terbuka",
-    "historyLoadErrorBanner": "Sejarah saluran tender gagal dimuatkan ({{error}}) — carta Trend dan Jambatan di bawah mungkin kosong atau tidak lengkap. Cuba muat semula halaman.",
     "stageCountTitle": "Bilangan Tender mengikut Peringkat",
     "stageValueTitle": "Nilai Saluran Tender mengikut Peringkat (RM)",
     "wonVsLostTitle": "Tender Menang lwn Kalah",
@@ -304,7 +289,6 @@
     "bringOverRoster": "Bawa jadual sedia ada",
     "startNewRoster": "Mulakan jadual baharu",
     "activeProjectValue": "Nilai Projek Aktif",
-    "activeProjectsCount_one": "{{count}} projek aktif",
     "activeProjectsCount_other": "{{count}} projek aktif",
     "estMonthlyCollection": "Anggaran Kutipan Bulanan ({{year}})",
     "estMonthlyCollectionSub": "purata/bulan, dipro-rata mengikut bulan yang dilindungi",
@@ -320,7 +304,6 @@
     "raceTitleValue": "Pertandingan Projek Aktif — Nilai Cawangan Mengikut Masa",
     "showingFilter": "Menunjukkan projek yang sepadan sahaja",
     "clearFilter": "Kosongkan penapis",
-    "goToList": "Pergi ke senarai",
     "noProjectsYet": "Tiada projek aktif lagi.",
     "noProjectsMatchFilter": "Tiada projek sepadan dengan penapis ini.",
     "table": {
@@ -333,7 +316,6 @@
       "value": "Nilai",
       "details": "Butiran"
     },
-    "guardsCount_one": "{{count}} pengawal",
     "guardsCount_other": "{{count}} pengawal",
     "pendingReassignmentTo": "→ menunggu penugasan semula ke {{branch}}",
     "pendingTo": "→ menunggu ke {{branch}}",
@@ -366,7 +348,9 @@
     "confirmCancelReassignment": "Batalkan penugasan semula \"{{client}}\" yang belum selesai ke {{branch}}?",
     "confirmBringOver": "Bawa jadual tugas sedia ada \"{{client}}\"? Pengawal, jadual dan sejarahnya semua berpindah ke {{branch}} seperti sedia ada.",
     "confirmNewRoster": "Mulakan jadual tugas baharu sepenuhnya untuk \"{{client}}\" di bawah {{branch}}? Jadual sedia ada diarkibkan (disimpan untuk rekod Pentadbir/Ibu Pejabat/Gaji) tetapi tidak lagi digunakan untuk projek ini.",
-    "confirmCloseOut": "Tutup projek \"{{client}}\"?\n\nIa akan berpindah keluar daripada Projek Aktif ke Projek Lepas, dan mana-mana pengawal yang masih digunakan di sini akan kembali ke Kumpulan Pengawal. Nilainya terus dikira dalam Analisis Saluran Tender sebagai hasil Dimenangi — ini hanya menjejaskan paparan Projek Aktif.\n\nJika kontrak ini hanya diperbaharui dan kerja diteruskan tanpa gangguan, edit tarikh Tamat Kontraknya (dan nilai, jika kadar berubah) — menutup projek akan melepaskan pengawalnya."
+    "confirmCloseOut": "Tutup projek \"{{client}}\"?\n\nIa akan berpindah keluar daripada Projek Aktif ke Projek Lepas, dan mana-mana pengawal yang masih digunakan di sini akan kembali ke Kumpulan Pengawal. Nilainya terus dikira dalam Analisis Saluran Tender sebagai hasil Dimenangi — ini hanya menjejaskan paparan Projek Aktif.\n\nJika kontrak ini hanya diperbaharui dan kerja diteruskan tanpa gangguan, edit tarikh Tamat Kontraknya (dan nilai, jika kadar berubah) — menutup projek akan melepaskan pengawalnya.",
+    "estYearlyCollection": "Anggaran Kutipan Tahun Ini ({{year}})",
+    "estYearlyCollectionSub": "jumlah keseluruhan untuk bulan yang dilindungi, bukan purata"
   },
   "renewContract": {
     "title": "Perbaharui Kontrak",
@@ -970,7 +954,6 @@
   },
   "taskBoard": {
     "loadingEllipsis": "Memuatkan…",
-    "loadErrorBanner": "Tugasan gagal dimuatkan ({{error}}). Cuba muat semula halaman.",
     "subtitleManage": "Tugaskan dan jejak tugasan Kakitangan Operasi anda.",
     "subtitleStaff": "Tugasan yang ditugaskan kepada anda.",
     "cancel": "Batal",
@@ -1252,7 +1235,8 @@
       "statusFixButton": "Kira semula status invois daripada jumlah dibayar",
       "statusFixDesc": "Membetulkan mana-mana invois yang statusnya tidak sepadan dengan jumlah yang dibayar — cth. satu yang masih menunjukkan Dibayar Sebahagian walaupun telah dibayar penuh hingga ke sen (pepijat berkaitan pembundaran dalam cara jumlah disimpan dahulu), atau invois lama yang statusnya pernah ditetapkan secara manual. Selamat dijalankan lebih daripada sekali.",
       "statusFixNothingToDo": "Menyemak {{total}} invois — setiap status sudah sepadan dengan jumlah dibayar.",
-      "statusFixUpdated": "Menyemak {{total}} invois: {{updated}} telah diperbetulkan statusnya."
+      "statusFixUpdated": "Menyemak {{total}} invois: {{updated}} telah diperbetulkan statusnya.",
+      "unknownSite": "Tapak tidak diketahui"
     },
     "invoiceSiteSection": {
       "additionalSiteNote": "Lokasi tambahan digabungkan ke dalam invois ini.",
@@ -2017,6 +2001,7 @@
       "branchManager": "Pengurus Cawangan",
       "hqAdmin": "Admin HQ",
       "operationStaff": "Kakitangan Operasi",
+      "operationAdmin": "Admin Operasi",
       "payroll": "Gaji",
       "developer": "Pemaju",
       "finance": "Kewangan",
@@ -2072,6 +2057,7 @@
       "roleOptionDirector": "Pengarah — akses penuh, sama seperti Admin HQ",
       "roleOptionTenderController": "Pengawal Tender — akses penuh, sama seperti Admin HQ",
       "roleOptionDutyStaff": "Kakitangan Operasi — Roster Tugas sahaja, tiada yang lain",
+      "roleOptionOperationAdmin": "Admin Operasi — akses sama seperti Kakitangan Operasi",
       "roleOptionPayroll": "Gaji — Roster Tugas sahaja, lihat & eksport sahaja, semua cawangan",
       "roleOptionHr": "HR — sama seperti Gaji, ditambah akses penuh ke Bank Pengawal",
       "roleOptionDeveloper": "Pemaju — akses penuh seperti Admin HQ, tetapi setiap rekod yang dicipta ditanda automatik sebagai data ujian",

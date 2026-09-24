@@ -127,7 +127,7 @@ service cloud.firestore {
       // canAssignSiteBranchViaTender() above: broad admin reach stays admin-only, but a Branch
       // Manager gets just enough rope to run their own branch's Operation Staff roster.
       function isOwnBranchOperationStaff(data) {
-        return data.role == 'dutyStaff' && data.department == myDepartment();
+        return (data.role == 'dutyStaff' || data.role == 'operationAdmin') && data.department == myDepartment();
       }
       allow read: if isSignedIn()
         && (request.auth.uid == uid || isAdmin() || (isBranchManager() && isOwnBranchOperationStaff(resource.data)));
@@ -191,7 +191,10 @@ service cloud.firestore {
           || (
             isBranchManager()
             && request.resource.data.department == myDepartment()
-            && get(/databases/$(database)/documents/users/$(request.resource.data.assigneeUid)).data.role == 'dutyStaff'
+            && (
+              get(/databases/$(database)/documents/users/$(request.resource.data.assigneeUid)).data.role == 'dutyStaff'
+              || get(/databases/$(database)/documents/users/$(request.resource.data.assigneeUid)).data.role == 'operationAdmin'
+            )
             && get(/databases/$(database)/documents/users/$(request.resource.data.assigneeUid)).data.department == myDepartment()
           )
         );

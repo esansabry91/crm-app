@@ -38,6 +38,7 @@ function roleLabelKey(role: string | undefined): string {
     case 'director':
     case 'tenderController':
     case 'dutyStaff':
+    case 'operationAdmin':
     case 'payroll':
     case 'hr':
     case 'finance':
@@ -231,6 +232,7 @@ function NavContent({
         }}
       >
         {profile?.role !== 'dutyStaff' &&
+          profile?.role !== 'operationAdmin' &&
           profile?.role !== 'payroll' &&
           profile?.role !== 'finance' &&
           profile?.role !== 'hr' && (
@@ -286,7 +288,7 @@ function NavContent({
             </NavSection>
           </>
         )}
-        {profile?.role === 'dutyStaff' && (
+        {(profile?.role === 'dutyStaff' || profile?.role === 'operationAdmin') && (
           <>
             <NavSection title={t('nav.sections.branchOperation')}>
               <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>

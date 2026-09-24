@@ -107,9 +107,9 @@ export default function RevenuePanel() {
   const canFilterByBranch = isAdminRole(profile?.role);
   // The branch filter itself stays admin-only (per the original spec), but the backfill/
   // diagnostics tools below it are safe for a Branch Manager to run too — firestore.rules
-  // already lets a Branch Manager create/update invoices, and getReachableSites() only LISTs
-  // sites they can actually read (own branch + unassigned), so running this only ever resolves
-  // invoices against data they can already reach.
+  // already lets a Branch Manager create/update invoices, and their read of `sites` is
+  // naturally branch-scoped there, so running this only ever touches data they can already
+  // reach.
   const canManageInvoiceData = canFilterByBranch || profile?.role === 'branchManager';
   const [brandFilter, setBrandFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
@@ -124,24 +124,22 @@ export default function RevenuePanel() {
   useEffect(() => subscribeInvoices(setInvoices), []);
 
   async function runBackfill() {
-    if (!profile) return;
     setBackfillBusy(true);
     setBackfillResult(null);
     try {
-      const result = await backfillInvoiceBranches(profile);
+      const result = await backfillInvoiceBranches();
       setBackfillResult(result);
       // Refresh the diagnostic list too, if it's open, so a re-run's effect is visible immediately.
-      if (diagnostics) setDiagnostics(await diagnoseInvoiceBranches(profile));
+      if (diagnostics) setDiagnostics(await diagnoseInvoiceBranches());
     } finally {
       setBackfillBusy(false);
     }
   }
 
   async function runDiagnostics() {
-    if (!profile) return;
     setDiagnosticsBusy(true);
     try {
-      setDiagnostics(await diagnoseInvoiceBranches(profile));
+      setDiagnostics(await diagnoseInvoiceBranches());
     } finally {
       setDiagnosticsBusy(false);
     }
@@ -209,10 +207,16 @@ export default function RevenuePanel() {
     const map = new Map<string, SiteRow>();
     for (const inv of filtered) {
       for (const alloc of getInvoiceSiteAllocations(inv)) {
-        const key = alloc.siteId || `name:${alloc.siteName || 'Unknown site'}`;
+        // Invoices migrated from before the CRM tracked a Duty Roster site (see
+        // createMigratedInvoice()) carry no siteId/siteName — they're tied to a whole
+        // project/client instead. Falling back to the invoice's own clientName there (rather
+        // than a generic "Unknown site" label) keeps this table meaningful for those rows; the
+        // translated fallback only kicks in for the rarer case where even clientName is blank.
+        const displayName = alloc.siteName || inv.clientName || t('branchCollection.revenuePanel.unknownSite');
+        const key = alloc.siteId || `name:${displayName}`;
         const row = map.get(key) || {
           siteId: alloc.siteId,
-          siteName: alloc.siteName || 'Unknown site',
+          siteName: displayName,
           revenue: 0,
           invoiceCount: 0,
         };
@@ -222,7 +226,7 @@ export default function RevenuePanel() {
       }
     }
     return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
-  }, [filtered]);
+  }, [filtered, t]);
 
   const thisMonthKey = currentMonthKey();
   const thisMonth = byMonth.find((r) => r.monthKey === thisMonthKey) || {

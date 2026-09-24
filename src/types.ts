@@ -36,11 +36,23 @@
  * different job title — see isAdminRole() below and isAdmin() in firestore.rules, both of which
  * treat them exactly like 'admin'. They do NOT get 'developer's isTestData auto-tagging — only a
  * literal 'developer' account does (see shouldStampTestData() in services/settings.ts).
+ *
+ * 'operationAdmin' ("Operation Admin" in the UI) is deliberately just 'dutyStaff' ("Operation
+ * Staff") under a different job title — every place that gates on 'dutyStaff' (hideFromStaff in
+ * ProtectedRoute/App.tsx, the nav gating in AppLayout, isOwnBranchOperationStaff() and the task
+ * assignee check in firestore.rules, canAssignSupportGuard() in duty-roster/rosterModel.ts, and
+ * TaskBoardPage's own staff check) also checks 'operationAdmin', so the two behave identically
+ * everywhere. It exists as its own role value (rather than reusing 'dutyStaff') purely so the
+ * account's job title in User Management/reporting reads "Operation Admin" instead of "Operation
+ * Staff" — same access, same restrictions, different label. Follow the same pattern as
+ * ceo/director/tenderController above: add it alongside 'dutyStaff' wherever that role is
+ * checked, never swap one string for the other.
  */
 export type Role =
   | 'admin'
   | 'branchManager'
   | 'dutyStaff'
+  | 'operationAdmin'
   | 'payroll'
   | 'developer'
   | 'finance'

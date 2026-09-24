@@ -17,10 +17,11 @@ import BranchCollectionPage from './pages/BranchCollectionPage';
 import NewTenderWatcher from './components/notifications/NewTenderWatcher';
 import TenderAssignedWatcher from './components/notifications/TenderAssignedWatcher';
 
-/** An "Operation Staff", "Payroll", or "HR" account can only ever reach Duty Roster, a
- *  "Finance" account can only ever reach Branch Collection; everyone else's home is Pipeline. */
+/** An "Operation Staff"/"Operation Admin", "Payroll", or "HR" account can only ever reach Duty
+ *  Roster, a "Finance" account can only ever reach Branch Collection; everyone else's home is
+ *  Pipeline. */
 function defaultRouteFor(role: string | undefined): string {
-  if (role === 'dutyStaff' || role === 'payroll' || role === 'hr') return '/duty-roster';
+  if (role === 'dutyStaff' || role === 'operationAdmin' || role === 'payroll' || role === 'hr') return '/duty-roster';
   if (role === 'finance') return '/branch-collection';
   return '/pipeline';
 }

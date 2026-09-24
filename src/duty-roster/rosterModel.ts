@@ -180,10 +180,17 @@ export function canManageRosterLock(session: RosterSession): boolean {
  * forces a live-selected "support" mode back to "" if access is revoked mid-session (a React
  * port re-derives this on every render instead, so there's no separate "force reset" step to
  * port — the option simply stops being offered). Broader than canManageRosterLock() (also
- * includes dutyStaff) — covering one open slot with a borrowed guard is a smaller lever than
- * rearranging the whole roster. */
+ * includes dutyStaff/operationAdmin, which is the same role under a different job title — see
+ * the Role doc comment in types.ts) — covering one open slot with a borrowed guard is a smaller
+ * lever than rearranging the whole roster. */
 export function canAssignSupportGuard(session: RosterSession): boolean {
-  return session.canEdit && (session.isPrivileged || session.myRole === "branchManager" || session.myRole === "dutyStaff");
+  return (
+    session.canEdit &&
+    (session.isPrivileged ||
+      session.myRole === "branchManager" ||
+      session.myRole === "dutyStaff" ||
+      session.myRole === "operationAdmin")
+  );
 }
 
 /** Every Additional Guard (Temporary) entry whose date range covers dateStr and whose shift

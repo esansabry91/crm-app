@@ -1,6 +1,5 @@
 import { type ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { isAdminRole } from '../../types';
 
@@ -26,9 +25,10 @@ export default function ProtectedRoute({
   /**
    * The "Operation Staff" role can only ever reach Duty Roster — every other route passes this
    * so an Operation Staff account bounces straight there instead of landing wherever this route
-   * would show. "Payroll" and "HR" accounts are Duty-Roster-only in the same way (HR's only
-   * difference is Guard Bank, handled separately by hidePayrollOnly below), so they're gated by
-   * this too.
+   * would show. "Operation Admin" is the same role under a different job title (see the Role doc
+   * comment in types.ts) so it's gated identically. "Payroll" and "HR" accounts are
+   * Duty-Roster-only in the same way (HR's only difference is Guard Bank, handled separately by
+   * hidePayrollOnly below), so they're gated by this too.
    */
   hideFromStaff?: boolean;
   /**
@@ -54,13 +54,12 @@ export default function ProtectedRoute({
    */
   hideFromFinance?: boolean;
 }) {
-  const { t } = useTranslation();
   const { firebaseUser, profile, loading } = useAuth();
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-400 text-sm">
-        {t('protectedRoute.loading')}
+        Loading…
       </div>
     );
   }
@@ -71,7 +70,8 @@ export default function ProtectedRoute({
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="max-w-sm text-center text-sm text-slate-500">
-          {t('protectedRoute.noProfile')}
+          Your account doesn't have a CRM profile set up yet, or it has been deactivated. Contact
+          your HQ admin.
         </div>
       </div>
     );
@@ -81,13 +81,19 @@ export default function ProtectedRoute({
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="max-w-sm text-center text-sm text-slate-500">
-          {t('protectedRoute.deactivated')}
+          Your account has been deactivated. Contact your HQ admin if this is unexpected.
         </div>
       </div>
     );
   }
 
-  if (hideFromStaff && (profile?.role === 'dutyStaff' || profile?.role === 'payroll' || profile?.role === 'hr')) {
+  if (
+    hideFromStaff &&
+    (profile?.role === 'dutyStaff' ||
+      profile?.role === 'operationAdmin' ||
+      profile?.role === 'payroll' ||
+      profile?.role === 'hr')
+  ) {
     return <Navigate to="/duty-roster" replace />;
   }
 

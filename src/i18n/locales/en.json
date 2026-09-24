@@ -5,22 +5,7 @@
     "closeMenu": "Close menu",
     "collapseSidebar": "Collapse sidebar",
     "language": "Language",
-    "optional": "optional",
-    "collapseHeaderDetails": "Collapse header details",
-    "expandHeaderDetails": "Expand header details"
-  },
-  "protectedRoute": {
-    "loading": "Loading…",
-    "noProfile": "Your account doesn't have a CRM profile set up yet, or it has been deactivated. Contact your HQ admin.",
-    "deactivated": "Your account has been deactivated. Contact your HQ admin if this is unexpected."
-  },
-  "notifications": {
-    "newTenderRegistered": "New tender registered",
-    "newTenderInPipeline": "New tender in your pipeline",
-    "byName": "by {{name}}",
-    "stageLabel": "Stage: {{stage}}",
-    "dismiss": "Dismiss",
-    "viewInPipeline": "View in Pipeline →"
+    "optional": "optional"
   },
   "nav": {
     "appName": "Inter Prominent CRM",
@@ -53,6 +38,7 @@
       "director": "Director",
       "tenderController": "Tender Controller",
       "dutyStaff": "Operation Staff",
+      "operationAdmin": "Operation Admin",
       "payroll": "Payroll",
       "hr": "HR",
       "finance": "Finance",
@@ -270,7 +256,6 @@
     "ofClosedTenders": "of closed tenders",
     "trendTitle": "Total Pipeline Value Trend",
     "bridgeTitle": "Open Pipeline Value Bridge",
-    "historyLoadErrorBanner": "Couldn't load pipeline history ({{error}}) — the Trend and Bridge charts below may be empty or incomplete. Try refreshing the page.",
     "stageCountTitle": "Number of Tenders by Stage",
     "stageValueTitle": "Pipeline Value by Stage (RM)",
     "wonVsLostTitle": "Won vs Lost Tenders",
@@ -321,7 +306,6 @@
     "raceTitleValue": "Active Projects Race — Branch Value Over Time",
     "showingFilter": "Showing only projects matching",
     "clearFilter": "Clear filter",
-    "goToList": "Go to list",
     "noProjectsYet": "No active projects yet.",
     "noProjectsMatchFilter": "No projects match this filter.",
     "table": {
@@ -367,7 +351,9 @@
     "confirmCancelReassignment": "Cancel the pending reassignment of \"{{client}}\" to {{branch}}?",
     "confirmBringOver": "Bring over \"{{client}}\"'s existing duty roster? Its guards, schedule and history all move to {{branch}} as-is.",
     "confirmNewRoster": "Start a brand-new duty roster for \"{{client}}\" under {{branch}}? The existing roster is archived (kept for Admin/HQ/Payroll records) but no longer used for this project.",
-    "confirmCloseOut": "Close out \"{{client}}\"?\n\nIt will move out of Active Projects and into Past Projects, and any guards still deployed here move back into the Guard Pool. Its value keeps counting in Pipeline Analysis as Won revenue — this only affects the Active Projects view.\n\nIf this contract is simply being renewed and work is continuing without a break, edit its Contract End date (and value, if the rate changed) instead — closing out will release its guards."
+    "confirmCloseOut": "Close out \"{{client}}\"?\n\nIt will move out of Active Projects and into Past Projects, and any guards still deployed here move back into the Guard Pool. Its value keeps counting in Pipeline Analysis as Won revenue — this only affects the Active Projects view.\n\nIf this contract is simply being renewed and work is continuing without a break, edit its Contract End date (and value, if the rate changed) instead — closing out will release its guards.",
+    "estYearlyCollection": "Est. This Year Collection ({{year}})",
+    "estYearlyCollectionSub": "total for months covered, not average"
   },
   "renewContract": {
     "title": "Renew Contract",
@@ -979,7 +965,6 @@
   },
   "taskBoard": {
     "loadingEllipsis": "Loading…",
-    "loadErrorBanner": "Couldn't load tasks ({{error}}). Try refreshing the page.",
     "subtitleManage": "Assign and track your Operation Staff's tasks.",
     "subtitleStaff": "Tasks assigned to you.",
     "cancel": "Cancel",
@@ -1261,7 +1246,8 @@
       "statusFixButton": "Recompute invoice status from amount paid",
       "statusFixDesc": "Fixes any invoice whose status doesn't match its own amount paid — e.g. one stuck showing Partially Paid even though it's been paid in full down to the cent (a rounding-related bug in how totals used to be stored), or an older invoice whose status was once set by hand. Safe to run more than once.",
       "statusFixNothingToDo": "Checked {{total}} invoice(s) — every status already matches its amount paid.",
-      "statusFixUpdated": "Checked {{total}} invoice(s): {{updated}} had their status corrected."
+      "statusFixUpdated": "Checked {{total}} invoice(s): {{updated}} had their status corrected.",
+      "unknownSite": "Unknown site"
     },
     "invoiceSiteSection": {
       "additionalSiteNote": "Additional site combined onto this invoice.",
@@ -2026,6 +2012,7 @@
       "branchManager": "Branch Manager",
       "hqAdmin": "HQ Admin",
       "operationStaff": "Operation Staff",
+      "operationAdmin": "Operation Admin",
       "payroll": "Payroll",
       "developer": "Developer",
       "finance": "Finance",
@@ -2081,6 +2068,7 @@
       "roleOptionDirector": "Director — full access, same as HQ Admin",
       "roleOptionTenderController": "Tender Controller — full access, same as HQ Admin",
       "roleOptionDutyStaff": "Operation Staff — Duty Roster only, nothing else",
+      "roleOptionOperationAdmin": "Operation Admin — same access as Operation Staff",
       "roleOptionPayroll": "Payroll — Duty Roster only, view & export only, all branches",
       "roleOptionHr": "HR — same as Payroll, plus full access to Guard Bank",
       "roleOptionDeveloper": "Developer — full access like HQ Admin, but every record it creates is auto-tagged as test data",

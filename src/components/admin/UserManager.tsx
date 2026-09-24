@@ -13,6 +13,7 @@ const ROLE_LABEL_KEYS: Record<string, string> = {
   branchManager: 'admin.roles.branchManager',
   admin: 'admin.roles.hqAdmin',
   dutyStaff: 'admin.roles.operationStaff',
+  operationAdmin: 'admin.roles.operationAdmin',
   payroll: 'admin.roles.payroll',
   developer: 'admin.roles.developer',
   finance: 'admin.roles.finance',
@@ -28,9 +29,9 @@ function roleLabel(t: TFunction, role: string): string {
 
 export default function UserManager() {
   const { t } = useTranslation();
-  const { profile } = useAuth();
-  const { users } = useUsers(profile);
+  const { users } = useUsers();
   const { branches } = useBranches();
+  const { profile } = useAuth();
   // A Branch Manager reaches this component too (see the /admin route's allowBranchManager prop
   // in App.tsx and AdminPage.tsx's Team-only tab restriction) — but only ever to manage their own
   // branch's Operation Staff accounts. firestore.rules' /users rules enforce the same scoping
@@ -60,12 +61,15 @@ export default function UserManager() {
   // whatever's actually still sitting in old documents.
   const legacyStaffUsers = users.filter((u) => (u.role as string) === 'staff');
 
-  // A Branch Manager's /users query is already scoped to their branch's dutyStaff accounts
-  // (see useUsers) — this filter is a defensive/explicit narrowing that also drops the
+  // A Branch Manager's own /users read rule only ever returns their own profile plus their
+  // branch's dutyStaff/operationAdmin accounts (Firestore silently drops docs a query's reader
+  // can't read), so this filter is mostly a defensive/explicit narrowing — it also drops the
   // branch manager's own profile row from the table, since they're not one of the Operation
-  // Staff they're managing.
+  // Staff/Operation Admin accounts they're managing. Branch Managers still only ever CREATE
+  // 'dutyStaff' accounts (see handleCreate below) — 'operationAdmin' is admin-assigned — but once
+  // one exists in their branch, they can see and manage it here like any other Operation Staff.
   const visibleUsers = isBranchManagerRole
-    ? users.filter((u) => u.role === 'dutyStaff' && u.department === myDepartment)
+    ? users.filter((u) => (u.role === 'dutyStaff' || u.role === 'operationAdmin') && u.department === myDepartment)
     : users;
 
   const handleMigrateLegacyRoles = async () => {
@@ -218,6 +222,7 @@ export default function UserManager() {
                 <option value="director">{t('admin.userManager.roleOptionDirector')}</option>
                 <option value="tenderController">{t('admin.userManager.roleOptionTenderController')}</option>
                 <option value="dutyStaff">{t('admin.userManager.roleOptionDutyStaff')}</option>
+                <option value="operationAdmin">{t('admin.userManager.roleOptionOperationAdmin')}</option>
                 <option value="payroll">{t('admin.userManager.roleOptionPayroll')}</option>
                 <option value="hr">{t('admin.userManager.roleOptionHr')}</option>
                 <option value="developer">{t('admin.userManager.roleOptionDeveloper')}</option>
@@ -282,6 +287,7 @@ export default function UserManager() {
                         <option value="director">{t('admin.roles.director')}</option>
                         <option value="tenderController">{t('admin.roles.tenderController')}</option>
                         <option value="dutyStaff">{t('admin.roles.operationStaff')}</option>
+                        <option value="operationAdmin">{t('admin.roles.operationAdmin')}</option>
                         <option value="payroll">{t('admin.roles.payroll')}</option>
                         <option value="hr">{t('admin.roles.hr')}</option>
                         <option value="developer">{t('admin.roles.developer')}</option>

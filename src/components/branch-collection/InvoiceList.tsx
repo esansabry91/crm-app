@@ -837,8 +837,14 @@ export default function InvoiceList() {
       <div className="space-y-2">
         {filteredInvoices.map((inv) => (
           <div key={inv.id} className={`border border-slate-100 rounded-lg p-3 ${inv.status === 'void' ? 'opacity-70' : ''}`}>
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div>
+            {/* items-start + no flex-wrap here (unlike the two inner flex groups below, which may
+                still wrap their own contents) keeps the status/amount/action buttons pinned to
+                the top-right on every row — previously, a long client name wrapping the left
+                column onto two lines pushed this whole block onto its own line below, where
+                space-between's single remaining flex item lands flush-left instead of staying
+                right-aligned, so rows with long titles looked inconsistent with short ones. */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
                   {inv.invoiceNo} · {inv.clientName}
                   {inv.isMigrated && (
@@ -871,7 +877,7 @@ export default function InvoiceList() {
                   )
                 )}
               </div>
-              <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-3 flex-wrap justify-end shrink-0">
                 <span className={`text-xs font-medium px-2 py-1 rounded ${STATUS_COLOR[inv.status]}`}>
                   {statusLabel(inv.status, t)}
                 </span>

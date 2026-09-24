@@ -18,6 +18,7 @@ export default function StatCard({
   sub,
   accent,
   action,
+  onClick,
 }: {
   label: string;
   value: string;
@@ -25,9 +26,31 @@ export default function StatCard({
   accent?: string;
   /** Optional small link/button rendered under the tile, e.g. to jump to a filtered list. */
   action?: { label: string; onClick: () => void; disabled?: boolean };
+  /** Makes the whole tile clickable — e.g. to flip it between two ways of showing the same
+   *  figure (see ActiveProjectsPage's "Est. Monthly/This Year Collection" tiles). Adds a pointer
+   *  cursor and a subtle hover border so the tile reads as interactive, and keyboard support
+   *  (Enter/Space) since a plain div has no built-in affordance for either. */
+  onClick?: () => void;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 px-4 py-3.5">
+    <div
+      className={`bg-white rounded-xl border border-slate-200 px-4 py-3.5 ${
+        onClick ? 'cursor-pointer hover:border-blue-300 transition-colors' : ''
+      }`}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+    >
       <p className="text-xs font-medium text-slate-500 leading-4 min-h-[2rem]">{label}</p>
       <p
         className={`${valueSizeClass(value)} font-semibold mt-1 tabular-nums leading-tight`}
@@ -38,7 +61,12 @@ export default function StatCard({
       {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
       {action && (
         <button
-          onClick={action.onClick}
+          onClick={(e) => {
+            // Stops a card-level onClick (if this tile ever has both) from also firing when the
+            // action button itself is what was clicked.
+            e.stopPropagation();
+            action.onClick();
+          }}
           disabled={action.disabled}
           className="text-xs font-medium text-blue-600 hover:text-blue-700 disabled:text-slate-300 disabled:cursor-not-allowed mt-1.5 underline underline-offset-2"
         >
