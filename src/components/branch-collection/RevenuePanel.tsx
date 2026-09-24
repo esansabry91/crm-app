@@ -107,9 +107,9 @@ export default function RevenuePanel() {
   const canFilterByBranch = isAdminRole(profile?.role);
   // The branch filter itself stays admin-only (per the original spec), but the backfill/
   // diagnostics tools below it are safe for a Branch Manager to run too — firestore.rules
-  // already lets a Branch Manager create/update invoices, and their read of `sites` is
-  // naturally branch-scoped there, so running this only ever touches data they can already
-  // reach.
+  // already lets a Branch Manager create/update invoices, and getReachableSites() only LISTs
+  // sites they can actually read (own branch + unassigned), so running this only ever resolves
+  // invoices against data they can already reach.
   const canManageInvoiceData = canFilterByBranch || profile?.role === 'branchManager';
   const [brandFilter, setBrandFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
@@ -124,22 +124,24 @@ export default function RevenuePanel() {
   useEffect(() => subscribeInvoices(setInvoices), []);
 
   async function runBackfill() {
+    if (!profile) return;
     setBackfillBusy(true);
     setBackfillResult(null);
     try {
-      const result = await backfillInvoiceBranches();
+      const result = await backfillInvoiceBranches(profile);
       setBackfillResult(result);
       // Refresh the diagnostic list too, if it's open, so a re-run's effect is visible immediately.
-      if (diagnostics) setDiagnostics(await diagnoseInvoiceBranches());
+      if (diagnostics) setDiagnostics(await diagnoseInvoiceBranches(profile));
     } finally {
       setBackfillBusy(false);
     }
   }
 
   async function runDiagnostics() {
+    if (!profile) return;
     setDiagnosticsBusy(true);
     try {
-      setDiagnostics(await diagnoseInvoiceBranches());
+      setDiagnostics(await diagnoseInvoiceBranches(profile));
     } finally {
       setDiagnosticsBusy(false);
     }

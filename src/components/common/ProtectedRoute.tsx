@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import { isAdminRole } from '../../types';
 
@@ -54,12 +55,13 @@ export default function ProtectedRoute({
    */
   hideFromFinance?: boolean;
 }) {
+  const { t } = useTranslation();
   const { firebaseUser, profile, loading } = useAuth();
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-400 text-sm">
-        Loading…
+        {t('protectedRoute.loading')}
       </div>
     );
   }
@@ -70,8 +72,7 @@ export default function ProtectedRoute({
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="max-w-sm text-center text-sm text-slate-500">
-          Your account doesn't have a CRM profile set up yet, or it has been deactivated. Contact
-          your HQ admin.
+          {t('protectedRoute.noProfile')}
         </div>
       </div>
     );
@@ -81,7 +82,7 @@ export default function ProtectedRoute({
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="max-w-sm text-center text-sm text-slate-500">
-          Your account has been deactivated. Contact your HQ admin if this is unexpected.
+          {t('protectedRoute.deactivated')}
         </div>
       </div>
     );

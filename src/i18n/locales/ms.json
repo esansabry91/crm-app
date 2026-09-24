@@ -5,7 +5,22 @@
     "closeMenu": "Tutup menu",
     "collapseSidebar": "Kuncupkan bar sisi",
     "language": "Bahasa",
-    "optional": "pilihan"
+    "optional": "pilihan",
+    "collapseHeaderDetails": "Kuncupkan butiran pengepala",
+    "expandHeaderDetails": "Kembangkan butiran pengepala"
+  },
+  "protectedRoute": {
+    "loading": "Memuatkan…",
+    "noProfile": "Akaun anda belum mempunyai profil CRM yang disediakan, atau ia telah dinyahaktifkan. Hubungi Admin HQ anda.",
+    "deactivated": "Akaun anda telah dinyahaktifkan. Hubungi Admin HQ anda jika ini tidak dijangka."
+  },
+  "notifications": {
+    "newTenderRegistered": "Tender baharu didaftarkan",
+    "newTenderInPipeline": "Tender baharu dalam saluran anda",
+    "byName": "oleh {{name}}",
+    "stageLabel": "Peringkat: {{stage}}",
+    "dismiss": "Tolak",
+    "viewInPipeline": "Lihat dalam Saluran Tender →"
   },
   "nav": {
     "appName": "Inter Prominent CRM",
@@ -255,6 +270,7 @@
     "ofClosedTenders": "daripada tender ditutup",
     "trendTitle": "Trend Jumlah Nilai Saluran Tender",
     "bridgeTitle": "Jambatan Nilai Saluran Tender Terbuka",
+    "historyLoadErrorBanner": "Sejarah saluran tender gagal dimuatkan ({{error}}) — carta Trend dan Jambatan di bawah mungkin kosong atau tidak lengkap. Cuba muat semula halaman.",
     "stageCountTitle": "Bilangan Tender mengikut Peringkat",
     "stageValueTitle": "Nilai Saluran Tender mengikut Peringkat (RM)",
     "wonVsLostTitle": "Tender Menang lwn Kalah",
@@ -289,6 +305,7 @@
     "bringOverRoster": "Bawa jadual sedia ada",
     "startNewRoster": "Mulakan jadual baharu",
     "activeProjectValue": "Nilai Projek Aktif",
+    "activeProjectsCount_one": "{{count}} projek aktif",
     "activeProjectsCount_other": "{{count}} projek aktif",
     "estMonthlyCollection": "Anggaran Kutipan Bulanan ({{year}})",
     "estMonthlyCollectionSub": "purata/bulan, dipro-rata mengikut bulan yang dilindungi",
@@ -304,6 +321,7 @@
     "raceTitleValue": "Pertandingan Projek Aktif — Nilai Cawangan Mengikut Masa",
     "showingFilter": "Menunjukkan projek yang sepadan sahaja",
     "clearFilter": "Kosongkan penapis",
+    "goToList": "Pergi ke senarai",
     "noProjectsYet": "Tiada projek aktif lagi.",
     "noProjectsMatchFilter": "Tiada projek sepadan dengan penapis ini.",
     "table": {
@@ -316,6 +334,7 @@
       "value": "Nilai",
       "details": "Butiran"
     },
+    "guardsCount_one": "{{count}} pengawal",
     "guardsCount_other": "{{count}} pengawal",
     "pendingReassignmentTo": "→ menunggu penugasan semula ke {{branch}}",
     "pendingTo": "→ menunggu ke {{branch}}",
@@ -954,6 +973,7 @@
   },
   "taskBoard": {
     "loadingEllipsis": "Memuatkan…",
+    "loadErrorBanner": "Tugasan gagal dimuatkan ({{error}}). Cuba muat semula halaman.",
     "subtitleManage": "Tugaskan dan jejak tugasan Kakitangan Operasi anda.",
     "subtitleStaff": "Tugasan yang ditugaskan kepada anda.",
     "cancel": "Batal",
