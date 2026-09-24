@@ -333,7 +333,7 @@
       "contractEnd": "Contract End",
       "status": "Status",
       "value": "Value",
-      "details": "Details"
+      "projectDetails": "Project Details"
     },
     "guardsCount_one": "{{count}} guard",
     "guardsCount_other": "{{count}} guards",
@@ -342,6 +342,7 @@
     "cancel": "Cancel",
     "selectBranch": "Select branch",
     "edit": "Edit",
+    "editTenderAriaLabel": "Edit tender details for {{client}}",
     "addDetails": "+ Add",
     "dutyRoster": "Duty Roster",
     "renew": "Renew",

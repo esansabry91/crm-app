@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLiveGuardCountsByTender, useWonTenders } from '../hooks/useActiveProjects';
 import { useBranches, useBrands } from '../hooks/useBranches';
 import { useTenderHistory } from '../hooks/useTenderHistory';
+import { useUsers } from '../hooks/useUsers';
 import {
   acceptReassignment,
   assignFirstActiveBranch,
@@ -14,6 +15,7 @@ import {
   requestReassignBranch,
 } from '../services/tenders';
 import RenewContractModal from '../components/active-projects/RenewContractModal';
+import TenderFormModal from '../components/tenders/TenderFormModal';
 import { formatDate, formatRM } from '../utils/format';
 import HeaderCollapseToggle from '../components/layout/HeaderCollapseToggle';
 import {
@@ -130,11 +132,21 @@ export default function ActiveProjectsPage() {
   );
   const { branches } = useBranches();
   const { brands } = useBrands();
+  const { users } = useUsers(profile);
   const [branchFilter, setBranchFilter] = useState('all');
   const [brandFilter, setBrandFilter] = useState('all');
   const [headerExpanded, setHeaderExpanded] = useState(true);
   const [detailsTender, setDetailsTender] = useState<Tender | null>(null);
   const [renewingTender, setRenewingTender] = useState<Tender | null>(null);
+  // The full sales-record edit (client name, brand, contract start, value, stage, owner, notes —
+  // everything TenderFormModal edits, same modal Pipeline uses) — opened via the pencil icon
+  // beside the client name below, so fixing a typo or correcting a figure no longer means leaving
+  // Active Projects for Pipeline. Firestore's own /tenders update rule only ever lets the tender's
+  // OWNER or an admin-tier account through this broad a write (everyone else in Active Projects is
+  // limited to the narrower Project Details fields — see ProjectDetailsModal's own doc comment for
+  // why it's a separate, deliberately narrower form), so the pencil icon itself only renders for
+  // those two cases (see canEditTender below) — never a button that would just fail server-side.
+  const [editingTender, setEditingTender] = useState<Tender | null>(null);
   const [bridgeTimeView, setBridgeTimeView] = useState<BridgeTimeView>('monthly');
   const [bridgePeriodKey, setBridgePeriodKey] = useState<string | null>(null);
   const [raceTimeView, setRaceTimeView] = useState<RaceTimeView>('alltime');
@@ -156,6 +168,18 @@ export default function ActiveProjectsPage() {
 
   const isAdmin = isAdminRole(profile?.role);
   const branchNames = useMemo(() => branches.map((b) => b.name), [branches]);
+
+  // Same audience TenderFormModal's own /tenders update rule grants a full sales-record write to
+  // — see editingTender's doc comment above.
+  const canEditTender = (tender: Tender) => isAdmin || tender.ownerUid === profile?.uid;
+  // Mirrors PipelinePage's own staffOptions exactly (the Tender Owner dropdown's choices): the
+  // full active roster for an admin, or just this signed-in user for anyone else — a Branch
+  // Manager/owner editing their own tender here never needed a roster to pick from in Pipeline
+  // either.
+  const staffOptions = useMemo(
+    () => (isAdmin ? users.filter((u) => u.active !== false) : profile ? [profile] : []),
+    [users, isAdmin, profile]
+  );
 
   // The "Value" / "Guards deployed" toggle for the Active Projects Race chart below — kept as
   // its own translated option list (rather than RaceBarChart's built-in won/submitted default)
@@ -622,7 +646,7 @@ export default function ActiveProjectsPage() {
                     <th className="px-4 py-3">{t('activeProjects.table.contractEnd')}</th>
                     <th className="px-4 py-3">{t('activeProjects.table.status')}</th>
                     <th className="px-4 py-3 text-right">{t('activeProjects.table.value')}</th>
-                    <th className="px-4 py-3">{t('activeProjects.table.details')}</th>
+                    <th className="px-4 py-3">{t('activeProjects.table.projectDetails')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -631,7 +655,34 @@ export default function ActiveProjectsPage() {
                     return (
                       <tr key={tender.id} className="border-b border-slate-50 last:border-0">
                         <td className="px-4 py-3">
-                          <p className="font-medium text-slate-800">{tender.clientName}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-medium text-slate-800">{tender.clientName}</p>
+                            {/* Full sales-record edit (TenderFormModal, same one Pipeline uses) —
+                                only rendered for whoever can actually save it (see canEditTender's
+                                doc comment above), so this never shows a button that would just
+                                fail server-side for a branch-mate who isn't this tender's owner. */}
+                            {canEditTender(tender) && (
+                              <button
+                                onClick={() => setEditingTender(tender)}
+                                className="text-slate-400 hover:text-blue-600 shrink-0"
+                                aria-label={t('activeProjects.editTenderAriaLabel', { client: tender.clientName })}
+                                title={t('activeProjects.editTenderAriaLabel', { client: tender.clientName })}
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth={2}
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  className="w-3.5 h-3.5"
+                                >
+                                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
                           {(tender.location || tender.guardsDeployed != null) && (
                             <p className="text-xs text-slate-400 mt-0.5">
                               {tender.location && <>📍 {tender.location}</>}
@@ -769,6 +820,20 @@ export default function ActiveProjectsPage() {
           actor={{ uid: profile.uid, name: profile.name, role: profile.role }}
         />
       )}
+
+      {/* Same modal Pipeline opens for "Edit Tender" — updateTender() writes straight to the
+          tender doc every other page (Pipeline, Analysis, Archive, Duty Roster, Branch
+          Collection) reads live off, so a change made here shows up everywhere else on its own;
+          nothing here is a separate copy that needs re-syncing. */}
+      <TenderFormModal
+        open={editingTender !== null}
+        onClose={() => setEditingTender(null)}
+        profile={profile}
+        brands={brands}
+        branches={branches}
+        staffOptions={staffOptions}
+        editing={editingTender}
+      />
     </div>
   );
 }

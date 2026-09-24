@@ -332,7 +332,7 @@
       "contractEnd": "Tarikh Tamat Kontrak",
       "status": "Status",
       "value": "Nilai",
-      "details": "Butiran"
+      "projectDetails": "Butiran Projek"
     },
     "guardsCount_one": "{{count}} pengawal",
     "guardsCount_other": "{{count}} pengawal",
@@ -341,6 +341,7 @@
     "cancel": "Batal",
     "selectBranch": "Pilih cawangan",
     "edit": "Edit",
+    "editTenderAriaLabel": "Sunting butiran tender untuk {{client}}",
     "addDetails": "+ Tambah",
     "dutyRoster": "Jadual Tugas",
     "renew": "Perbaharui",
