@@ -12,15 +12,14 @@ import SubmissionDateModal from '../components/tenders/SubmissionDateModal';
 import { disqualifyTender, isTenderArchived, moveTenderStage, requalifyTender } from '../services/tenders';
 import type { Tender } from '../types';
 import { CLOSED_STAGES, isAdminRole } from '../types';
+import { calendarDaysUntil } from '../utils/calendarDays';
 import { formatRM } from '../utils/format';
 
-/** Days from today (local midnight) until an ISO yyyy-mm-dd date — negative once it's past. Used
- *  by both reminder tiles below to find dates "within 30 days", including already-overdue ones
- *  (an overdue reminder is more urgent, not less, so it's never silently dropped). */
+/** Days from today until an ISO yyyy-mm-dd date — negative once that calendar day has passed.
+ *  Used by both reminder tiles below to find dates "within 30 days", including already-overdue
+ *  ones (an overdue reminder is more urgent, not less, so it's never silently dropped). */
 function daysUntil(isoDate: string): number {
-  const target = new Date(`${isoDate}T00:00:00`).getTime();
-  const startOfToday = new Date(new Date().toDateString()).getTime();
-  return Math.round((target - startOfToday) / 86400000);
+  return calendarDaysUntil(isoDate) ?? Number.POSITIVE_INFINITY;
 }
 const REMINDER_WINDOW_DAYS = 30;
 
