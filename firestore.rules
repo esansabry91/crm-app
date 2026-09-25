@@ -577,10 +577,13 @@ service cloud.firestore {
           );
       }
 
-      // The second clause matters: acceptReassignment() in services/tenders.ts queries sites by
-      // tenderId BEFORE it can update one, and a query silently drops documents the caller can't
-      // read rather than erroring — so without this, the receiving Branch Manager's query would
-      // just come back empty and their write would never even attempt to run.
+      // The second clause matters for single-document gets, not for lists. acceptReassignment()
+      // reads each old site by id (pendingReassignment.siteIds, recorded when the admin
+      // requested the move) BEFORE it can update one. A LIST constrained only by tenderId is
+      // permission-denied for a Branch Manager: canReadSite() still depends on `branch`, and
+      // isAcceptingPendingReassignment() uses get(), which Firestore will not use to prove a
+      // query. Rules are not filters — the whole LIST fails, it does not come back empty.
+      // This clause is what makes those per-id gets succeed while the request is still pending.
       allow read: if isActiveUser() && (canReadSite(resource.data) || isAcceptingPendingReassignment(resource.data));
       allow create: if isActiveUser() && !isPayrollLike()
         && (canReachSite(request.resource.data) || canAssignSiteBranchViaTender(request.resource.data));
