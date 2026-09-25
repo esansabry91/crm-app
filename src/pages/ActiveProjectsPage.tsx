@@ -17,6 +17,7 @@ import {
 import { REASSIGNMENT_SITES_UNAVAILABLE } from '../utils/firestoreAccess';
 import RenewContractModal from '../components/active-projects/RenewContractModal';
 import TenderFormModal from '../components/tenders/TenderFormModal';
+import { calendarDaysUntil } from '../utils/calendarDays';
 import { formatDate, formatRM } from '../utils/format';
 import HeaderCollapseToggle from '../components/layout/HeaderCollapseToggle';
 import {
@@ -44,14 +45,9 @@ const ENDING_SOON_DAYS = 60;
 // (30 days) at a glance, without having to open the list and start counting badges.
 const ENDING_VERY_SOON_DAYS = 30;
 
-/** Whole days from today to an ISO contract-end date (negative once it's passed). */
+/** Whole calendar days from today to an ISO contract-end date (negative once that day has passed). */
 function daysUntil(iso: string | undefined): number | null {
-  if (!iso) return null;
-  const end = new Date(`${iso}T12:00:00`);
-  if (Number.isNaN(end.getTime())) return null;
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.round((end.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24));
+  return calendarDaysUntil(iso);
 }
 
 function ContractStatusBadge({ contractEnd }: { contractEnd: string }) {
