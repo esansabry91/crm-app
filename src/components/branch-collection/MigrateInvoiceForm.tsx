@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useWonTenders } from '../../hooks/useActiveProjects';
 import { createMigratedInvoice, deriveInvoiceStatus, clampAmountPaid } from '../../services/invoices';
+import { branchNameIsPersistable, resolvePersistedBranchName } from '../../utils/invoiceBranchGuard';
 import { formatRM } from '../../utils/format';
 
 // Kept in English regardless of app language — this feeds the printed/PDF invoice's own billing-
@@ -126,10 +127,34 @@ export default function MigrateInvoiceForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [total]);
 
-  const canSave = !!(profile && tender && brand && clientName.trim() && invoiceNo.trim() && subTotal > 0);
+  // Same rule as Generate Invoice: BM/OA cannot persist branchName ''. An own-branch project
+  // whose name doesn't match a Branch record still saves as profile.department. Admin/Finance
+  // keep writing effectiveBranch?.name || '' and may leave the branch blank.
+  const resolvedBranchName = resolvePersistedBranchName({
+    role: profile?.role,
+    department: profile?.department,
+    matchedBranchName: effectiveBranch?.name,
+    sourceBranch: tender?.activeBranch,
+    useSourceBranchFallback: false,
+  });
+  const branchNameOk = branchNameIsPersistable(profile?.role, resolvedBranchName);
+  // Keep the old "select one manually" hint when no Branch record matched, including after an
+  // override is chosen (it was never cleared). Hide it when BM/OA already have a department
+  // name to persist for their own project, and when save is blocked — that case has its own line.
+  const showUnmatchedBranchHint = !!(
+    tender && !matchedBranch && branchNameOk && (effectiveBranch || !resolvedBranchName)
+  );
+
+  const canSave = !!(
+    profile && tender && brand && clientName.trim() && invoiceNo.trim() && subTotal > 0 && branchNameOk
+  );
 
   async function handleSave() {
     if (!profile || !tender || !brand) return;
+    if (!branchNameIsPersistable(profile.role, resolvedBranchName)) {
+      setSaveMessage({ text: t('branchCollection.migrateInvoiceForm.branchRequired'), isError: true });
+      return;
+    }
     setSaving(true);
     setSaveMessage(null);
     try {
@@ -139,7 +164,7 @@ export default function MigrateInvoiceForm() {
           brandName: brand.name,
           brandCode,
           branchId: effectiveBranch?.id || null,
-          branchName: effectiveBranch?.name || '',
+          branchName: resolvedBranchName,
           branchCode,
           tenderId: tender.id,
           clientName: clientName.trim(),
@@ -220,10 +245,13 @@ export default function MigrateInvoiceForm() {
                 </option>
               ))}
             </select>
-            {tender && !matchedBranch && (
+            {showUnmatchedBranchHint && (
               <p className="text-xs text-slate-400 mt-1">
                 {t('branchCollection.migrateInvoiceForm.noBranchMatch')}
               </p>
+            )}
+            {tender && !branchNameOk && (
+              <p className="text-xs text-amber-700 mt-1">{t('branchCollection.migrateInvoiceForm.branchRequired')}</p>
             )}
           </div>
           <div>

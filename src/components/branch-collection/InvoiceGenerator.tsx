@@ -21,6 +21,11 @@ import {
 } from '../../services/invoices';
 import InvoicePrintView from './InvoicePrintView';
 import InvoiceSiteSection, { type InvoiceSiteSectionData } from './InvoiceSiteSection';
+import {
+  branchNameIsPersistable,
+  isSelectableInvoiceSite,
+  resolvePersistedBranchName,
+} from '../../utils/invoiceBranchGuard';
 import type { InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, SiteBillingRate, SiteEquipmentRate, TenderEquipmentItem } from '../../types';
 
 // Kept in English regardless of app language — this feeds the printed/PDF invoice's own billing-
@@ -572,6 +577,18 @@ export default function InvoiceGenerator() {
   // an added-but-empty site would otherwise print a labeled section with nothing in it.
   const additionalSitesValid = additionalSiteIds.every((id) => additionalBillsById[id]?.canSave === true);
 
+  // BM/OA list invoices with where('branchName','==',department). An unassigned site used to
+  // save branchName: '' and then vanish. Own-branch sites still persist site.branch (or the
+  // matched Branch name). Admin/Finance keep the old unscoped picker and may still save ''.
+  const resolvedBranchName = resolvePersistedBranchName({
+    role: profile?.role,
+    department: profile?.department,
+    matchedBranchName: matchedBranch?.name,
+    sourceBranch: site?.branch,
+    useSourceBranchFallback: true,
+  });
+  const branchNameOk = branchNameIsPersistable(profile?.role, resolvedBranchName);
+
   // Sites eligible to be combined onto this invoice via "+ Add another site" below — siblings of
   // the primary `site` sharing its tenderId (the same multi-site project) AND its branch,
   // excluding the primary site itself, archived sites, and ones already added. The branch match
@@ -600,10 +617,15 @@ export default function InvoiceGenerator() {
     && (!hasDiscrepancy || discrepancyAcknowledged)
     && !headcountExceedsSite
     && additionalSitesValid
+    && branchNameOk
   );
 
   async function handleSave() {
     if (!profile || !brand || !site) return;
+    if (!branchNameIsPersistable(profile.role, resolvedBranchName)) {
+      setSaveMessage({ text: t('branchCollection.invoiceGenerator.branchRequired'), isError: true });
+      return;
+    }
     setSaving(true);
     setSaveMessage(null);
     try {
@@ -613,7 +635,7 @@ export default function InvoiceGenerator() {
         brandName: brand.name,
         brandCode,
         branchId: matchedBranch?.id || null,
-        branchName: matchedBranch?.name || site.branch || '',
+        branchName: resolvedBranchName,
         siteId: site.id,
         siteName: site.name,
         tenderId: site.tenderId,
@@ -765,13 +787,23 @@ export default function InvoiceGenerator() {
             <select value={siteId} onChange={(e) => setSiteId(e.target.value)} className="input w-full">
               <option value="">{t('branchCollection.invoiceGenerator.selectSitePlaceholder')}</option>
               {sites
-                .filter((s) => !s.archived)
+                .filter((s) =>
+                  isSelectableInvoiceSite({
+                    role: profile?.role,
+                    department: profile?.department,
+                    siteBranch: s.branch,
+                    archived: s.archived,
+                  })
+                )
                 .map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} {s.branch ? `(${s.branch})` : ''}
                   </option>
                 ))}
             </select>
+            {!branchNameOk && site && (
+              <p className="text-xs text-amber-700 mt-1">{t('branchCollection.invoiceGenerator.branchRequired')}</p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.invoiceGenerator.brandIssuingCompanyLabel')}</label>
