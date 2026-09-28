@@ -15,6 +15,7 @@ import {
   roundMoney,
   type InvoiceEditInput,
 } from '../../services/invoices';
+import { computeInvoiceEditSubTotal } from '../../services/invoiceEditTotals';
 import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
 import InvoicePrintView from './InvoicePrintView';
@@ -370,7 +371,14 @@ function ContentEditor({ invoice, onClose }: { invoice: Invoice; onClose: () => 
     );
   }
 
-  const subTotal = roundMoney(sumLineGroups(lineGroups) + sumEquipmentRows(equipmentRows));
+  // This editor only changes the primary site. The footer still has to match the total
+  // updateInvoiceContent stores, which keeps each additional site's existing subTotal.
+  const subTotal = roundMoney(
+    computeInvoiceEditSubTotal(
+      sumLineGroups(lineGroups) + sumEquipmentRows(equipmentRows),
+      invoice.additionalSiteBills
+    )
+  );
   const sstAmount = roundMoney(subTotal * sstRate);
   const total = roundMoney(subTotal + sstAmount);
   const canSave =

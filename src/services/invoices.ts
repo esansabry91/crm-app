@@ -15,6 +15,7 @@ import {
 import { db } from '../firebase';
 import { shouldStampTestData } from './settings';
 import { getReachableSites } from './reachableSites';
+import { computeInvoiceEditSubTotal } from './invoiceEditTotals';
 import type { Invoice, InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceSiteBill, InvoiceStatus, Role, SiteBillingRate, UserProfile } from '../types';
 
 function invoicesCollection() {
@@ -626,8 +627,9 @@ export interface InvoiceEditInput {
   paymentTermsDays: number;
   sstRate: number;
   /** This invoice's primary site's billing mode — see InvoiceBillingMode's doc comment in
-   *  types.ts. Editable here like the line items themselves; additionalSiteBills (combined-
-   *  invoice sites) are excluded from this limited edit entirely, same as lineGroups. */
+   *  types.ts. Editable here like the line items themselves. additionalSiteBills (combined-
+   *  invoice sites) are not edited here; their stored subtotals are still included when the
+   *  invoice total is recomputed. */
   billingMode?: InvoiceBillingMode;
   lineGroups: InvoiceLineGroup[];
   equipmentRows?: InvoiceEquipmentRow[];
@@ -635,18 +637,21 @@ export interface InvoiceEditInput {
 
 /**
  * Applies a limited content edit to an already-saved invoice, recomputing subTotal/sstAmount/
- * total from the edited line items exactly the way createInvoice() derives them the first time
- * (see sumLineGroups/roundMoney) so an edited invoice's totals never drift from what its own line
- * items add up to. Callers are expected to only offer this for an invoice that's still 'unpaid'
- * and not 'void' (see InvoiceList's Edit gating) — enforced there rather than here/in rules,
- * since by the time an Admin/Branch Manager reaches this function they're already trusted with
- * the invoice's full content, same as at creation time.
+ * total from the edited primary line items plus any additionalSiteBills already stored on the
+ * invoice (see computeInvoiceEditSubTotal / createInvoice). Callers are expected to only offer
+ * this for an invoice that's still 'unpaid' and not 'void' (see InvoiceList's Edit gating) —
+ * enforced there rather than here/in rules, since by the time an Admin/Branch Manager reaches
+ * this function they're already trusted with the invoice's full content, same as at creation time.
  */
 export async function updateInvoiceContent(id: string, input: InvoiceEditInput): Promise<void> {
-  const subTotal = roundMoney(sumLineGroups(input.lineGroups) + sumEquipmentRows(input.equipmentRows));
+  const invoiceRef = doc(db, 'invoices', id);
+  const snap = await getDoc(invoiceRef);
+  const additionalSiteBills = (snap.data()?.additionalSiteBills as InvoiceSiteBill[] | undefined) || [];
+  const primarySubTotal = sumLineGroups(input.lineGroups) + sumEquipmentRows(input.equipmentRows);
+  const subTotal = roundMoney(computeInvoiceEditSubTotal(primarySubTotal, additionalSiteBills));
   const sstAmount = roundMoney(subTotal * input.sstRate);
   const total = roundMoney(subTotal + sstAmount);
-  await updateDoc(doc(db, 'invoices', id), {
+  await updateDoc(invoiceRef, {
     clientName: input.clientName.trim(),
     clientAddress: input.clientAddress?.trim() || '',
     attnName: input.attnName?.trim() || '',
