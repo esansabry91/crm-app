@@ -578,8 +578,9 @@ export default function InvoiceGenerator() {
   const additionalSitesValid = additionalSiteIds.every((id) => additionalBillsById[id]?.canSave === true);
 
   // BM/OA list invoices with where('branchName','==',department). An unassigned site used to
-  // save branchName: '' and then vanish. Own-branch sites still persist site.branch (or the
-  // matched Branch name). Admin/Finance keep the old unscoped picker and may still save ''.
+  // save branchName: '' and then vanish. Own-branch sites still persist site.branch when that
+  // is their department (a matched Branch name is kept only when it is the department too).
+  // Admin/Finance keep the old unscoped picker and may still save ''.
   const resolvedBranchName = resolvePersistedBranchName({
     role: profile?.role,
     department: profile?.department,
@@ -587,7 +588,7 @@ export default function InvoiceGenerator() {
     sourceBranch: site?.branch,
     useSourceBranchFallback: true,
   });
-  const branchNameOk = branchNameIsPersistable(profile?.role, resolvedBranchName);
+  const branchNameOk = branchNameIsPersistable(profile?.role, resolvedBranchName, profile?.department);
 
   // Sites eligible to be combined onto this invoice via "+ Add another site" below — siblings of
   // the primary `site` sharing its tenderId (the same multi-site project) AND its branch,
@@ -622,7 +623,7 @@ export default function InvoiceGenerator() {
 
   async function handleSave() {
     if (!profile || !brand || !site) return;
-    if (!branchNameIsPersistable(profile.role, resolvedBranchName)) {
+    if (!branchNameIsPersistable(profile.role, resolvedBranchName, profile.department)) {
       setSaveMessage({ text: t('branchCollection.invoiceGenerator.branchRequired'), isError: true });
       return;
     }
