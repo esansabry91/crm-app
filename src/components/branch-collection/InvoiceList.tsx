@@ -20,6 +20,7 @@ import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
 import InvoicePrintView from './InvoicePrintView';
 import StatCard from '../analytics/StatCard';
+import { invoiceMatchesBranchFilter } from '../../utils/invoiceBranchFilter';
 import { isAdminRole } from '../../types';
 import type { Invoice, InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceStatus } from '../../types';
 
@@ -726,16 +727,18 @@ export default function InvoiceList() {
   }
 
   const effectiveBranchFilter = canFilterByBranch ? branchFilter : '';
+  const selectedBranchName = branches.find((b) => b.id === effectiveBranchFilter)?.name;
 
   // Brand/branch-scoped only (not month or status) — the base the Month dropdown's own options
   // are built from, so narrowing brand/branch narrows which months show up to pick from, without
-  // whatever month is currently selected filtering itself out of that list.
+  // whatever month is currently selected filtering itself out of that list. Branch matching is
+  // the same id-or-name rule as Revenue (name-only migrated invoices stay visible).
   const brandBranchScoped = useMemo(
     () =>
       invoices
         .filter((inv) => !brandFilter || inv.brandId === brandFilter)
-        .filter((inv) => !effectiveBranchFilter || inv.branchId === effectiveBranchFilter),
-    [invoices, brandFilter, effectiveBranchFilter]
+        .filter((inv) => invoiceMatchesBranchFilter(inv, effectiveBranchFilter, selectedBranchName)),
+    [invoices, brandFilter, effectiveBranchFilter, selectedBranchName]
   );
 
   // Every billing month present in the brand/branch-scoped invoices above, most recent first.

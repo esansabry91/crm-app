@@ -19,6 +19,7 @@ import type { Invoice, Tender } from '../../types';
 import StatCard from '../analytics/StatCard';
 import RevenueTrendChart, { type RevenueTrendPoint } from './RevenueTrendChart';
 import ProjectDetailsModal from '../active-projects/ProjectDetailsModal';
+import { invoiceMatchesBranchFilter } from '../../utils/invoiceBranchFilter';
 import { formatDate, formatRM } from '../../utils/format';
 
 // Kept in English, matching DebtorList's own monthLabel() precedent — a plain date-formatting
@@ -219,11 +220,10 @@ export default function RevenuePanel() {
 
   const effectiveBranchFilter = canFilterByBranch ? branchFilter : '';
 
-  // The branch filter's value is a branchId, matched directly against Invoice.branchId. As a
-  // safety net for invoices where that backfill hasn't (yet) resolved a branchId — see the "Data
-  // maintenance" section below — an invoice whose plain-text branchName matches the selected
-  // branch's name (case/whitespace-insensitively) still counts, so a name mismatch never silently
-  // drops a real invoice out of the total the way it did before this fallback existed.
+  // The branch filter's value is a branchId. invoiceMatchesBranchFilter also keeps invoices
+  // whose branchId was never backfilled when branchName matches the selected branch — see that
+  // helper. Invoice List and Debtor List use the same predicate so a name-only invoice cannot
+  // show up here and vanish from the other two tabs.
   const selectedBranchName = branches.find((b) => b.id === effectiveBranchFilter)?.name;
   const filtered = useMemo(
     () =>
@@ -233,15 +233,7 @@ export default function RevenuePanel() {
         // ahead of every rollup below (byMonth/overall) that builds on `filtered`.
         .filter((inv) => inv.status !== 'void')
         .filter((inv) => !brandFilter || inv.brandId === brandFilter)
-        .filter(
-          (inv) =>
-            !effectiveBranchFilter ||
-            inv.branchId === effectiveBranchFilter ||
-            (!inv.branchId &&
-              !!inv.branchName &&
-              !!selectedBranchName &&
-              inv.branchName.trim().toLowerCase() === selectedBranchName.trim().toLowerCase())
-        ),
+        .filter((inv) => invoiceMatchesBranchFilter(inv, effectiveBranchFilter, selectedBranchName)),
     [invoices, brandFilter, effectiveBranchFilter, selectedBranchName]
   );
 
@@ -354,9 +346,11 @@ export default function RevenuePanel() {
       wonTenders
         .filter((tnd) => !tnd.closedOut)
         .filter((tnd) => !brandFilter || tnd.brandId === brandFilter)
-        .filter((tnd) => !effectiveBranchFilter || tnd.activeBranch === effectiveBranchFilter)
+        // activeBranch is the department name, not a Branch doc id. The dropdown value is the id,
+        // so compare against the selected branch's name (same string Revenue's name fallback uses).
+        .filter((tnd) => !effectiveBranchFilter || tnd.activeBranch === selectedBranchName)
         .filter((tnd) => !tnd.contractStart || tnd.contractStart.slice(0, 7) <= checklistMonth),
-    [wonTenders, brandFilter, effectiveBranchFilter, checklistMonth]
+    [wonTenders, brandFilter, effectiveBranchFilter, selectedBranchName, checklistMonth]
   );
 
   // Which active projects have had their invoice(s) submitted for the selected month, and which
