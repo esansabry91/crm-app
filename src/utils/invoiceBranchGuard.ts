@@ -2,8 +2,9 @@
  * Branch Manager and Operation Admin can create an invoice, but they can only list and read
  * it when `branchName` equals their department (subscribeInvoices + firestore.rules /invoices).
  * Saving `branchName: ''` — an unassigned Duty Roster site, or a migrated project with no
- * matching Branch record — succeeds, then the invoice never appears. Admin-tier and Finance
- * reads are unscoped, so their previous save behavior stays as it was.
+ * matching Branch record — or saving another branch's name, succeeds, then the invoice never
+ * appears. Admin-tier and Finance reads are unscoped, so their previous save behavior stays
+ * as it was.
  */
 
 export function isBranchScopedInvoiceRole(role: string | null | undefined): boolean {
@@ -31,7 +32,12 @@ export function isSelectableInvoiceSite(opts: {
  * `site.branch`. It is false for Migrate Invoice, which previously wrote only the matched
  * Branch record's name (or ''). For BM/OA, a source whose branch is exactly their department
  * is still persisted when no Branch record matched, so an own-branch invoice is not dropped.
- * Anything else comes back as '' and the caller must refuse the save for those two roles.
+ *
+ * A matched Branch whose name is not `department` — Migrate's branch override, or a Branch
+ * doc titled differently from the department — comes back as ''. subscribeInvoices and
+ * firestore.rules only return `branchName == department`, so writing that other name
+ * succeeds and then hides the invoice. Admin/Finance still take the matched name, then the
+ * source fallback, including ''.
  */
 export function resolvePersistedBranchName(opts: {
   role: string | null | undefined;
@@ -40,20 +46,32 @@ export function resolvePersistedBranchName(opts: {
   sourceBranch: string | null | undefined;
   useSourceBranchFallback: boolean;
 }): string {
-  if (opts.matchedBranchName) return opts.matchedBranchName;
-  if (opts.useSourceBranchFallback && opts.sourceBranch) return opts.sourceBranch;
-  if (
-    isBranchScopedInvoiceRole(opts.role) &&
-    opts.department &&
-    opts.sourceBranch === opts.department
-  ) {
+  const scoped = isBranchScopedInvoiceRole(opts.role);
+  if (opts.matchedBranchName) {
+    if (scoped && opts.matchedBranchName !== opts.department) return '';
+    return opts.matchedBranchName;
+  }
+  if (opts.useSourceBranchFallback && opts.sourceBranch) {
+    if (scoped && opts.sourceBranch !== opts.department) return '';
+    return opts.sourceBranch;
+  }
+  if (scoped && opts.department && opts.sourceBranch === opts.department) {
     return opts.department;
   }
   return '';
 }
 
-/** Admin/Finance may still persist an empty branchName. BM/OA may not. */
-export function branchNameIsPersistable(role: string | null | undefined, branchName: string): boolean {
+/**
+ * Admin/Finance may still persist an empty branchName. BM/OA may persist only their own
+ * department: an empty name, or any other branch's name, saves an invoice the list query
+ * and rules will not return. `department` is required for those two roles; omitting it
+ * refuses the save.
+ */
+export function branchNameIsPersistable(
+  role: string | null | undefined,
+  branchName: string,
+  department?: string | null,
+): boolean {
   if (!isBranchScopedInvoiceRole(role)) return true;
-  return branchName.trim().length > 0;
+  return !!department && branchName === department;
 }

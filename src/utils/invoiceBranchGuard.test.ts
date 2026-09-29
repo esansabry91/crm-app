@@ -142,11 +142,43 @@ describe('resolvePersistedBranchName', () => {
         resolvePersistedBranchName({
           role,
           department: dept,
+          matchedBranchName: dept,
+          sourceBranch: dept,
+          useSourceBranchFallback: true,
+        }),
+        dept
+      );
+      // A Branch doc (or Migrate override) whose name is not the department must not be
+      // written — the invoice would fail branchName == department and disappear.
+      assert.equal(
+        resolvePersistedBranchName({
+          role,
+          department: dept,
           matchedBranchName: 'Penang Branch',
           sourceBranch: dept,
           useSourceBranchFallback: true,
         }),
-        'Penang Branch'
+        ''
+      );
+      assert.equal(
+        resolvePersistedBranchName({
+          role,
+          department: dept,
+          matchedBranchName: 'Johor',
+          sourceBranch: dept,
+          useSourceBranchFallback: false,
+        }),
+        ''
+      );
+      assert.equal(
+        resolvePersistedBranchName({
+          role,
+          department: dept,
+          matchedBranchName: null,
+          sourceBranch: 'Johor',
+          useSourceBranchFallback: true,
+        }),
+        ''
       );
       assert.equal(
         resolvePersistedBranchName({
@@ -185,11 +217,23 @@ describe('resolvePersistedBranchName', () => {
 describe('branchNameIsPersistable', () => {
   it('allows an empty branch name for unscoped roles only', () => {
     assert.equal(branchNameIsPersistable('admin', ''), true);
+    assert.equal(branchNameIsPersistable('admin', '', 'HQ'), true);
     assert.equal(branchNameIsPersistable('finance', ''), true);
+    assert.equal(branchNameIsPersistable('finance', 'Johor', 'Penang'), true);
     assert.equal(branchNameIsPersistable('branchManager', ''), false);
-    assert.equal(branchNameIsPersistable('branchManager', '   '), false);
+    assert.equal(branchNameIsPersistable('branchManager', '   ', dept), false);
     assert.equal(branchNameIsPersistable('operationAdmin', ''), false);
-    assert.equal(branchNameIsPersistable('operationAdmin', 'Penang'), true);
-    assert.equal(branchNameIsPersistable('branchManager', 'Penang'), true);
+    assert.equal(branchNameIsPersistable('operationAdmin', 'Penang', dept), true);
+    assert.equal(branchNameIsPersistable('branchManager', 'Penang', dept), true);
+  });
+
+  it('refuses a branch name that is not the BM/OA department', () => {
+    assert.equal(branchNameIsPersistable('branchManager', 'Johor', dept), false);
+    assert.equal(branchNameIsPersistable('operationAdmin', 'Johor', dept), false);
+    assert.equal(branchNameIsPersistable('branchManager', 'Penang Branch', dept), false);
+    assert.equal(branchNameIsPersistable('operationAdmin', 'Penang', 'Johor'), false);
+    assert.equal(branchNameIsPersistable('branchManager', 'Penang'), false);
+    assert.equal(branchNameIsPersistable('branchManager', 'Penang', ''), false);
+    assert.equal(branchNameIsPersistable('branchManager', 'Penang', null), false);
   });
 });

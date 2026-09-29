@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useWonTenders } from '../../hooks/useActiveProjects';
 import { createMigratedInvoice, deriveInvoiceStatus, clampAmountPaid } from '../../services/invoices';
-import { branchNameIsPersistable, resolvePersistedBranchName } from '../../utils/invoiceBranchGuard';
+import { branchNameIsPersistable, isBranchScopedInvoiceRole, resolvePersistedBranchName } from '../../utils/invoiceBranchGuard';
 import { formatRM } from '../../utils/format';
 
 // Kept in English regardless of app language — this feeds the printed/PDF invoice's own billing-
@@ -64,7 +64,14 @@ export default function MigrateInvoiceForm() {
   const [brandId, setBrandId] = useState('');
   const brand = brands.find((b) => b.id === brandId) || null;
   const [branchIdOverride, setBranchIdOverride] = useState('');
-  const effectiveBranch = branches.find((b) => b.id === branchIdOverride) || matchedBranch;
+  // BM/OA invoices are listed and readable only when branchName == department. The override
+  // below is limited to that one Branch; Admin/Finance still pick any branch (or none).
+  const branchScoped = isBranchScopedInvoiceRole(profile?.role);
+  const department = profile?.department || '';
+  const lockedBranch = branchScoped && department ? branches.find((b) => b.name === department) || null : null;
+  const effectiveBranch = branchScoped
+    ? lockedBranch
+    : branches.find((b) => b.id === branchIdOverride) || matchedBranch;
 
   const [clientName, setClientName] = useState('');
   const [clientAddress, setClientAddress] = useState('');
@@ -127,9 +134,10 @@ export default function MigrateInvoiceForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [total]);
 
-  // Same rule as Generate Invoice: BM/OA cannot persist branchName ''. An own-branch project
-  // whose name doesn't match a Branch record still saves as profile.department. Admin/Finance
-  // keep writing effectiveBranch?.name || '' and may leave the branch blank.
+  // Same rule as Generate Invoice: BM/OA persist only profile.department. An own-branch
+  // project whose name doesn't match a Branch record still saves as that department.
+  // Another Branch's name is refused — the write would succeed and then disappear from
+  // the list. Admin/Finance keep writing the selected branch's name, including ''.
   const resolvedBranchName = resolvePersistedBranchName({
     role: profile?.role,
     department: profile?.department,
@@ -137,11 +145,11 @@ export default function MigrateInvoiceForm() {
     sourceBranch: tender?.activeBranch,
     useSourceBranchFallback: false,
   });
-  const branchNameOk = branchNameIsPersistable(profile?.role, resolvedBranchName);
-  // Keep the old "select one manually" hint when no Branch record matched, including after an
-  // override is chosen (it was never cleared). Hide it when BM/OA already have a department
-  // name to persist for their own project, and when save is blocked — that case has its own line.
-  const showUnmatchedBranchHint = !!(
+  const branchNameOk = branchNameIsPersistable(profile?.role, resolvedBranchName, profile?.department);
+  // Admin/Finance: keep the "select one manually" hint when no Branch record matched,
+  // including after an override is chosen (it was never cleared). BM/OA cannot pick a
+  // different branch, so that hint does not apply to them.
+  const showUnmatchedBranchHint = !branchScoped && !!(
     tender && !matchedBranch && branchNameOk && (effectiveBranch || !resolvedBranchName)
   );
 
@@ -151,7 +159,7 @@ export default function MigrateInvoiceForm() {
 
   async function handleSave() {
     if (!profile || !tender || !brand) return;
-    if (!branchNameIsPersistable(profile.role, resolvedBranchName)) {
+    if (!branchNameIsPersistable(profile.role, resolvedBranchName, profile.department)) {
       setSaveMessage({ text: t('branchCollection.migrateInvoiceForm.branchRequired'), isError: true });
       return;
     }
@@ -234,16 +242,27 @@ export default function MigrateInvoiceForm() {
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{t('branchCollection.migrateInvoiceForm.branchLabel')}</label>
             <select
-              value={branchIdOverride || matchedBranch?.id || ''}
-              onChange={(e) => setBranchIdOverride(e.target.value)}
-              className="input w-full"
+              value={branchScoped ? lockedBranch?.id || '' : branchIdOverride || matchedBranch?.id || ''}
+              onChange={(e) => {
+                if (!branchScoped) setBranchIdOverride(e.target.value);
+              }}
+              disabled={branchScoped}
+              className="input w-full disabled:bg-slate-50 disabled:text-slate-700"
             >
-              <option value="">{t('branchCollection.migrateInvoiceForm.selectBranchPlaceholder')}</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
+              {branchScoped ? (
+                <option value={lockedBranch?.id || ''}>
+                  {lockedBranch?.name || department || t('branchCollection.migrateInvoiceForm.selectBranchPlaceholder')}
                 </option>
-              ))}
+              ) : (
+                <>
+                  <option value="">{t('branchCollection.migrateInvoiceForm.selectBranchPlaceholder')}</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </>
+              )}
             </select>
             {showUnmatchedBranchHint && (
               <p className="text-xs text-slate-400 mt-1">
