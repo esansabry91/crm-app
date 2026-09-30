@@ -1533,12 +1533,13 @@ async function setLinkedSitesArchived(tenderId: string, archived: boolean) {
       )
     );
     // The project these sites belong to is ending (close-out or delete, never a mere reopen) —
-    // pull any guards still deployed here back into the Guard Pool instead of leaving them
-    // stuck "deployed" against a site that's no longer active. Deliberately NOT mirrored when
-    // un-archiving (archived === false, i.e. reopenProject()): a guard released here may already
-    // have been reassigned elsewhere in the meantime, so auto-redeploying them back on reopen
-    // would risk double-booking rather than reflecting reality — reopening only restores the
-    // site, staff re-assign guards to it manually if the reopened project still needs them.
+    // pull any guards still deployed here back into the Guard Pool, and mark them inactive on
+    // the site roster, instead of leaving them stuck "deployed" against a site that's no longer
+    // active. Deliberately NOT mirrored when un-archiving (archived === false, i.e.
+    // reopenProject()): a guard released here may already have been reassigned elsewhere in the
+    // meantime, so auto-redeploying them back on reopen would risk double-booking rather than
+    // reflecting reality — reopening only restores the site, staff re-assign guards to it
+    // manually if the reopened project still needs them.
     if (archived) {
       await Promise.all(linked.map((d) => releaseGuardsFromSite(d.id)));
     }

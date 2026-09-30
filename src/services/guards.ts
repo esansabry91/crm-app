@@ -12,6 +12,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { markRosterGuardsInactive } from './rosterGuardRelease';
 import { shouldStampTestData } from './settings';
 import type { BufferGuard, Guard } from '../types';
 
@@ -232,9 +233,21 @@ export async function assignGuardToSite(guard: Guard, site: SitePickerOption): P
  * Deliberately filtered to status == 'deployed' only: a DISMISSED guard also keeps their old
  * siteId (see Guard.siteId's doc comment — kept so the Dismissed tab can still be filtered by
  * where they last worked), and this must never resurrect one back to 'pool' just because that
- * old site closed. Best-effort — swallows its own errors so a permissions hiccup here never
- * blocks the close-out/delete action itself, same spirit as setLinkedSitesArchived()'s own
- * best-effort site archiving.
+ * old site closed.
+ *
+ * Also marks every still-active guard on the site roster `active: false` (see
+ * markRosterGuardsInactive). Guard Bank going back to 'pool' does not take them off the roster,
+ * and Duty Roster schedules anyone whose `active` is not false. Without this, close-out then
+ * reopen puts the same people straight back on the schedule — including someone already
+ * assigned to another site — which is the double-booking setLinkedSitesArchived() is written
+ * to avoid. Already-inactive rows are left as they are so past shifts still resolve a name.
+ * A caller who can release Guard Bank but cannot write this site's guards (a delegated site
+ * archived by the owning branch) still gets the pool update; the roster write is best-effort
+ * on its own.
+ *
+ * Best-effort — swallows its own errors so a permissions hiccup here never blocks the
+ * close-out/delete action itself, same spirit as setLinkedSitesArchived()'s own best-effort
+ * site archiving.
  */
 export async function releaseGuardsFromSite(siteId: string): Promise<void> {
   try {
@@ -256,6 +269,17 @@ export async function releaseGuardsFromSite(siteId: string): Promise<void> {
     );
   } catch {
     // Best-effort — see doc comment above.
+  }
+
+  try {
+    const siteRef = doc(db, 'sites', siteId);
+    const siteSnap = await getDoc(siteRef);
+    if (!siteSnap.exists()) return;
+    const { guards, changed } = markRosterGuardsInactive(siteSnap.data().guards);
+    if (!changed) return;
+    await updateDoc(siteRef, { guards, updatedAt: new Date().toISOString() });
+  } catch (err) {
+    console.error('releaseGuardsFromSite: could not mark roster guards inactive', siteId, err);
   }
 }
 
