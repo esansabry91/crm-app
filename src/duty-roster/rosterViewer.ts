@@ -72,7 +72,10 @@ export function deriveRosterViewer(profile: RosterViewerProfile | null): RosterV
   if (!profile) return UNSIGNED_VIEWER;
   const isPrivileged = isAdminRole(profile.role) || profile.department === "HQ";
   const isPayroll = profile.role === "payroll";
-  const isHr = profile.role === "hr";
+  // hrManager is hr under another job title (see Role in types.ts and isHr() in
+  // firestore.rules): view/export-only, every branch. Missing it here hides other
+  // branches' sites and leaves editing on, so roster saves come back permission-denied.
+  const isHr = profile.role === "hr" || profile.role === "hrManager";
   const isPayrollLike = isPayroll || isHr;
   return {
     myUid: profile.uid,
