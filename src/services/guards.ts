@@ -12,6 +12,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { reconcileGuardBankFromRoster, type GuardRosterSighting } from './guardRosterReconcile';
 import { markRosterGuardsInactive } from './rosterGuardRelease';
 import { shouldStampTestData } from './settings';
 import type { BufferGuard, Guard } from '../types';
@@ -400,10 +401,12 @@ export interface BackfillResult {
  * - `createdAt` is set to "now" for anyone newly created by this backfill, so the trailing-12-
  *   month turnover's "active at start of period" estimate will undercount them until enough real
  *   time passes — there's no historical join date to recover this from.
- * - A guard whose roster entry has `active: false` (Duty Roster's old un-reasoned inactive flag)
+ * - A guard who exists ONLY as an inactive roster row, and who has no Guard Bank record yet,
  *   comes in as 'dismissed' with `dismissalReason` and `dismissedAt` left null — we genuinely
  *   don't know why or when, and guessing "today" would artificially inflate the turnover rate's
- *   trailing-12-month numerator. The Dismissed Guards count itself is unaffected either way.
+ *   trailing-12-month numerator. That does not apply when any roster copy is still active, when
+ *   Guard Bank already has them in the pool, or when a real dismissal date is already stored
+ *   (see reconcileGuardBankFromRoster).
  */
 export async function backfillGuardsFromDutyRoster(): Promise<BackfillResult> {
   const sitesSnap = await getDocs(collection(db, 'sites'));
@@ -419,6 +422,9 @@ export async function backfillGuardsFromDutyRoster(): Promise<BackfillResult> {
   // One tender lookup per SITE (not per guard) — every guard at the same site shares the same
   // brand, so this avoids re-reading the same tender doc once per guard on a busy site.
   const brandCache = new Map<string, { brandId: string | null; brandName: string | null }>();
+  // Same employee can still sit inactive on a closed site and active on the site they work now.
+  // Collect every copy first so one site's row cannot overwrite the other.
+  const sightingsByEmployee = new Map<string, GuardRosterSighting[]>();
 
   for (const siteDoc of sitesSnap.docs) {
     const site = siteDoc.data() as {
@@ -442,11 +448,15 @@ export async function backfillGuardsFromDutyRoster(): Promise<BackfillResult> {
         result.skippedNoEmployeeId += 1;
         continue;
       }
-      const dismissed = g.active === false;
       const category = g.category === 'nepal' ? 'nepal' : 'local';
-      const payload: Record<string, unknown> = {
-        name: g.name ?? '',
-        employeeId,
+      const sighting: GuardRosterSighting = {
+        active: g.active !== false,
+        siteId: siteDoc.id,
+        siteName: site.name || null,
+        branch: site.branch ?? null,
+        brandId: brand.brandId,
+        brandName: brand.brandName,
+        name: typeof g.name === 'string' ? g.name : '',
         category,
         age: (g.age as number | undefined) ?? null,
         state: (g.state as string | undefined) ?? null,
@@ -455,31 +465,39 @@ export async function backfillGuardsFromDutyRoster(): Promise<BackfillResult> {
         permitExpiryDate: category === 'nepal' ? (g.permitExpiryDate as string | undefined) ?? null : null,
         mykadNumber: category === 'local' ? (g.mykadNumber as string | undefined) ?? null : null,
         phoneNumber: category === 'local' ? (g.phoneNumber as string | undefined) ?? null : null,
-        status: dismissed ? 'dismissed' : 'deployed',
-        siteId: siteDoc.id,
-        siteName: site.name || null,
-        branch: site.branch ?? null,
-        brandId: brand.brandId,
-        brandName: brand.brandName,
-        updatedAt: now,
       };
-      // Neither branch knows a real reason/date (see the doc comment above), so both leave
-      // these null rather than guess.
-      payload.dismissalReason = null;
-      payload.dismissedAt = null;
-      // A guard who's back on the live roster is no longer "dismissed" at all, so any earlier
-      // admin Archive (see archiveDismissedGuard() below) no longer applies either — clear it
-      // the same way, rather than leaving a stale archivedAt on what's now an active guard.
-      payload.archivedAt = null;
+      const list = sightingsByEmployee.get(employeeId) || [];
+      list.push(sighting);
+      sightingsByEmployee.set(employeeId, list);
+    }
+  }
 
-      const existing = await findByEmployeeId(employeeId);
-      if (existing) {
-        await updateDoc(doc(db, 'guards', existing.id), payload);
-        result.updated += 1;
-      } else {
-        await addDoc(guardsCollection(), { ...payload, createdAt: now });
-        result.created += 1;
-      }
+  for (const [employeeId, sightings] of sightingsByEmployee) {
+    const existing = await findByEmployeeId(employeeId);
+    const reconciled = reconcileGuardBankFromRoster(
+      sightings,
+      existing
+        ? {
+            status: existing.status,
+            siteId: existing.siteId,
+            dismissalReason: existing.dismissalReason,
+            dismissedAt: existing.dismissedAt,
+            archivedAt: existing.archivedAt,
+          }
+        : null
+    );
+    if (!reconciled) continue;
+    const payload: Record<string, unknown> = {
+      ...reconciled,
+      employeeId,
+      updatedAt: now,
+    };
+    if (existing) {
+      await updateDoc(doc(db, 'guards', existing.id), payload);
+      result.updated += 1;
+    } else {
+      await addDoc(guardsCollection(), { ...payload, createdAt: now });
+      result.created += 1;
     }
   }
 
