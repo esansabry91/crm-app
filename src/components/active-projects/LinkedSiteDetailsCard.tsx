@@ -17,6 +17,7 @@ import {
 import { formatDate, formatDateTime } from '../../utils/format';
 import type { TenderLinkedSite } from '../../hooks/useTenderSites';
 import { useBranches } from '../../hooks/useBranches';
+import { localTodayIso } from '../../utils/calendarDays';
 
 interface Props {
   tender: Tender;
@@ -405,7 +406,7 @@ export default function LinkedSiteDetailsCard({ tender, site, actor }: Props) {
                 }
               }
               if (newEffective == null || newEffective === oldEffective) return null;
-              const months = wholeMonthsInclusive(new Date().toISOString().slice(0, 10), tender.contractEnd);
+              const months = wholeMonthsInclusive(localTodayIso(), tender.contractEnd);
               const delta = (newEffective - oldEffective) * STANDARD_MONTHLY_HOURS_PER_GUARD * site.activeGuardCount * months;
               if (delta === 0) return null;
               return (

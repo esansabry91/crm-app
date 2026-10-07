@@ -29,6 +29,7 @@ import {
   siteFollowsProjectBranch,
   sitesListPlan,
 } from '../utils/firestoreAccess';
+import { localMonthIso, localTodayIso } from '../utils/calendarDays';
 
 /** Actor performing an action — `role` is optional only for call-site back-compat; every real
  *  caller passes it. */
@@ -107,7 +108,7 @@ async function addHistoryEntry(
  * each entry's own `createdAt` — this only handles the much more common same-day case.
  */
 function closedDateToMillis(closedDate: string): number {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = localTodayIso();
   if (closedDate === todayStr) return Date.now();
   return new Date(`${closedDate}T12:00:00`).getTime();
 }
@@ -267,7 +268,7 @@ export async function disqualifyTender(tender: Tender, actor: Actor): Promise<vo
   if (tender.stage !== 'New Lead') {
     throw new Error('Only a New Lead can be disqualified.');
   }
-  const disqualifiedDate = new Date().toISOString().slice(0, 10);
+  const disqualifiedDate = localTodayIso();
   await updateDoc(doc(db, 'tenders', tender.id), {
     stage: 'Disqualified Lead',
     disqualifiedDate,
@@ -577,7 +578,7 @@ export function estimatedMonthlySiteValue(
   equipment: TenderEquipmentItem[] | undefined
 ): { guardRateValue: number; equipmentValue: number; total: number } {
   const guardRateValue = effectiveGuardRate(guardRateMode, guardRate, guardRatePositions) * STANDARD_MONTHLY_HOURS_PER_GUARD * guardsDeployed;
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  const currentMonth = localMonthIso();
   const equipmentValue = (equipment || [])
     .filter((eq) => !eq.stoppedDate || eq.stoppedDate.slice(0, 7) >= currentMonth)
     .reduce((sum, eq) => sum + eq.monthlyRate * eq.quantity, 0);
@@ -624,7 +625,7 @@ export async function applyGuardRateChange(
   const isRealChange = hadPriorRate && newEffective !== oldEffective;
   let valueDelta = 0;
   if (isRealChange) {
-    const months = wholeMonthsInclusive(new Date().toISOString().slice(0, 10), tender.contractEnd);
+    const months = wholeMonthsInclusive(localTodayIso(), tender.contractEnd);
     valueDelta = (newEffective - oldEffective) * STANDARD_MONTHLY_HOURS_PER_GUARD * input.guardsDeployed * months;
   }
   const newTenderValue = Math.max(0, tender.tenderValue + valueDelta);
@@ -1029,7 +1030,7 @@ export async function applyTenderSiteGuardRateChange(
   const isRealChange = hadPriorRate && newEffective !== oldEffective;
   let valueDelta = 0;
   if (isRealChange) {
-    const months = wholeMonthsInclusive(new Date().toISOString().slice(0, 10), tender.contractEnd);
+    const months = wholeMonthsInclusive(localTodayIso(), tender.contractEnd);
     valueDelta = (newEffective - oldEffective) * STANDARD_MONTHLY_HOURS_PER_GUARD * input.guardsDeployed * months;
   }
 

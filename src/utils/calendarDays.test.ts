@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { calendarDaysUntil } from './calendarDays.ts';
+import { calendarDaysUntil, localMonthIso, localTodayIso } from './calendarDays.ts';
 
 const afternoon = new Date(2026, 8, 25, 15, 30, 0);
 
@@ -24,5 +24,18 @@ describe('calendarDaysUntil', () => {
     assert.equal(calendarDaysUntil('', afternoon), null);
     assert.equal(calendarDaysUntil('not-a-date', afternoon), null);
     assert.equal(calendarDaysUntil('2026-02-31', afternoon), null);
+  });
+});
+
+describe('localTodayIso / localMonthIso', () => {
+  it('uses the local calendar date, not the UTC one', () => {
+    // 1 Jan 2027, 00:30 local. In Malaysia (UTC+8) toISOString() says 2026-12-31.
+    const justAfterMidnight = new Date(2027, 0, 1, 0, 30, 0);
+    assert.equal(localTodayIso(justAfterMidnight), '2027-01-01');
+    assert.equal(localMonthIso(justAfterMidnight), '2027-01');
+  });
+
+  it('zero-pads month and day', () => {
+    assert.equal(localTodayIso(new Date(2026, 8, 5, 12, 0, 0)), '2026-09-05');
   });
 });

@@ -32,6 +32,7 @@ import { useTenderSites } from '../../hooks/useTenderSites';
 import { useBranches } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
 import LinkedSiteDetailsCard from './LinkedSiteDetailsCard';
+import { localTodayIso } from '../../utils/calendarDays';
 
 interface Props {
   open: boolean;
@@ -255,7 +256,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     setEqItem('');
     setEqRate('');
     setEqQty('');
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = localTodayIso();
     setEqStartDate(tender.contractStart && tender.contractStart > todayStr ? tender.contractStart : todayStr);
     setEqError(null);
     setStoppingItemId(null);
@@ -361,7 +362,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
       setEqItem('');
       setEqRate('');
       setEqQty('');
-      setEqStartDate(new Date().toISOString().slice(0, 10));
+      setEqStartDate(localTodayIso());
     } catch (err) {
       setEqError(err instanceof Error ? err.message : t('projectDetails.errorAddEquipment'));
     } finally {
@@ -394,7 +395,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
     const activeTender = workingTender || tender;
     if (!activeTender) return;
     setEqError(null);
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = localTodayIso();
     const floor = itemStartDate > todayStr ? itemStartDate : todayStr;
     setStopDateDraft(activeTender.contractEnd && floor > activeTender.contractEnd ? activeTender.contractEnd : floor);
     setStoppingItemId(itemId);
@@ -913,7 +914,7 @@ export default function ProjectDetailsModal({ open, onClose, tender, liveGuardCo
               }
               if (newEffective == null || newEffective === oldEffective) return null;
               const guardsForPreview = liveGuardCount ?? (Number(guardsDeployed) || 0);
-              const monthsForPreview = wholeMonthsInclusive(new Date().toISOString().slice(0, 10), tender.contractEnd);
+              const monthsForPreview = wholeMonthsInclusive(localTodayIso(), tender.contractEnd);
               const delta = (newEffective - oldEffective) * STANDARD_MONTHLY_HOURS_PER_GUARD * guardsForPreview * monthsForPreview;
               if (delta === 0) return null;
               return (
