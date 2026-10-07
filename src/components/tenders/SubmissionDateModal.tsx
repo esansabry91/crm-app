@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import type { Tender } from '../../types';
+import { localTodayIso } from '../../utils/calendarDays';
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localTodayIso();
 }
 
 /**

@@ -27,6 +27,7 @@ import {
   resolvePersistedBranchName,
 } from '../../utils/invoiceBranchGuard';
 import type { InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, SiteBillingRate, SiteEquipmentRate, TenderEquipmentItem } from '../../types';
+import { localTodayIso } from '../../utils/calendarDays';
 
 // Kept in English regardless of app language — this feeds the printed/PDF invoice's own billing-
 // month line (see InvoicePrintView), a formal client-facing business document, not app UI. Same
@@ -89,7 +90,7 @@ export default function InvoiceGenerator() {
   const [clientAddress, setClientAddress] = useState('');
   const [clientAlias, setClientAlias] = useState('');
   const [attnName, setAttnName] = useState('');
-  const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [invoiceDate, setInvoiceDate] = useState(() => localTodayIso());
   const [billingMonthValue, setBillingMonthValue] = useState(currentMonthValue);
   const [contractRef, setContractRef] = useState('');
   const [quotationNo, setQuotationNo] = useState('');

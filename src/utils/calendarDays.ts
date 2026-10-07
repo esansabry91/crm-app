@@ -28,3 +28,17 @@ export function calendarDaysUntil(iso: string | undefined | null, now: Date = ne
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
   return Math.round((end.getTime() - start.getTime()) / 86400000);
 }
+
+/**
+ * `yyyy-mm-dd` for `now`'s LOCAL calendar date. Use this, not
+ * `new Date().toISOString().slice(0, 10)`: toISOString() is UTC, and Malaysia
+ * is UTC+8, so from midnight until 8am that returns yesterday's date.
+ */
+export function localTodayIso(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+/** `yyyy-mm` for `now`'s LOCAL calendar month (see localTodayIso). */
+export function localMonthIso(now: Date = new Date()): string {
+  return localTodayIso(now).slice(0, 7);
+}

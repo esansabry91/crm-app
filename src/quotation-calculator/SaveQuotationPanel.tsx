@@ -26,6 +26,7 @@ import type { QuotationCalculator } from './useQuotationCalculator';
 import type { Quotation } from './types';
 import { Btn, Card, Note, Ok, Row, SelectField, TextField, Warn } from './ui';
 import { fmt, fmtDateTime } from './format';
+import { localTodayIso } from '../utils/calendarDays';
 
 const STORAGE_KEY = 'gdSecurityQuotes_v1';
 const COLLECTION = 'quotations';
@@ -230,7 +231,7 @@ export default function SaveQuotationPanel({
     }
     const payload = { exportedAt: new Date().toISOString(), source: 'Guard Quotation Calculator', quotes: savedQuotes };
     const text = JSON.stringify(payload, null, 2);
-    const stamp = new Date().toISOString().slice(0, 10);
+    const stamp = localTodayIso();
     const blob = new Blob([text], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

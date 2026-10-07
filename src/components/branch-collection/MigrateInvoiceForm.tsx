@@ -6,6 +6,7 @@ import { useWonTenders } from '../../hooks/useActiveProjects';
 import { createMigratedInvoice, deriveInvoiceStatus, clampAmountPaid } from '../../services/invoices';
 import { branchNameIsPersistable, isBranchScopedInvoiceRole, resolvePersistedBranchName } from '../../utils/invoiceBranchGuard';
 import { formatRM } from '../../utils/format';
+import { localTodayIso } from '../../utils/calendarDays';
 
 // Kept in English regardless of app language — this feeds the printed/PDF invoice's own billing-
 // month line (see InvoicePrintView), a formal client-facing business document, not app UI. Same
@@ -80,7 +81,7 @@ export default function MigrateInvoiceForm() {
   const [contractRef, setContractRef] = useState('');
 
   const [invoiceNo, setInvoiceNo] = useState('');
-  const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [invoiceDate, setInvoiceDate] = useState(() => localTodayIso());
   const [billingMonthValue, setBillingMonthValue] = useState(currentMonthValue);
   const [quotationNo, setQuotationNo] = useState('');
   const [paymentTermsDays, setPaymentTermsDays] = useState(30);

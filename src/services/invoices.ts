@@ -17,6 +17,7 @@ import { shouldStampTestData } from './settings';
 import { getReachableSites } from './reachableSites';
 import { computeInvoiceEditSubTotal } from './invoiceEditTotals';
 import type { Invoice, InvoiceBillingMode, InvoiceEquipmentRow, InvoiceLineGroup, InvoiceSiteBill, InvoiceStatus, Role, SiteBillingRate, UserProfile } from '../types';
+import { localMonthIso, localTodayIso } from '../utils/calendarDays';
 
 function invoicesCollection() {
   return collection(db, 'invoices');
@@ -576,7 +577,7 @@ export async function updateInvoiceStatus(
   if (delta !== 0) {
     updates.paymentLog = arrayUnion({
       amount: delta,
-      date: patch.paidDate || new Date().toISOString().slice(0, 10),
+      date: patch.paidDate || localTodayIso(),
       recordedAt: Date.now(),
       recordedByUid: actor.uid,
       recordedByName: actor.name,
@@ -891,7 +892,7 @@ export interface OutstandingTrendPoint {
 export function computeOutstandingTrend(invoices: Invoice[]): OutstandingTrendPoint[] {
   if (invoices.length === 0) return [];
 
-  const todayMonth = new Date().toISOString().slice(0, 7);
+  const todayMonth = localMonthIso();
   const monthKeyOfDate = (iso: string | undefined): string => {
     const key = iso ? iso.slice(0, 7) : '';
     return /^\d{4}-\d{2}$/.test(key) ? key : todayMonth;
