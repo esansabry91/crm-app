@@ -975,3 +975,114 @@ export interface EmployeeFeedbackSender {
   senderUid: string;
   senderName: string;
 }
+
+// ---------------------------------------------------------------------------
+// My Workspace (Today Tasks / Weekly Planner / Meeting Schedule)
+// ---------------------------------------------------------------------------
+// Ported from the "My Workspace" feature of the gdsb-portal reference project — specifically the
+// subset gdsb-portal itself calls workspacePlannerOnly() (Today Tasks + Weekly planner +
+// Meetings, no Goals/KPIs/Team) — adapted from that project's Hono/D1/TanStack-Query stack to
+// crm-app's direct Firestore client SDK + onSnapshot pattern. Reachable by EVERY role, exactly
+// like Employee Feedback (no restrictive ProtectedRoute/firestore.rules role gating at all): each
+// person only ever reads/writes their OWN tasks and day-review, and only the meetings they
+// organize or are invited to — never anyone else's, regardless of role.
+
+/** A day's task on a user's own planner, 1 (lowest) – 5 (highest) — displayed as colored
+ *  "priority lights" rather than a number, see PriorityLights in components/workspace/. */
+export type WorkspaceTaskPriority = 1 | 2 | 3 | 4 | 5;
+
+export interface WorkspaceTask {
+  id: string;
+  uid: string;
+  date: string; // 'YYYY-MM-DD'
+  title: string;
+  done: boolean;
+  position: number;
+  priority: WorkspaceTaskPriority;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Tracks the once-a-day "I've reviewed today's priorities" confirmation (see
+ *  workspaceTaskPriorityLocked() below) — doc id is `${uid}_${date}`. */
+export interface WorkspaceDay {
+  uid: string;
+  date: string;
+  prioritiesReviewedAt: number | null;
+}
+
+/**
+ * Mirrors gdsb-portal's server-side priorityRule(): a task dated TODAY has its priority locked
+ * once today's WorkspaceDay.prioritiesReviewedAt is set (the user confirmed today's priorities
+ * once — first confirmation of the day wins, idempotent); a task dated TOMORROW is always freely
+ * editable (that's where planning happens); any other day's task is fixed/uneditable, always.
+ */
+export function workspaceTaskPriorityLocked(
+  taskDate: string,
+  today: string,
+  tomorrow: string,
+  reviewedToday: boolean
+): boolean {
+  if (taskDate === tomorrow) return false;
+  if (taskDate === today) return reviewedToday;
+  return true;
+}
+
+export type WorkspaceMeetingMode = 'online' | 'physical' | null;
+export type WorkspaceAttendeeStatus = 'invited' | 'declined';
+
+export interface WorkspaceMeetingAttendee {
+  uid: string;
+  name: string;
+  status: WorkspaceAttendeeStatus;
+  invitedAt: number;
+}
+
+export interface WorkspaceMeeting {
+  id: string;
+  organizerUid: string;
+  organizerName: string;
+  date: string;
+  startTime: string | null;
+  endTime: string | null;
+  title: string;
+  withWhom: string;
+  notes: string;
+  mode: WorkspaceMeetingMode;
+  link: string;
+  location: string;
+  /** Keyed by uid — every invited/declined attendee. `invitedUids` denormalizes the keys still
+   *  'invited', purely so a LIST query can array-contains it (Firestore can't query map keys
+   *  directly) — see subscribeMyWorkspaceMeetings() in services/workspaceMeetings.ts, the same
+   *  "merge two queries client-side" shape as sitesListPlan()/usersListPlan() in
+   *  utils/firestoreAccess.ts. */
+  attendees: Record<string, WorkspaceMeetingAttendee>;
+  invitedUids: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type WorkspaceNotificationKind = 'meeting_invite' | 'meeting_updated' | 'meeting_cancelled' | 'meeting_declined';
+
+export interface WorkspaceNotification {
+  id: string;
+  uid: string;
+  kind: WorkspaceNotificationKind;
+  title: string;
+  body: string;
+  meetingId: string | null;
+  date: string | null;
+  createdAt: number;
+  readAt: number | null;
+}
+
+/** One directory entry, kept in sync with this user's own /users doc by
+ *  services/workspaceDirectory.ts — lets every active user see every other active user's name for
+ *  the Meeting attendee picker, without opening up the more sensitive /users collection itself
+ *  (see the /users rules in firestore.rules, deliberately scoped narrower than this). */
+export interface WorkspaceDirectoryEntry {
+  uid: string;
+  name: string;
+  department: string;
+  active: boolean;
+}

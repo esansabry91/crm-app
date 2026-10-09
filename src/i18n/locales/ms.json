@@ -45,7 +45,8 @@
       "archive": "Arkib",
       "quotationCalculator": "Kalkulator Sebut Harga",
       "adminSettings": "Tetapan Pentadbir",
-      "employeeFeedback": "Maklum Balas Pekerja"
+      "employeeFeedback": "Maklum Balas Pekerja",
+      "myWorkspace": "Ruang Kerja Saya"
     },
     "roles": {
       "admin": "Pentadbir Ibu Pejabat",

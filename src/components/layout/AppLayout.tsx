@@ -6,6 +6,7 @@ import { isAdminRole } from '../../types';
 import { RosterPendingProvider, useRosterPendingConsumer } from '../../contexts/RosterPendingContext';
 import { setLanguage, type AppLanguage } from '../../i18n';
 import { updateOwnLanguage } from '../../services/users';
+import NotificationBell from './NotificationBell';
 import clsx from 'clsx';
 
 const SIDEBAR_COLLAPSED_KEY = 'ipsb-desktop-sidebar-collapsed';
@@ -191,6 +192,7 @@ function NavContent({
           <div className="min-w-0 flex-1">
             <p className="text-xs text-slate-400 leading-tight">{t('nav.portalSubtitle')}</p>
           </div>
+          <NotificationBell />
           {onCollapse && (
             <button
               type="button"
@@ -258,6 +260,9 @@ function NavContent({
               <NavLink to="/task-board" className={navItemClass} onClick={onNavigate}>
                 <span aria-hidden>📋</span> {t('nav.links.taskBoard')}
               </NavLink>
+              <NavLink to="/my-workspace" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🗒️</span> {t('nav.links.myWorkspace')}
+              </NavLink>
             </NavSection>
 
             {/* "Branch Collection" is now the SECTION title, not the tab itself — see
@@ -299,6 +304,9 @@ function NavContent({
               <NavLink to="/task-board" className={navItemClass} onClick={onNavigate}>
                 <span aria-hidden>📋</span> {t('nav.links.taskBoard')}
               </NavLink>
+              <NavLink to="/my-workspace" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🗒️</span> {t('nav.links.myWorkspace')}
+              </NavLink>
             </NavSection>
             <NavSection title={t('nav.sections.humanResource')}>
               <NavLink to="/guard-bank" className={navItemClass} onClick={onNavigate}>
@@ -321,6 +329,9 @@ function NavContent({
             <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
               <span aria-hidden>🗓️</span> {t('nav.links.dutyRoster')}
             </NavLink>
+            <NavLink to="/my-workspace" className={navItemClass} onClick={onNavigate}>
+              <span aria-hidden>🗒️</span> {t('nav.links.myWorkspace')}
+            </NavLink>
           </NavSection>
         )}
         {/* HR (and HR Manager, which mirrors it identically — see the Role doc comment in
@@ -332,6 +343,9 @@ function NavContent({
               <NavLink to="/duty-roster" className={navItemClass} onClick={onNavigate}>
                 <span aria-hidden>🗓️</span> {t('nav.links.dutyRoster')}
               </NavLink>
+              <NavLink to="/my-workspace" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🗒️</span> {t('nav.links.myWorkspace')}
+              </NavLink>
             </NavSection>
             <NavSection title={t('nav.sections.humanResource')}>
               <NavLink to="/guard-bank" className={navItemClass} onClick={onNavigate}>
@@ -341,11 +355,21 @@ function NavContent({
           </>
         )}
         {profile?.role === 'finance' && (
-          <NavSection title={t('nav.sections.branchCollection')}>
-            <NavLink to="/branch-collection" className={navItemClass} onClick={onNavigate}>
-              <span aria-hidden>🧾</span> {t('nav.links.invoicesRevenue')}
-            </NavLink>
-          </NavSection>
+          <>
+            {/* Finance otherwise has no Branch Operation section at all (it's a Branch-
+                Collection-only role) — My Workspace is reachable by every role regardless, so it
+                gets a Branch Operation section of its own, with just this one link in it. */}
+            <NavSection title={t('nav.sections.branchOperation')}>
+              <NavLink to="/my-workspace" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🗒️</span> {t('nav.links.myWorkspace')}
+              </NavLink>
+            </NavSection>
+            <NavSection title={t('nav.sections.branchCollection')}>
+              <NavLink to="/branch-collection" className={navItemClass} onClick={onNavigate}>
+                <span aria-hidden>🧾</span> {t('nav.links.invoicesRevenue')}
+              </NavLink>
+            </NavSection>
+          </>
         )}
         {/* Employee Feedback — reachable by every role, unconditionally, unlike every other link
             above (each scoped to a subset of roles). Rendered exactly once here rather than
@@ -507,6 +531,7 @@ function AppLayoutInner({ children }: { children: ReactNode }) {
           className="h-8 w-8 rounded-lg object-contain border border-slate-200 shrink-0"
         />
         <p className="text-sm font-semibold text-slate-900 truncate flex-1">{t('nav.appName')}</p>
+        <NotificationBell />
         <LanguageToggle uid={profile?.uid} />
       </header>
 

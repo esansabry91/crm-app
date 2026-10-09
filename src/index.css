@@ -37,3 +37,100 @@ body {
     @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50 disabled:text-slate-400;
   }
 }
+
+/* My Workspace — Celebration animation + priority-light glow, ported verbatim from
+   gdsb-portal's apps/web/src/index.css. */
+.cel-card {
+  animation: cel-card 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+@keyframes cel-card {
+  from { opacity: 0; transform: scale(0.6) translateY(20px); }
+  to { opacity: 1; transform: none; }
+}
+.cel-bit {
+  position: absolute;
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.25, 0.6, 0.4, 1);
+}
+/* Confetti rain */
+.cel-fall { animation-name: cel-fall; }
+@keyframes cel-fall {
+  from { transform: translate(0, -12vh) rotate(0deg); opacity: 1; }
+  to { transform: translate(var(--dx), 112vh) rotate(var(--rot)); opacity: 0.9; }
+}
+/* Fireworks / party poppers: fly out from a point, then fade */
+.cel-burst { animation-name: cel-burst; }
+@keyframes cel-burst {
+  0% { transform: translate(0, 0) scale(0.4); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(1); opacity: 0; }
+}
+.cel-pop { animation-name: cel-pop; }
+@keyframes cel-pop {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  60% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 1; }
+  100% { transform: translate(var(--dx), calc(var(--dy) + 30vh)) rotate(var(--rot)); opacity: 0; }
+}
+/* Balloons */
+.cel-rise { animation-name: cel-rise; animation-timing-function: ease-in; }
+@keyframes cel-rise {
+  0% { transform: translate(0, 0); }
+  50% { transform: translate(var(--dx), -60vh); }
+  100% { transform: translate(0, -125vh); }
+}
+/* Sparkles and stars */
+.cel-twinkle { animation-name: cel-twinkle; animation-iteration-count: 3; }
+@keyframes cel-twinkle {
+  0%, 100% { transform: scale(0) rotate(0deg); opacity: 0; }
+  50% { transform: scale(1) rotate(90deg); opacity: 1; }
+}
+.cel-shoot { animation-name: cel-shoot; animation-timing-function: ease-in; }
+@keyframes cel-shoot {
+  from { transform: translate(0, 0) rotate(35deg); opacity: 0; }
+  15% { opacity: 1; }
+  to { transform: translate(-60vw, 45vh) rotate(35deg); opacity: 0; }
+}
+/* Trophy and medal */
+.cel-rise-in { animation: cel-rise-in 0.9s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+@keyframes cel-rise-in {
+  from { transform: translateY(60px) scale(0.3); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.cel-swing { transform-origin: 50% 0; animation: cel-swing 2.4s ease-in-out both; }
+@keyframes cel-swing {
+  0% { transform: translateY(-120%) rotate(0deg); }
+  30% { transform: translateY(0) rotate(14deg); }
+  50% { transform: rotate(-9deg); }
+  70% { transform: rotate(5deg); }
+  100% { transform: rotate(0deg); }
+}
+.cel-spin { animation: cel-spin 8s linear infinite; }
+@keyframes cel-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cel-card,
+  .cel-rise-in,
+  .cel-swing,
+  .cel-spin {
+    animation: none;
+  }
+  .cel-bit {
+    display: none;
+  }
+}
+
+/* Task priority lights: lit lights glow softly, one after another. */
+.prio-glow {
+  animation: prio-glow 2.4s ease-in-out infinite;
+}
+@keyframes prio-glow {
+  0%, 100% { box-shadow: 0 0 1px 0 currentColor; opacity: 0.85; }
+  50% { box-shadow: 0 0 6px 1px currentColor; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .prio-glow {
+    animation: none;
+    box-shadow: 0 0 3px 0 currentColor;
+  }
+}

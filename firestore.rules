@@ -801,5 +801,103 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if isAdmin();
     }
+
+    // ---- My Workspace (Today Tasks / Weekly Planner / Meeting Schedule) ----
+    // Ported from gdsb-portal's "My Workspace" (its own workspacePlannerOnly() subset: Today
+    // Tasks + Weekly planner + Meetings, no Goals/KPIs/Team). Reachable by EVERY role — each
+    // person only ever reads/writes their OWN tasks/day-review, and only meetings they organize
+    // or are invited to. See src/types.ts's own doc comment above WorkspaceTask for the full
+    // picture, and src/services/workspace*.ts for what actually issues these reads/writes.
+
+    match /workspaceTasks/{taskId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isActiveUser() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isActiveUser() && resource.data.uid == request.auth.uid;
+    }
+
+    // Doc id is `${uid}_${date}` — see WorkspaceDay in src/types.ts.
+    match /workspaceDay/{dayId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isActiveUser() && request.resource.data.uid == request.auth.uid;
+      // Idempotent "confirm today's priorities": only prioritiesReviewedAt ever changes, and only
+      // while it's still unset — the first confirmation of the day wins, mirroring gdsb-portal's
+      // server-side COALESCE(prioritiesReviewedAt, excluded.prioritiesReviewedAt) upsert.
+      allow update: if isActiveUser() && resource.data.uid == request.auth.uid
+        && resource.data.prioritiesReviewedAt == null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['prioritiesReviewedAt']);
+    }
+
+    // A deliberately minimal name/department directory, NOT the /users collection itself (see
+    // that match block's much narrower read rule above) — every active user can read this one,
+    // so the Meeting attendee picker can show every colleague's name regardless of role/branch,
+    // without exposing anyone's email/role/account-active state. Each user may only ever write
+    // their OWN entry, and only mirroring what their own /users doc already says.
+    match /workspaceDirectory/{uid} {
+      allow read: if isActiveUser();
+      allow write: if isSignedIn() && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && request.resource.data.name == userDoc(request.auth.uid).data.name
+        && request.resource.data.department == userDoc(request.auth.uid).data.department
+        && request.resource.data.active == (userDoc(request.auth.uid).data.active != false)
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'department', 'active']);
+    }
+
+    match /workspaceMeetings/{meetingId} {
+      function isOrganizer(data) {
+        return data.organizerUid == request.auth.uid;
+      }
+      function isAttendee(data) {
+        return request.auth.uid in data.attendees;
+      }
+      allow read: if isSignedIn() && (isOrganizer(resource.data) || isAttendee(resource.data));
+      allow create: if isActiveUser() && request.resource.data.organizerUid == request.auth.uid;
+      // The organizer can change anything about their own meeting. An invited attendee may ONLY
+      // flip their own attendees.{uid} entry to 'declined' and drop themselves from invitedUids —
+      // nothing else — mirroring the /users language-toggle's narrow self-service update shape
+      // above (diff().affectedKeys().hasOnly(...)).
+      allow update: if isActiveUser()
+        && (
+          isOrganizer(resource.data)
+          || (
+            isAttendee(resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['attendees', 'invitedUids', 'updatedAt'])
+            && request.resource.data.attendees[request.auth.uid].status == 'declined'
+            && !(request.auth.uid in request.resource.data.invitedUids)
+          )
+        );
+      allow delete: if isActiveUser() && isOrganizer(resource.data);
+
+      // One private write-up per person per meeting — doc id is the writer's own uid.
+      match /minutes/{uid} {
+        function onMeeting() {
+          return get(/databases/$(database)/documents/workspaceMeetings/$(meetingId)).data;
+        }
+        function canWriteUp() {
+          return request.auth.uid == uid
+            && (onMeeting().organizerUid == request.auth.uid || request.auth.uid in onMeeting().attendees);
+        }
+        allow read: if isSignedIn() && request.auth.uid == uid;
+        allow write: if isActiveUser() && canWriteUp();
+      }
+    }
+
+    match /workspaceNotifications/{notificationId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      // Any active user can notify ANOTHER active user about a meeting event they're involved in
+      // — mirrors gdsb-portal's server-trusted notify() helper (apps/worker's own
+      // workspaceMeetings.ts), which this app has no backend to run server-side instead, so (same
+      // trust level as e.g. addProgressUpdate()/employeeFeedback submissions elsewhere in this
+      // file) the write is pinned to exactly these fields/kinds rather than independently
+      // re-verified against the referenced meeting.
+      allow create: if isActiveUser()
+        && request.resource.data.kind in ['meeting_invite', 'meeting_updated', 'meeting_cancelled', 'meeting_declined']
+        && request.resource.data.readAt == null
+        && request.resource.data.keys().hasOnly(['uid', 'kind', 'title', 'body', 'meetingId', 'date', 'createdAt', 'readAt']);
+      // The recipient can only ever mark their own notification read — nothing else about it
+      // ever changes.
+      allow update: if isActiveUser() && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt']);
+      allow delete: if isActiveUser() && resource.data.uid == request.auth.uid;
+    }
   }
 }

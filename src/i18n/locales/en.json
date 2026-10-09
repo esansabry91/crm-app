@@ -45,7 +45,8 @@
       "archive": "Archive",
       "quotationCalculator": "Quotation Calculator",
       "adminSettings": "Admin Settings",
-      "employeeFeedback": "Employee Feedback"
+      "employeeFeedback": "Employee Feedback",
+      "myWorkspace": "My Workspace"
     },
     "roles": {
       "admin": "HQ Admin",

@@ -1,0 +1,53 @@
+/**
+ * My Workspace — Today Tasks + Weekly Planner (incl. meeting schedule), ported from gdsb-portal's
+ * own My Workspace feature (its workspacePlannerOnly() subset specifically — see the doc comment
+ * above WorkspaceTask in types.ts). Reachable by every role, exactly like Employee Feedback: each
+ * person only ever sees their own tasks and the meetings they organize or are invited to.
+ */
+import { useEffect, useState } from 'react';
+import clsx from 'clsx';
+import { useAuth } from '../contexts/AuthContext';
+import { syncOwnWorkspaceDirectoryEntry } from '../services/workspaceDirectory';
+import TodayTasks from '../components/workspace/TodayTasks';
+import Planner from '../components/workspace/Planner';
+
+type Tab = 'today' | 'week';
+
+export default function MyWorkspacePage() {
+  const { profile } = useAuth();
+  const [tab, setTab] = useState<Tab>('today');
+
+  // Keeps this user's /workspaceDirectory entry current the moment they open My Workspace — see
+  // that service's own doc comment for why a separate, minimal directory exists at all.
+  useEffect(() => {
+    if (profile) void syncOwnWorkspaceDirectoryEntry(profile);
+  }, [profile?.uid, profile?.name, profile?.department, profile?.active]);
+
+  if (!profile) return null;
+
+  return (
+    <div className="h-full overflow-y-auto">
+      <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
+        <h1 className="text-lg font-semibold text-slate-900">My Workspace</h1>
+        <p className="text-sm text-slate-500 mt-1">Today's tasks, your weekly planner, and meetings — yours alone.</p>
+        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 mt-3">
+          {(['today', 'week'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={clsx(
+                'px-4 py-1.5 text-sm font-medium rounded-md transition',
+                tab === t ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+              )}
+            >
+              {t === 'today' ? 'Today Tasks' : 'Weekly Planner'}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <div className="p-6 max-w-5xl mx-auto">{tab === 'today' ? <TodayTasks /> : <Planner />}</div>
+    </div>
+  );
+}

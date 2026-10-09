@@ -15,8 +15,10 @@ import QuotationCalculatorPage from './pages/QuotationCalculatorPage';
 import AdminPage from './pages/AdminPage';
 import BranchCollectionPage from './pages/BranchCollectionPage';
 import EmployeeFeedbackPage from './pages/EmployeeFeedbackPage';
+import MyWorkspacePage from './pages/MyWorkspacePage';
 import NewTenderWatcher from './components/notifications/NewTenderWatcher';
 import TenderAssignedWatcher from './components/notifications/TenderAssignedWatcher';
+import DailyPriorityPrompt from './components/workspace/DailyPriorityPrompt';
 
 /** An "Operation Staff"/"Operation Admin", "Payroll", "HR", or "HR Manager" account can only ever
  *  reach Duty Roster, a "Finance" account can only ever reach Branch Collection; everyone else's
@@ -51,6 +53,9 @@ export default function App() {
             role, so it's safe to always mount both. */}
         <NewTenderWatcher />
         <TenderAssignedWatcher />
+        {/* My Workspace's own once-a-day priority-review popup — same "survive navigation"
+            reasoning as the two watchers above. */}
+        <DailyPriorityPrompt />
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
           <Route
@@ -192,6 +197,20 @@ export default function App() {
               <ProtectedRoute>
                 <AppLayout>
                   <EmployeeFeedbackPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/my-workspace"
+            element={
+              // No restrictive props at all — every role reaches this, same as Employee
+              // Feedback — each person only ever sees their own tasks/meetings regardless of
+              // role (enforced by firestore.rules' /workspaceTasks, /workspaceMeetings, etc.
+              // rules, never by route access).
+              <ProtectedRoute>
+                <AppLayout>
+                  <MyWorkspacePage />
                 </AppLayout>
               </ProtectedRoute>
             }
