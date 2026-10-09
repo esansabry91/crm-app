@@ -375,7 +375,9 @@
     "confirmNewRoster": "Mulakan jadual tugas baharu sepenuhnya untuk \"{{client}}\" di bawah {{branch}}? Jadual sedia ada diarkibkan (disimpan untuk rekod Pentadbir/Ibu Pejabat/Gaji) tetapi tidak lagi digunakan untuk projek ini.",
     "confirmCloseOut": "Tutup projek \"{{client}}\"?\n\nIa akan berpindah keluar daripada Projek Aktif ke Projek Lepas, dan mana-mana pengawal yang masih digunakan di sini akan kembali ke Kumpulan Pengawal. Nilainya terus dikira dalam Analisis Saluran Tender sebagai hasil Dimenangi — ini hanya menjejaskan paparan Projek Aktif.\n\nJika kontrak ini hanya diperbaharui dan kerja diteruskan tanpa gangguan, edit tarikh Tamat Kontraknya (dan nilai, jika kadar berubah) — menutup projek akan melepaskan pengawalnya.",
     "estYearlyCollection": "Anggaran Kutipan Tahun Ini ({{year}})",
-    "estYearlyCollectionSub": "jumlah keseluruhan untuk bulan yang dilindungi, bukan purata"
+    "estYearlyCollectionSub": "jumlah keseluruhan untuk bulan yang dilindungi, bukan purata",
+    "reassignmentSitesUnavailable": "Penugasan semula ini diminta sebelum tapak jadual tugasnya direkodkan, jadi ia tidak boleh diterima dari cawangan ini. Minta pentadbir membatalkannya dan meminta semula.",
+    "reassignmentFailed": "Tidak dapat menerima penugasan semula ini. Tiada apa-apa yang diubah."
   },
   "renewContract": {
     "title": "Perbaharui Kontrak",
@@ -1195,6 +1197,7 @@
       "branchLabel": "Cawangan",
       "selectBranchPlaceholder": "Pilih cawangan…",
       "noBranchMatch": "Tiada cawangan sepadan dengan projek ini — sila pilih secara manual.",
+      "branchRequired": "Pilih cawangan sebelum menyimpan. Invois yang disimpan tanpa cawangan tidak muncul dalam senarai Invois anda.",
       "clientNameLabel": "Nama klien",
       "attnLabel": "U.p.",
       "clientAddressLabel": "Alamat klien",
@@ -1307,6 +1310,7 @@
       "assignedWhenSaved": "(ditetapkan apabila disimpan)",
       "dutyRosterSiteLabel": "Lokasi Roster",
       "selectSitePlaceholder": "Pilih lokasi…",
+      "branchRequired": "Pilih lokasi dalam cawangan anda. Invois yang disimpan tanpa cawangan tidak muncul dalam senarai Invois anda.",
       "brandIssuingCompanyLabel": "Jenama (syarikat pengeluar)",
       "clientNameExamplePlaceholder": "cth. Malaysia Digital Economy Corporation Sdn Bhd",
       "attnExamplePlaceholder": "cth. En. Farul Izzat bin Kamarudin",

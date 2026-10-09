@@ -14,6 +14,7 @@ import {
   updateTender,
 } from '../../services/tenders';
 import { formatDate } from '../../utils/format';
+import { localTodayIso } from '../../utils/calendarDays';
 
 interface Props {
   open: boolean;
@@ -56,7 +57,7 @@ export default function TenderFormModal({
   const [error, setError] = useState<string | null>(null);
 
   const isClosedStage = stage === 'Won' || stage === 'Lost';
-  const today = () => new Date().toISOString().slice(0, 10);
+  const today = () => localTodayIso();
 
   // Only Admin/Developer ever sees this dropdown at all (a Branch Manager's Tender Owner field
   // is locked to their own name below — always their own branch).

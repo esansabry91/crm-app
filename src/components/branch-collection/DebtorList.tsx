@@ -4,6 +4,7 @@ import type { TFunction } from 'i18next';
 import { subscribeInvoices, computeOutstandingTrend } from '../../services/invoices';
 import { useBranches, useBrands } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
+import { invoiceMatchesBranchFilter } from '../../utils/invoiceBranchFilter';
 import { isAdminRole } from '../../types';
 import type { Invoice } from '../../types';
 import StatCard from '../analytics/StatCard';
@@ -92,13 +93,14 @@ export default function DebtorList() {
   // A non-admin never gets to apply a branch filter — if one was somehow left selected (e.g. the
   // account's role changed mid-session) it stops taking effect rather than silently hiding rows.
   const effectiveBranchFilter = canFilterByBranch ? branchFilter : '';
+  const selectedBranchName = branches.find((b) => b.id === effectiveBranchFilter)?.name;
 
   const filtered = useMemo(
     () =>
       invoices
         .filter((inv) => !brandFilter || inv.brandId === brandFilter)
-        .filter((inv) => !effectiveBranchFilter || inv.branchId === effectiveBranchFilter),
-    [invoices, brandFilter, effectiveBranchFilter]
+        .filter((inv) => invoiceMatchesBranchFilter(inv, effectiveBranchFilter, selectedBranchName)),
+    [invoices, brandFilter, effectiveBranchFilter, selectedBranchName]
   );
 
   // Every not-yet-fully-paid invoice with its aging bucket — the base both the bucket stat tiles

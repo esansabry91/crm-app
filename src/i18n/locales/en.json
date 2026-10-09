@@ -376,7 +376,9 @@
     "confirmNewRoster": "Start a brand-new duty roster for \"{{client}}\" under {{branch}}? The existing roster is archived (kept for Admin/HQ/Payroll records) but no longer used for this project.",
     "confirmCloseOut": "Close out \"{{client}}\"?\n\nIt will move out of Active Projects and into Past Projects, and any guards still deployed here move back into the Guard Pool. Its value keeps counting in Pipeline Analysis as Won revenue — this only affects the Active Projects view.\n\nIf this contract is simply being renewed and work is continuing without a break, edit its Contract End date (and value, if the rate changed) instead — closing out will release its guards.",
     "estYearlyCollection": "Est. This Year Collection ({{year}})",
-    "estYearlyCollectionSub": "total for months covered, not average"
+    "estYearlyCollectionSub": "total for months covered, not average",
+    "reassignmentSitesUnavailable": "This reassignment was requested before its duty-roster sites were recorded, so it can't be accepted from this branch. Ask an admin to cancel it and request it again.",
+    "reassignmentFailed": "Couldn't accept this reassignment. Nothing was changed."
   },
   "renewContract": {
     "title": "Renew Contract",
@@ -1204,6 +1206,7 @@
       "branchLabel": "Branch",
       "selectBranchPlaceholder": "Select a branch…",
       "noBranchMatch": "No branch matched this project — please select one manually.",
+      "branchRequired": "Select a branch before saving. An invoice saved without a branch does not appear in your Invoices list.",
       "clientNameLabel": "Client name",
       "attnLabel": "Attn.",
       "clientAddressLabel": "Client address",
@@ -1316,6 +1319,7 @@
       "assignedWhenSaved": "(assigned when saved)",
       "dutyRosterSiteLabel": "Duty Roster site",
       "selectSitePlaceholder": "Select a site…",
+      "branchRequired": "Choose a site in your branch. An invoice saved without a branch does not appear in your Invoices list.",
       "brandIssuingCompanyLabel": "Brand (issuing company)",
       "clientNameExamplePlaceholder": "e.g. Malaysia Digital Economy Corporation Sdn Bhd",
       "attnExamplePlaceholder": "e.g. En. Farul Izzat bin Kamarudin",

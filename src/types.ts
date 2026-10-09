@@ -385,7 +385,19 @@ export interface Tender {
    * comes with it or a fresh one gets created — which is what actually flips `activeBranch` and
    * clears this field. An admin can also retract an unaccepted request with cancelReassignment().
    */
-  pendingReassignment?: { toBranch: string; fromBranch: string | null; requestedAt: number } | null;
+  pendingReassignment?: {
+    toBranch: string;
+    fromBranch: string | null;
+    requestedAt: number;
+    /**
+     * Duty Roster site ids that were still on this project's own branch when the admin
+     * requested the move. The receiving Branch Manager cannot LIST another branch's sites
+     * (`where('tenderId')` is permission-denied — rules are not filters), but can GET these
+     * ids one by one while the request is still pending. Absent on requests created before
+     * this field existed; an empty array means the project had no following sites.
+     */
+    siteIds?: string[];
+  } | null;
   /**
    * Operational detail fields for an Active Project — only meaningful once stage is Won.
    * Editable by the tender's admin/owner AND by anyone else who can see it in Active Projects

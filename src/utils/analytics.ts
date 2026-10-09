@@ -1,4 +1,5 @@
 import { OPEN_STAGES, STAGES, type Stage, type Tender, type TenderHistoryEntry } from '../types';
+import { localTodayIso } from './calendarDays';
 
 export interface StageBreakdownRow {
   stage: Stage;
@@ -342,7 +343,7 @@ export function pipelineValueTrend(entries: TenderHistoryEntry[]): TrendPoint[] 
       else if (s.stage === 'Lost') lostValue += s.value;
     }
     const day = new Date(e.timestamp);
-    const dateKey = day.toISOString().slice(0, 10);
+    const dateKey = localTodayIso(day);
     byDay.set(dateKey, { date: dateKey, timestamp: e.timestamp, openValue, wonValue, lostValue });
   }
 
