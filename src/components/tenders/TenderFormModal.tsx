@@ -102,6 +102,9 @@ export default function TenderFormModal({
   const showSubmittedField = stage === 'Submitted' || !!editing?.submittedDate;
   const submittedDateAlreadySet = !!editing?.submittedDate;
   const expiryRequired = category === 'Private';
+  // See Tender.tenderDocumentNo's doc comment — a Government tender always has an official
+  // published reference number, so this is the one category where skipping it isn't an option.
+  const docNoRequired = category === 'Government';
   // Visible from Qualified Lead onward (New Lead is pre-qualification, so there's nothing to ask
   // yet) — see Tender.currentContractEndDate's doc comment in types.ts. Stays visible at every
   // later stage too, once set, same reasoning as showSubmittedField above.
@@ -175,6 +178,7 @@ export default function TenderFormModal({
     if (!clientName.trim()) return setError(t('tenderForm.errorClientNameRequired'));
     if (!brandId) return setError(t('tenderForm.errorSelectBrand'));
     if (!category) return setError(t('tenderForm.errorSelectCategory'));
+    if (docNoRequired && !tenderDocumentNo.trim()) return setError(t('tenderForm.errorDocumentNoRequired'));
     if (!Number.isFinite(value) || value < 0) return setError(t('tenderForm.errorInvalidValue'));
     if (showSubmittedField) {
       if (!submittedDate) return setError(t('tenderForm.errorSubmissionDateRequired'));
@@ -540,7 +544,7 @@ export default function TenderFormModal({
             </div>
           )}
 
-          <Field label={t('tenderForm.tenderDocumentNoOptional')}>
+          <Field label={`${t('tenderForm.tenderDocumentNo')}${docNoRequired ? '' : t('tenderForm.optional')}`}>
             <input
               value={tenderDocumentNo}
               onChange={(e) => {
@@ -550,7 +554,9 @@ export default function TenderFormModal({
               className="input"
               placeholder={t('tenderForm.tenderDocumentNoPlaceholder')}
             />
-            <span className="block text-xs text-slate-400 mt-1">{t('tenderForm.tenderDocumentNoHint')}</span>
+            <span className="block text-xs text-slate-400 mt-1">
+              {docNoRequired ? t('tenderForm.tenderDocumentNoRequiredHint') : t('tenderForm.tenderDocumentNoHint')}
+            </span>
             {duplicate && (
               <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 p-3">
                 <p className="text-sm font-medium text-rose-700">{t('tenderForm.duplicateTitle')}</p>
