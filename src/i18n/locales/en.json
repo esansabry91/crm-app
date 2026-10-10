@@ -190,6 +190,7 @@
     "duplicateTitle": "Already registered",
     "duplicateBody": "This document number is already registered as \"{{client}}\", owned by {{owner}} ({{department}}).",
     "viewExistingTender": "View this tender",
+    "duplicateCheckFailed": "Could not verify this document number isn't already registered — check your connection (or ask an Admin to confirm the latest rules were deployed) and try again.",
     "tenderOwner": "Tender Owner",
     "reassignConfirm": "Reassign \"{{client}}\" from {{from}} to {{to}}? This also moves it to {{to}}'s department, and they'll be able to see and nurture it through the pipeline from here on.",
     "notes": "Notes (optional)",

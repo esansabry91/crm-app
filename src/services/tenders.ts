@@ -56,8 +56,21 @@ export function normalizeTenderDocumentNo(raw: string): string {
   return raw.trim().toUpperCase();
 }
 
+/**
+ * Firestore document IDs can't contain a bare "/" — one silently turns `doc(db, 'tenderDocNoIndex',
+ * key)` into a path through a NESTED collection/doc chain instead of a flat id in the
+ * `tenderDocNoIndex` collection itself, rather than erroring (and an odd number of slash-split
+ * segments in the key throws outright) — and Malaysian government tender numbers routinely look
+ * like "JKR/2026/0123". Percent-encoding escapes every "/" (and anything else not already a safe
+ * id character) into a `%XX` sequence, and the `doc_` prefix guarantees the result can never
+ * collide with Firestore's reserved `__…__` id pattern either, however the real number is shaped.
+ */
+function tenderDocNoIndexKey(normalized: string): string {
+  return `doc_${encodeURIComponent(normalized)}`;
+}
+
 function tenderDocNoIndexRef(key: string) {
-  return doc(db, 'tenderDocNoIndex', key);
+  return doc(db, 'tenderDocNoIndex', tenderDocNoIndexKey(key));
 }
 
 export interface TenderDocNoDuplicate {

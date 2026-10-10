@@ -189,6 +189,7 @@
     "duplicateTitle": "Sudah didaftarkan",
     "duplicateBody": "Nombor dokumen ini sudah didaftarkan sebagai \"{{client}}\", dimiliki oleh {{owner}} ({{department}}).",
     "viewExistingTender": "Lihat tender ini",
+    "duplicateCheckFailed": "Tidak dapat mengesahkan sama ada nombor dokumen ini sudah didaftarkan — semak sambungan anda (atau minta Pentadbir sahkan peraturan terkini telah digunakan) dan cuba lagi.",
     "tenderOwner": "Pemilik Tender",
     "reassignConfirm": "Tugaskan semula \"{{client}}\" daripada {{from}} kepada {{to}}? Ini juga akan memindahkannya ke cawangan {{to}}, dan mereka akan dapat melihat dan menguruskannya melalui saluran tender dari sini.",
     "notes": "Nota (pilihan)",

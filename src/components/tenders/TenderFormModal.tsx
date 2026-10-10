@@ -131,18 +131,17 @@ export default function TenderFormModal({
     } else {
       setClientName('');
       setBrandId(brands[0]?.id || '');
-      // A Branch Manager creating their own tender still defaults to themselves; an Admin/
-      // Developer defaults to the first available Branch Manager instead of themselves, since
-      // they're no longer a choice in the Tender Owner dropdown below (see ownerSelectOptions) —
-      // falls back to self only in the (should-never-happen) case no Branch Manager account
-      // exists yet, so the form still has a valid owner to submit.
-      const defaultOwner = isAdmin ? staffOptions.find((s) => s.role === 'branchManager') : profile;
-      setDepartment((defaultOwner || profile).department || 'HQ');
+      // Always defaults to whoever's actually registering it — Branch Manager or Admin/
+      // Developer alike — so the common case (you're entering your own lead) needs no dropdown
+      // change at all; an Admin can still reassign it to any Branch Manager from the Tender Owner
+      // dropdown below (see ownerSelectOptions, which already includes the signed-in admin as one
+      // of its own choices).
+      setDepartment(profile.department || 'HQ');
       setContractStart('');
       setContractEnd('');
       setTenderValue('');
       setStage('New Lead');
-      setOwnerUid((defaultOwner || profile).uid);
+      setOwnerUid(profile.uid);
       setNotes('');
       setClosedDateField('');
       setSubmittedDateField('');
@@ -190,9 +189,10 @@ export default function TenderFormModal({
 
     // Cross-branch duplicate check — only when a document number was actually entered, and only
     // a real hit when it points at some OTHER tender (editing one's own unchanged number must
-    // never flag itself, see findTenderDocumentNoDuplicate's own doc comment). Fails OPEN: if the
-    // lookup itself errors (offline, etc.) this never blocks a save that would otherwise go
-    // through fine — it just means this one check silently couldn't run this time.
+    // never flag itself, see findTenderDocumentNoDuplicate's own doc comment). Fails CLOSED: if
+    // the lookup itself errors (offline, firestore.rules not yet deployed for /tenderDocNoIndex,
+    // etc.) the save is blocked rather than silently let through unverified — a silent fail-open
+    // here looks EXACTLY like "no duplicate found" and is how one slips in unnoticed.
     const trimmedDocNo = tenderDocumentNo.trim();
     if (trimmedDocNo) {
       try {
@@ -203,6 +203,7 @@ export default function TenderFormModal({
         }
       } catch (err) {
         console.error('findTenderDocumentNoDuplicate', err);
+        return setError(t('tenderForm.duplicateCheckFailed'));
       }
     }
 
