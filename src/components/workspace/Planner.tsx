@@ -29,9 +29,9 @@ import {
   updateWorkspaceTaskPriority,
 } from '../../services/workspace';
 import { subscribeMyWorkspaceMeetings } from '../../services/workspaceMeetings';
-import { workspaceTaskPriorityLocked, type WorkspaceMeeting, type WorkspaceTask, type WorkspaceTaskPriority } from '../../types';
+import { workspaceTaskPriorityLocked, type WorkspaceMeeting, type WorkspaceTask } from '../../types';
 import { addDays, dayLabel, formatDateDisplay, mondayOf, todayIso, tomorrowIso, weekDates, weekRangeLabel, weekdayIndex } from '../../utils/workspaceDates';
-import { BAND_COLOR, priorityBand, sortWorkspaceTasks } from './PriorityLights';
+import PriorityLights, { priorityBand, sortWorkspaceTasks } from './PriorityLights';
 import MeetingDialog from './MeetingDialog';
 
 function ModeIcon({ mode }: { mode: WorkspaceMeeting['mode'] }) {
@@ -67,27 +67,6 @@ function cardClassFor(date: string, today: string, tomorrow: string): string {
   return 'bg-white border-slate-200';
 }
 
-/** A single compact dot standing in for the 5-light picker used on Today Tasks — tap to cycle
- *  low → medium → high when editable, read-only (just colored) otherwise. Keeps the weekly grid's
- *  rows compact the way gdsb-portal's own planner keeps them. */
-function PriorityDot({ priority, editable, onChange }: { priority: WorkspaceTaskPriority; editable: boolean; onChange: (p: WorkspaceTaskPriority) => void }) {
-  const band = priorityBand(priority);
-  function cycle() {
-    if (!editable) return;
-    onChange((band === 'low' ? 3 : band === 'medium' ? 5 : 1) as WorkspaceTaskPriority);
-  }
-  return (
-    <button
-      type="button"
-      onClick={cycle}
-      disabled={!editable}
-      title={`Priority: ${band}`}
-      className={clsx('w-2 h-2 rounded-full shrink-0', editable && 'cursor-pointer')}
-      style={{ backgroundColor: BAND_COLOR[band] }}
-    />
-  );
-}
-
 function DayColumn({
   date,
   tasks,
@@ -121,6 +100,10 @@ function DayColumn({
 }) {
   const [draft, setDraft] = useState('');
   const isToday = date === today;
+  const isTomorrow = date === tomorrow;
+  // Priority only shows (and is settable) on today/tomorrow — every other day is fixed anyway,
+  // so a row of locked, uneditable dots down the whole week just reads as visual noise/stress.
+  const showPriority = isToday || isTomorrow;
   const status = statusFor(date, today, tomorrow);
 
   return (
@@ -154,7 +137,15 @@ function DayColumn({
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
               className={clsx('flex-1 min-w-0 text-xs bg-transparent border-none focus:ring-0 px-0', task.done ? 'text-slate-400 line-through' : 'text-slate-700')}
             />
-            <PriorityDot priority={task.priority} editable={!locked} onChange={(p) => onPriority(task, p)} />
+            {showPriority && (
+              <PriorityLights
+                value={task.priority}
+                editable={!locked}
+                onChange={(p) => onPriority(task, p)}
+                compact
+                title={`Priority: ${priorityBand(task.priority)}`}
+              />
+            )}
             <button
               type="button"
               onClick={() => onMoveNext(task)}
