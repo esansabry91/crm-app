@@ -492,6 +492,26 @@ service cloud.firestore {
       }
     }
 
+    // ---- Tender document-number duplicate index (see Tender.tenderDocumentNo's doc comment in
+    // types.ts, and findTenderDocumentNoDuplicate()/mirrorTenderDocNoIndex() in
+    // services/tenders.ts) ----
+    // A deliberately narrow, denormalized mirror — doc id is the normalized tender document
+    // number itself, data is just {tenderId, clientName, ownerName, department, ownerUid} — so
+    // ANY active user (any branch, any role) can check whether a document number is already
+    // registered and by whom, even though the full /tenders/{tenderId} record stays scoped to its
+    // owner/admin/Won-branch as above. Writable only by whoever owns the tender it describes (or
+    // an admin), exactly mirroring /tenders' own create/update rule, so one Branch Manager can
+    // never plant or overwrite another's index entry.
+    match /tenderDocNoIndex/{docNoKey} {
+      allow read: if isActiveUser();
+      allow create: if isActiveUser()
+        && (isAdmin() || request.resource.data.ownerUid == request.auth.uid);
+      allow update: if isActiveUser()
+        && (isAdmin() || resource.data.ownerUid == request.auth.uid);
+      allow delete: if isActiveUser()
+        && (isAdmin() || resource.data.ownerUid == request.auth.uid);
+    }
+
     // ---- Duty Roster (public/duty-roster/index.html, embedded via an <iframe> on
     // /duty-roster) ----
     // A separate, self-contained tool with its own data model — client "sites", each with a

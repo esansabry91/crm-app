@@ -343,6 +343,25 @@ export interface Tender {
    */
   category?: 'Government' | 'Private';
   /**
+   * The official tender/procurement reference number as published by the client (e.g. a
+   * government tender notice's own document number) — entered ONCE, voluntarily, the moment a
+   * tender is first registered (see TenderFormModal's "Tender Document No." field, just above
+   * Tender Owner). Its entire purpose is catching two different Branch Managers both registering
+   * the SAME published tender as two separate leads before it happens rather than after: every
+   * active user (any branch) can check whether a document number is already taken — see
+   * findTenderDocumentNoDuplicate() and the denormalized /tenderDocNoIndex/{key} mirror doc it
+   * reads, both in services/tenders.ts — even though that same user usually can't read the full
+   * tender record itself (firestore.rules scopes /tenders reads to the owner/admin/Won-branch).
+   * Always optional — plenty of tenders (Private ones especially, or a word-of-mouth lead) never
+   * had a published document number to begin with.
+   *
+   * NOT the same field as TenderSiteDetails.tenderDocNumber / this same tender's own
+   * `tenderDocNumber` below — that one is the operational/invoicing contract reference captured
+   * only once a tender is Won, from Active Projects (ProjectDetailsModal.tsx), and has nothing to
+   * do with pre-award duplicate detection.
+   */
+  tenderDocumentNo?: string;
+  /**
    * ISO date (yyyy-mm-dd) this lead's CURRENT contract — the one they already have with another
    * guard provider (or an existing one of ours coming up for renewal) — is due to end. Filled in
    * once a lead reaches Qualified Lead (see TenderFormModal's "Current Awarded Contract End"

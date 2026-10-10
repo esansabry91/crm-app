@@ -49,6 +49,78 @@ function defaultActiveBranchOnWin(department: string, actorRole: Role | undefine
   return department;
 }
 
+/** Trim + uppercase so "jkr-2026/04" and " JKR-2026/04 " collide as the same document number —
+ *  see Tender.tenderDocumentNo's doc comment. Empty/whitespace-only normalizes to '', which
+ *  every caller below treats as "no document number," never as a lookup/index key. */
+export function normalizeTenderDocumentNo(raw: string): string {
+  return raw.trim().toUpperCase();
+}
+
+function tenderDocNoIndexRef(key: string) {
+  return doc(db, 'tenderDocNoIndex', key);
+}
+
+export interface TenderDocNoDuplicate {
+  tenderId: string;
+  clientName: string;
+  ownerName: string;
+  department: string;
+}
+
+/**
+ * Looks up whether `tenderDocumentNo` is already registered against some OTHER tender, across
+ * every branch/owner — this is the one check in the whole app that deliberately reaches outside
+ * the caller's own visible tenders (see /tenderDocNoIndex's doc comment in firestore.rules).
+ * `excludeTenderId` is the tender currently being edited, if any — editing a tender without
+ * changing its own document number must never flag itself as a duplicate of itself.
+ */
+export async function findTenderDocumentNoDuplicate(
+  tenderDocumentNo: string,
+  excludeTenderId?: string
+): Promise<TenderDocNoDuplicate | null> {
+  const key = normalizeTenderDocumentNo(tenderDocumentNo);
+  if (!key) return null;
+  const snap = await getDoc(tenderDocNoIndexRef(key));
+  if (!snap.exists()) return null;
+  const data = snap.data() as TenderDocNoDuplicate;
+  if (data.tenderId === excludeTenderId) return null;
+  return data;
+}
+
+/** Writes/refreshes this tender's /tenderDocNoIndex entry (a full overwrite, like
+ *  mirrorWorkspaceDirectoryFromUsersDoc() in services/users.ts) — called after every create/
+ *  update that could affect the mirrored fields. No-ops when the tender has no document number;
+ *  callers that need the OLD key removed too (cleared, or changed to a different number) call
+ *  clearTenderDocNoIndexEntry() for that first. Best-effort: a failure here (e.g. a transient
+ *  offline write) never blocks the tender save itself, so callers fire-and-forget it. */
+async function mirrorTenderDocNoIndex(tender: {
+  tenderDocumentNo?: string;
+  id: string;
+  clientName: string;
+  ownerName: string;
+  ownerUid: string;
+  department: string;
+}): Promise<void> {
+  const key = normalizeTenderDocumentNo(tender.tenderDocumentNo || '');
+  if (!key) return;
+  await setDoc(tenderDocNoIndexRef(key), {
+    tenderId: tender.id,
+    clientName: tender.clientName,
+    ownerName: tender.ownerName,
+    ownerUid: tender.ownerUid,
+    department: tender.department,
+  });
+}
+
+/** Removes a stale /tenderDocNoIndex entry — called when a tender's document number is cleared
+ *  or changed to a different one (so the OLD key stops pointing at it), and when the tender
+ *  itself is deleted. Best-effort, same reasoning as mirrorTenderDocNoIndex() above. */
+async function clearTenderDocNoIndexEntry(tenderDocumentNo: string | undefined): Promise<void> {
+  const key = normalizeTenderDocumentNo(tenderDocumentNo || '');
+  if (!key) return;
+  await deleteDoc(tenderDocNoIndexRef(key));
+}
+
 export interface NewTenderInput {
   clientName: string;
   brandId: string;
@@ -63,6 +135,8 @@ export interface NewTenderInput {
   notes?: string;
   /** See Tender.category's doc comment in types.ts — compulsory, validated by the form before this is ever called. */
   category: 'Government' | 'Private';
+  /** See Tender.tenderDocumentNo's doc comment in types.ts. Always optional. */
+  tenderDocumentNo?: string;
   /** See Tender.currentContractEndDate's doc comment in types.ts. Always optional. */
   currentContractEndDate?: string;
   /** ISO date (yyyy-mm-dd) — only meaningful when stage is Won or Lost. Used to backfill history. */
@@ -128,13 +202,14 @@ export async function createTender(
   // Firestore's addDoc() rejects fields explicitly set to `undefined` — closedDate/submittedDate
   // are optional and undefined for most tenders, so they must be omitted entirely rather than
   // spread in as `closedDate: undefined`.
-  const { closedDate, submittedDate, submissionExpiryDate, currentContractEndDate, ...rest } = input;
+  const { closedDate, submittedDate, submissionExpiryDate, currentContractEndDate, tenderDocumentNo, ...rest } = input;
   const docRef = await addDoc(collection(db, 'tenders'), {
     ...rest,
     ...(closedDate ? { closedDate } : {}),
     ...(submittedDate ? { submittedDate } : {}),
     ...(submissionExpiryDate ? { submissionExpiryDate } : {}),
     ...(currentContractEndDate ? { currentContractEndDate } : {}),
+    ...(tenderDocumentNo ? { tenderDocumentNo } : {}),
     // A tender can be created directly in the Won stage (not just moved there later) — give it
     // the same activeBranch default moveTenderStage would, so it doesn't rely on the opportunistic
     // backfill (which has no idea who created it) to fill this in afterwards.
@@ -155,6 +230,18 @@ export async function createTender(
     },
     historyTimestamp
   );
+  // Best-effort — a failure to mirror the dedup index must never undo (or appear to undo) the
+  // tender that was just successfully created above.
+  if (tenderDocumentNo) {
+    await mirrorTenderDocNoIndex({
+      id: docRef.id,
+      tenderDocumentNo,
+      clientName: input.clientName,
+      ownerName: input.ownerName,
+      ownerUid: input.ownerUid,
+      department: input.department,
+    }).catch((err) => console.error('mirrorTenderDocNoIndex (create)', err));
+  }
   return docRef.id;
 }
 
@@ -194,6 +281,30 @@ export async function updateTender(
       changedByName: actor.name,
       ownerUid: patch.ownerUid ?? current.ownerUid,
     });
+  }
+
+  // Keep /tenderDocNoIndex in sync with whatever was just saved — `in` (not a `!== undefined`
+  // check) so an explicit clear (`tenderDocumentNo: undefined` in the patch, same convention
+  // currentContractEndDate already uses above) is told apart from the field simply not being
+  // part of this particular patch at all.
+  const docNoTouched = 'tenderDocumentNo' in patch;
+  const nextDocNo = docNoTouched ? patch.tenderDocumentNo : current.tenderDocumentNo;
+  const prevKey = normalizeTenderDocumentNo(current.tenderDocumentNo || '');
+  const nextKey = normalizeTenderDocumentNo(nextDocNo || '');
+  if (prevKey && prevKey !== nextKey) {
+    await clearTenderDocNoIndexEntry(current.tenderDocumentNo).catch((err) =>
+      console.error('clearTenderDocNoIndexEntry (update)', err)
+    );
+  }
+  if (nextKey) {
+    await mirrorTenderDocNoIndex({
+      id: tenderId,
+      tenderDocumentNo: nextDocNo,
+      clientName: patch.clientName ?? current.clientName,
+      ownerName: patch.ownerName ?? current.ownerName,
+      ownerUid: patch.ownerUid ?? current.ownerUid,
+      department: patch.department ?? current.department,
+    }).catch((err) => console.error('mirrorTenderDocNoIndex (update)', err));
   }
 }
 
@@ -1573,6 +1684,11 @@ export async function deleteTender(tender: Tender, actor: { uid: string; name: s
   });
   await setLinkedSitesArchived(tender.id, true);
   await deleteDoc(doc(db, 'tenders', tender.id));
+  if (tender.tenderDocumentNo) {
+    await clearTenderDocNoIndexEntry(tender.tenderDocumentNo).catch((err) =>
+      console.error('clearTenderDocNoIndexEntry (delete)', err)
+    );
+  }
 }
 
 const ARCHIVE_AFTER_MS = 365 * 24 * 60 * 60 * 1000;

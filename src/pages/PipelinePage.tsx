@@ -307,6 +307,12 @@ export default function PipelinePage() {
         branches={branches}
         staffOptions={staffOptions}
         editing={editing}
+        tenders={tenders}
+        // A duplicate Tender Document No. hit (see TenderFormModal's own duplicate banner) swaps
+        // this same still-open modal over to editing the tender that's already registered,
+        // instead of letting a second one get created — "show the tender already in the list"
+        // means literally this: the real, already-registered record takes over the form.
+        onOpenExisting={(tender) => setEditing(tender)}
       />
 
       <SubmissionDateModal

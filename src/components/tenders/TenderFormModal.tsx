@@ -6,12 +6,14 @@ import { STAGES, isAdminRole } from '../../types';
 import {
   createTender,
   deleteTender,
+  findTenderDocumentNoDuplicate,
   moveTenderStage,
   requalifyTender,
   setClosedDate,
   setSubmittedDate,
   setSubmissionExpiryDate,
   updateTender,
+  type TenderDocNoDuplicate,
 } from '../../services/tenders';
 import { formatDate } from '../../utils/format';
 import { localTodayIso } from '../../utils/calendarDays';
@@ -24,6 +26,15 @@ interface Props {
   branches: Branch[];
   staffOptions: UserProfile[]; // full active roster (admin only) — narrowed to Branch Managers + self below
   editing: Tender | null; // null = creating new
+  /** Every tender locally visible to this user (same scoping as useTenders.ts) — used only to
+   *  resolve a duplicate tenderDocumentNo hit into a real Tender this modal can switch to editing
+   *  (see onOpenExisting below). Omitted by ArchivePage/ActiveProjectsPage, which never open this
+   *  modal in create mode anyway, so there's nothing for a duplicate hit to ever interrupt there. */
+  tenders?: Tender[];
+  /** Called instead of creating, when the entered Tender Document No. already belongs to a
+   *  tender this user can actually open (found in `tenders` above) — swaps this same modal over
+   *  to editing that tender rather than letting a second, duplicate lead get created. */
+  onOpenExisting?: (tender: Tender) => void;
 }
 
 export default function TenderFormModal({
@@ -34,6 +45,8 @@ export default function TenderFormModal({
   branches,
   staffOptions,
   editing,
+  tenders,
+  onOpenExisting,
 }: Props) {
   const { t } = useTranslation();
   const isAdmin = isAdminRole(profile.role);
@@ -53,6 +66,11 @@ export default function TenderFormModal({
   const [submissionExpiryDate, setSubmissionExpiryDateField] = useState('');
   const [category, setCategory] = useState<'Government' | 'Private' | ''>('');
   const [currentContractEndDate, setCurrentContractEndDateField] = useState('');
+  const [tenderDocumentNo, setTenderDocumentNo] = useState('');
+  // Set only when the LAST submit attempt found this document number already registered against
+  // some other tender — cleared the moment the field is edited again, so the warning never goes
+  // stale relative to what's actually typed.
+  const [duplicate, setDuplicate] = useState<TenderDocNoDuplicate | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,6 +124,7 @@ export default function TenderFormModal({
       setSubmissionExpiryDateField(editing.submissionExpiryDate || '');
       setCategory(editing.category || '');
       setCurrentContractEndDateField(editing.currentContractEndDate || '');
+      setTenderDocumentNo(editing.tenderDocumentNo || '');
     } else {
       setClientName('');
       setBrandId(brands[0]?.id || '');
@@ -127,8 +146,10 @@ export default function TenderFormModal({
       setSubmissionExpiryDateField('');
       setCategory('');
       setCurrentContractEndDateField('');
+      setTenderDocumentNo('');
     }
     setError(null);
+    setDuplicate(null);
   }, [open, editing, brands, profile, isAdmin, staffOptions]);
 
   // Default the closed-date field to today the moment someone switches stage to Won/Lost,
@@ -149,6 +170,7 @@ export default function TenderFormModal({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    setDuplicate(null);
     const value = Number(tenderValue);
     if (!clientName.trim()) return setError(t('tenderForm.errorClientNameRequired'));
     if (!brandId) return setError(t('tenderForm.errorSelectBrand'));
@@ -159,6 +181,24 @@ export default function TenderFormModal({
       if (submittedDate > today()) return setError(t('tenderForm.errorSubmissionFutureDate'));
       if (expiryRequired && !submissionExpiryDate) {
         return setError(t('tenderForm.errorExpiryRequired'));
+      }
+    }
+
+    // Cross-branch duplicate check — only when a document number was actually entered, and only
+    // a real hit when it points at some OTHER tender (editing one's own unchanged number must
+    // never flag itself, see findTenderDocumentNoDuplicate's own doc comment). Fails OPEN: if the
+    // lookup itself errors (offline, etc.) this never blocks a save that would otherwise go
+    // through fine — it just means this one check silently couldn't run this time.
+    const trimmedDocNo = tenderDocumentNo.trim();
+    if (trimmedDocNo) {
+      try {
+        const hit = await findTenderDocumentNoDuplicate(trimmedDocNo, editing?.id);
+        if (hit) {
+          setDuplicate(hit);
+          return;
+        }
+      } catch (err) {
+        console.error('findTenderDocumentNoDuplicate', err);
       }
     }
 
@@ -195,6 +235,7 @@ export default function TenderFormModal({
             notes,
             category: category as 'Government' | 'Private',
             currentContractEndDate: currentContractEndDate || undefined,
+            tenderDocumentNo: trimmedDocNo || undefined,
           },
           { uid: profile.uid, name: profile.name },
           editing
@@ -242,6 +283,7 @@ export default function TenderFormModal({
             notes,
             category: category as 'Government' | 'Private',
             currentContractEndDate: currentContractEndDate || undefined,
+            tenderDocumentNo: trimmedDocNo || undefined,
             closedDate: isClosedStage ? closedDate : undefined,
             submittedDate: showSubmittedField ? submittedDate : undefined,
             submissionExpiryDate: showSubmittedField ? submissionExpiryDate || undefined : undefined,
@@ -497,6 +539,44 @@ export default function TenderFormModal({
               </Field>
             </div>
           )}
+
+          <Field label={t('tenderForm.tenderDocumentNoOptional')}>
+            <input
+              value={tenderDocumentNo}
+              onChange={(e) => {
+                setTenderDocumentNo(e.target.value);
+                setDuplicate(null);
+              }}
+              className="input"
+              placeholder={t('tenderForm.tenderDocumentNoPlaceholder')}
+            />
+            <span className="block text-xs text-slate-400 mt-1">{t('tenderForm.tenderDocumentNoHint')}</span>
+            {duplicate && (
+              <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 p-3">
+                <p className="text-sm font-medium text-rose-700">{t('tenderForm.duplicateTitle')}</p>
+                <p className="text-xs text-rose-600 mt-0.5">
+                  {t('tenderForm.duplicateBody', {
+                    client: duplicate.clientName,
+                    owner: duplicate.ownerName,
+                    department: duplicate.department,
+                  })}
+                </p>
+                {(() => {
+                  const existingTender = tenders?.find((tt) => tt.id === duplicate.tenderId);
+                  if (!existingTender || !onOpenExisting) return null;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => onOpenExisting(existingTender)}
+                      className="mt-2 text-xs font-medium text-rose-700 hover:text-rose-800 underline"
+                    >
+                      {t('tenderForm.viewExistingTender')}
+                    </button>
+                  );
+                })()}
+              </div>
+            )}
+          </Field>
 
           <Field label={t('tenderForm.tenderOwner')}>
             <select
