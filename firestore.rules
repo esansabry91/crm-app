@@ -833,52 +833,40 @@ service cloud.firestore {
     // A deliberately minimal name/department directory, NOT the /users collection itself (see
     // that match block's much narrower read rule above) — every active user can read this one,
     // so the Meeting attendee picker can show every colleague's name regardless of role/branch,
-    // without exposing anyone's email/role/account-active state. Each user creates and updates
-    // their OWN entry, mirroring what their own /users doc already says; an admin or the matching
-    // Branch Manager may additionally flip just `active` (see the update rule below), so this
-    // directory never lags behind a deactivation/removal they perform on someone else's account.
+    // without exposing anyone's email/role/account-active state. This never depends on the
+    // TARGET account ever having signed in: services/users.ts mirrors a matching entry here the
+    // moment an admin or Branch Manager creates, edits, deactivates, or removes that account (see
+    // mirrorWorkspaceDirectoryFromUsersDoc() there), in addition to the normal self-write on every
+    // sign-in (WorkspaceDirectorySync.tsx) and the one-time admin backfill
+    // (backfillWorkspaceDirectoryEntries(), UserManager.tsx's "Sync directory" action) for
+    // accounts that predate all of this.
     match /workspaceDirectory/{uid} {
-      // A Branch Manager may flip `active` on an Operation Staff directory entry in their OWN
+      // Every write below ultimately reduces to this: is the proposed entry EXACTLY what
+      // `targetUid`'s own /users doc already says, nothing more and nothing invented — never "did
+      // only this one field change," since an admin/Branch Manager edit can legitimately touch
+      // name/department/active together (a rename, a branch transfer, a deactivation).
+      function matchesUsersDoc(targetUid) {
+        return request.resource.data.uid == targetUid
+          && request.resource.data.name == userDoc(targetUid).data.name
+          && request.resource.data.department == userDoc(targetUid).data.department
+          && request.resource.data.active == (userDoc(targetUid).data.active != false)
+          && request.resource.data.keys().hasOnly(['uid', 'name', 'department', 'active']);
+      }
+      // A Branch Manager may create/correct an entry for an Operation Staff account in their OWN
       // branch, mirroring /users' own isOwnBranchOperationStaff() scoping — re-derived here from
       // userDoc(uid) since role isn't itself a field on this minimal directory doc.
       function isOwnBranchOperationStaffDirectory() {
         return (userDoc(uid).data.role == 'dutyStaff' || userDoc(uid).data.role == 'operationAdmin')
           && userDoc(uid).data.department == myDepartment();
       }
+      function canWriteDirectoryFor() {
+        return (isSignedIn() && request.auth.uid == uid)
+          || isAdmin()
+          || (isBranchManager() && isOwnBranchOperationStaffDirectory());
+      }
       allow read: if isActiveUser();
-      // Self-create (the normal path, on every sign-in — see WorkspaceDirectorySync.tsx), OR an
-      // admin backfilling/correcting ANY uid's entry to exactly match that uid's own /users doc —
-      // see backfillWorkspaceDirectoryEntries() in services/workspaceDirectory.ts, UserManager.tsx's
-      // "Sync directory" action. Covers an account that signed in before this directory existed
-      // and hasn't signed in again since, without an admin being able to write anything that
-      // doesn't already match that account's real name/department/active value.
-      allow create: if (isSignedIn() && request.auth.uid == uid
-          && request.resource.data.uid == uid
-          && request.resource.data.name == userDoc(request.auth.uid).data.name
-          && request.resource.data.department == userDoc(request.auth.uid).data.department
-          && request.resource.data.active == (userDoc(request.auth.uid).data.active != false)
-          && request.resource.data.keys().hasOnly(['uid', 'name', 'department', 'active']))
-        || (isAdmin()
-            && request.resource.data.uid == uid
-            && request.resource.data.name == userDoc(uid).data.name
-            && request.resource.data.department == userDoc(uid).data.department
-            && request.resource.data.active == (userDoc(uid).data.active != false)
-            && request.resource.data.keys().hasOnly(['uid', 'name', 'department', 'active']));
-      // Same self-write shape as create, PLUS: an admin, or a Branch Manager deactivating/removing
-      // their own branch's Operation Staff (see deactivateUser()/deleteUserProfile() in
-      // services/users.ts), may flip ONLY this doc's `active` field — never name/department — so a
-      // deactivated or removed account stops showing up as an invitable Meeting attendee right
-      // away, instead of waiting on that account's own next login, which it can never make again.
-      allow update: if (isSignedIn() && request.auth.uid == uid
-          && request.resource.data.uid == uid
-          && request.resource.data.name == userDoc(request.auth.uid).data.name
-          && request.resource.data.department == userDoc(request.auth.uid).data.department
-          && request.resource.data.active == (userDoc(request.auth.uid).data.active != false)
-          && request.resource.data.keys().hasOnly(['uid', 'name', 'department', 'active']))
-        || (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active']))
-        || (isBranchManager()
-            && isOwnBranchOperationStaffDirectory()
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active']));
+      allow create: if canWriteDirectoryFor() && matchesUsersDoc(uid);
+      allow update: if canWriteDirectoryFor() && matchesUsersDoc(uid);
     }
 
     match /workspaceMeetings/{meetingId} {

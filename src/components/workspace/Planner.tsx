@@ -102,7 +102,6 @@ function DayColumn({
   onPriority,
   onDelete,
   onMoveNext,
-  onAddMeeting,
   onOpenMeeting,
 }: {
   date: string;
@@ -118,7 +117,6 @@ function DayColumn({
   onPriority: (task: WorkspaceTask, priority: WorkspaceTask['priority']) => void;
   onDelete: (task: WorkspaceTask) => void;
   onMoveNext: (task: WorkspaceTask) => void;
-  onAddMeeting: () => void;
   onOpenMeeting: (meeting: WorkspaceMeeting) => void;
 }) {
   const [draft, setDraft] = useState('');
@@ -209,9 +207,6 @@ function DayColumn({
           ))}
         </div>
       )}
-      <button type="button" onClick={onAddMeeting} className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-700">
-        + Meeting
-      </button>
     </div>
   );
 }
@@ -326,7 +321,6 @@ export default function Planner() {
                 onPriority={handlePriority}
                 onDelete={(task) => void deleteWorkspaceTask(task.id)}
                 onMoveNext={handleMoveNext}
-                onAddMeeting={() => setDialog({ date })}
                 onOpenMeeting={(meeting) => setDialog({ meeting })}
               />
             </div>
