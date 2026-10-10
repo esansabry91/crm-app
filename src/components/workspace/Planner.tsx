@@ -2,9 +2,16 @@
  * Weekly Planner — ported from gdsb-portal's apps/web/src/pages/workspace/Planner.tsx: a
  * Monday-starting week grid of each day's tasks and meetings, the same priority-lock rule Today
  * Tasks uses (today locked once reviewed, tomorrow always open, every other day fixed), and
- * meeting scheduling (via MeetingDialog). Laid out as stacked day sections rather than gdsb-
- * portal's side-scrolling 7-column grid — same data and rules, a simpler, reliably-buildable
- * layout for crm-app's own component conventions.
+ * meeting scheduling (via MeetingDialog).
+ *
+ * Laid out as a horizontal day-grid (wrapping responsively) matching gdsb-portal's own Weekly
+ * planner screen: a header with week navigation, a done/meeting-count summary for the visible
+ * week, and a header-level "+ Meeting" action; each day column carries a PAST / TODAY /
+ * TOMORROW · SET PRIORITIES / WEEKEND status pill and a background to match — today blue,
+ * tomorrow amber, any past day muted slate (a past weekend a shade darker still), and every other
+ * weekend day (Saturday/Sunday) its own teal tint even when it's neither past, today, nor
+ * tomorrow — a background rule of its own, independent of the past-day rule, per how this was
+ * asked for.
  */
 import { useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
@@ -12,6 +19,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import {
   addWorkspaceTask,
   deleteWorkspaceTask,
+  moveWorkspaceTaskToDate,
   renameWorkspaceTask,
   subscribeMyWorkspaceTasks,
   subscribeWorkspaceDay,
@@ -19,9 +27,9 @@ import {
   updateWorkspaceTaskPriority,
 } from '../../services/workspace';
 import { subscribeMyWorkspaceMeetings } from '../../services/workspaceMeetings';
-import { workspaceTaskPriorityLocked, type WorkspaceMeeting, type WorkspaceTask } from '../../types';
-import { addDays, dayLabel, formatDateDisplay, mondayOf, todayIso, tomorrowIso, weekDates, weekRangeLabel } from '../../utils/workspaceDates';
-import PriorityLights, { sortWorkspaceTasks } from './PriorityLights';
+import { workspaceTaskPriorityLocked, type WorkspaceMeeting, type WorkspaceTask, type WorkspaceTaskPriority } from '../../types';
+import { addDays, dayLabel, formatDateDisplay, mondayOf, todayIso, tomorrowIso, weekDates, weekRangeLabel, weekdayIndex } from '../../utils/workspaceDates';
+import { BAND_COLOR, priorityBand, sortWorkspaceTasks } from './PriorityLights';
 import MeetingDialog from './MeetingDialog';
 
 function ModeIcon({ mode }: { mode: WorkspaceMeeting['mode'] }) {
@@ -30,17 +38,68 @@ function ModeIcon({ mode }: { mode: WorkspaceMeeting['mode'] }) {
   return null;
 }
 
+interface DayStatus {
+  label: string;
+  pillClass: string;
+}
+
+/** PAST beats WEEKEND (a past Saturday is still "past" first), but TODAY/TOMORROW beat both —
+ *  those two carry priority-lock consequences a plain weekend label doesn't. */
+function statusFor(date: string, today: string, tomorrow: string): DayStatus | null {
+  if (date === today) return { label: 'TODAY', pillClass: 'bg-blue-600 text-white' };
+  if (date === tomorrow) return { label: 'TOMORROW · SET PRIORITIES', pillClass: 'bg-amber-500 text-white' };
+  if (date < today) return { label: 'PAST', pillClass: 'bg-slate-400 text-white' };
+  if (weekdayIndex(date) >= 5) return { label: 'WEEKEND', pillClass: 'bg-teal-500 text-white' };
+  return null;
+}
+
+/** The day-card background — today/tomorrow/past/weekend each get their own, and a day that's
+ *  both past AND a weekend gets a visibly darker shade of the past treatment rather than losing
+ *  the weekend distinction entirely. */
+function cardClassFor(date: string, today: string, tomorrow: string): string {
+  const isWeekend = weekdayIndex(date) >= 5;
+  if (date === today) return 'bg-blue-50/70 border-blue-300 ring-1 ring-blue-100';
+  if (date === tomorrow) return 'bg-amber-50/70 border-amber-200';
+  if (date < today) return isWeekend ? 'bg-slate-100/90 border-slate-200' : 'bg-slate-50 border-slate-200';
+  if (isWeekend) return 'bg-teal-50/60 border-teal-100';
+  return 'bg-white border-slate-200';
+}
+
+/** A single compact dot standing in for the 5-light picker used on Today Tasks — tap to cycle
+ *  low → medium → high when editable, read-only (just colored) otherwise. Keeps the weekly grid's
+ *  rows compact the way gdsb-portal's own planner keeps them. */
+function PriorityDot({ priority, editable, onChange }: { priority: WorkspaceTaskPriority; editable: boolean; onChange: (p: WorkspaceTaskPriority) => void }) {
+  const band = priorityBand(priority);
+  function cycle() {
+    if (!editable) return;
+    onChange((band === 'low' ? 3 : band === 'medium' ? 5 : 1) as WorkspaceTaskPriority);
+  }
+  return (
+    <button
+      type="button"
+      onClick={cycle}
+      disabled={!editable}
+      title={`Priority: ${band}`}
+      className={clsx('w-2 h-2 rounded-full shrink-0', editable && 'cursor-pointer')}
+      style={{ backgroundColor: BAND_COLOR[band] }}
+    />
+  );
+}
+
 function DayColumn({
   date,
   tasks,
   meetings,
   locked,
   myUid,
+  today,
+  tomorrow,
   onAdd,
   onToggle,
   onRename,
   onPriority,
   onDelete,
+  onMoveNext,
   onAddMeeting,
   onOpenMeeting,
 }: {
@@ -49,27 +108,38 @@ function DayColumn({
   meetings: WorkspaceMeeting[];
   locked: boolean;
   myUid: string;
+  today: string;
+  tomorrow: string;
   onAdd: (title: string) => void;
   onToggle: (task: WorkspaceTask) => void;
   onRename: (task: WorkspaceTask, title: string) => void;
   onPriority: (task: WorkspaceTask, priority: WorkspaceTask['priority']) => void;
   onDelete: (task: WorkspaceTask) => void;
+  onMoveNext: (task: WorkspaceTask) => void;
   onAddMeeting: () => void;
   onOpenMeeting: (meeting: WorkspaceMeeting) => void;
 }) {
   const [draft, setDraft] = useState('');
-  const isToday = date === todayIso();
+  const isToday = date === today;
+  const status = statusFor(date, today, tomorrow);
 
   return (
-    <div className={clsx('bg-white rounded-xl border p-3', isToday ? 'border-blue-300 ring-1 ring-blue-100' : 'border-slate-200')}>
-      <div className="flex items-center justify-between mb-2">
-        <p className={clsx('text-sm font-semibold', isToday ? 'text-blue-700' : 'text-slate-800')}>{dayLabel(date)}</p>
-        <span className="text-xs text-slate-400">{formatDateDisplay(date)}</span>
+    <div className={clsx('rounded-xl border p-3', cardClassFor(date, today, tomorrow))}>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="min-w-0">
+          <p className={clsx('text-sm font-semibold truncate', isToday ? 'text-blue-700' : 'text-slate-800')}>{dayLabel(date)}</p>
+          <span className="text-xs text-slate-400">{formatDateDisplay(date)}</span>
+        </div>
+        {status && (
+          <span className={clsx('text-[9px] font-semibold px-1.5 py-0.5 rounded-full tracking-wide shrink-0 whitespace-nowrap', status.pillClass)}>
+            {status.label}
+          </span>
+        )}
       </div>
 
       <div className="space-y-1.5">
         {sortWorkspaceTasks(tasks).map((task) => (
-          <div key={task.id} className="flex items-center gap-2 group">
+          <div key={task.id} className="flex items-center gap-1.5 group">
             <input
               type="checkbox"
               checked={task.done}
@@ -86,7 +156,15 @@ function DayColumn({
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
               className={clsx('flex-1 min-w-0 text-xs bg-transparent border-none focus:ring-0 px-0', task.done ? 'text-slate-400 line-through' : 'text-slate-700')}
             />
-            <PriorityLights value={task.priority} editable={!locked} onChange={(p) => onPriority(task, p)} compact />
+            <PriorityDot priority={task.priority} editable={!locked} onChange={(p) => onPriority(task, p)} />
+            <button
+              type="button"
+              onClick={() => onMoveNext(task)}
+              title="Move to next day"
+              className="text-slate-300 hover:text-blue-600 text-xs opacity-0 group-hover:opacity-100 shrink-0"
+            >
+              →
+            </button>
             <button type="button" onClick={() => onDelete(task)} className="text-slate-300 hover:text-rose-600 text-xs opacity-0 group-hover:opacity-100 shrink-0">
               ✕
             </button>
@@ -108,18 +186,18 @@ function DayColumn({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="+ Add task"
-          className="w-full text-xs bg-slate-50 rounded-md px-2 py-1 border border-transparent focus:border-slate-300 focus:outline-none"
+          className="w-full text-xs bg-white/70 rounded-md px-2 py-1 border border-transparent focus:border-slate-300 focus:outline-none"
         />
       </form>
 
       {meetings.length > 0 && (
-        <div className="mt-2.5 pt-2.5 border-t border-slate-100 space-y-1.5">
+        <div className="mt-2.5 pt-2.5 border-t border-slate-200/70 space-y-1.5">
           {meetings.map((m) => (
             <button
               key={m.id}
               type="button"
               onClick={() => onOpenMeeting(m)}
-              className="w-full flex items-center gap-1.5 text-xs text-left bg-violet-50 hover:bg-violet-100 rounded-md px-2 py-1"
+              className="w-full flex items-center gap-1.5 text-xs text-left border-l-[3px] border-violet-500 bg-violet-50 hover:bg-violet-100 rounded-r-md pl-1.5 pr-2 py-1"
             >
               <span className="text-violet-700 shrink-0">{m.startTime || 'All day'}</span>
               <ModeIcon mode={m.mode} />
@@ -132,7 +210,7 @@ function DayColumn({
         </div>
       )}
       <button type="button" onClick={onAddMeeting} className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-700">
-        + Schedule meeting
+        + Meeting
       </button>
     </div>
   );
@@ -167,11 +245,10 @@ export default function Planner() {
   const tasksByDate = useMemo(() => {
     const map = new Map<string, WorkspaceTask[]>();
     for (const t of tasks) {
-      if (!dates.includes(t.date)) continue;
       map.set(t.date, [...(map.get(t.date) ?? []), t]);
     }
     return map;
-  }, [tasks, dates]);
+  }, [tasks]);
   const meetingsByDate = useMemo(() => {
     const map = new Map<string, WorkspaceMeeting[]>();
     for (const m of meetings) {
@@ -181,6 +258,10 @@ export default function Planner() {
     return map;
   }, [meetings, dates]);
 
+  const weekTaskTotal = useMemo(() => dates.reduce((n, d) => n + (tasksByDate.get(d)?.length ?? 0), 0), [dates, tasksByDate]);
+  const weekTaskDone = useMemo(() => dates.reduce((n, d) => n + (tasksByDate.get(d)?.filter((t) => t.done).length ?? 0), 0), [dates, tasksByDate]);
+  const weekMeetingTotal = useMemo(() => dates.reduce((n, d) => n + (meetingsByDate.get(d)?.length ?? 0), 0), [dates, meetingsByDate]);
+
   async function handlePriority(task: WorkspaceTask, priority: WorkspaceTask['priority']) {
     try {
       await updateWorkspaceTaskPriority(task, priority, reviewedToday);
@@ -189,12 +270,22 @@ export default function Planner() {
     }
   }
 
+  function handleMoveNext(task: WorkspaceTask) {
+    const nextDate = addDays(task.date, 1);
+    void moveWorkspaceTaskToDate(task.id, nextDate, tasksByDate.get(nextDate) ?? []);
+  }
+
   if (!profile) return null;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-sm font-semibold text-slate-800">{weekRangeLabel(weekStart)}</h2>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">{weekRangeLabel(weekStart)}</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {weekTaskDone} of {weekTaskTotal} tasks done · {weekMeetingTotal} meeting{weekMeetingTotal === 1 ? '' : 's'}
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => setWeekStart((w) => addDays(w, -7))} className="px-2.5 py-1 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">
             ← Prev
@@ -205,12 +296,19 @@ export default function Planner() {
           <button type="button" onClick={() => setWeekStart((w) => addDays(w, 7))} className="px-2.5 py-1 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">
             Next →
           </button>
+          <button
+            type="button"
+            onClick={() => setDialog({ date: dates.includes(today) ? today : weekStart })}
+            className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shrink-0"
+          >
+            + Meeting
+          </button>
         </div>
       </div>
 
       {error && <p className="text-sm text-rose-600">{error}</p>}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
         {dates.map((date) => (
           <DayColumn
             key={date}
@@ -219,11 +317,14 @@ export default function Planner() {
             meetings={meetingsByDate.get(date) ?? []}
             locked={workspaceTaskPriorityLocked(date, today, tomorrow, reviewedToday)}
             myUid={profile.uid}
+            today={today}
+            tomorrow={tomorrow}
             onAdd={(title) => void addWorkspaceTask({ uid: profile.uid, date, title, existingOnDate: tasksByDate.get(date) ?? [] })}
             onToggle={(task) => void toggleWorkspaceTaskDone(task.id, !task.done)}
             onRename={(task, title) => void renameWorkspaceTask(task.id, title)}
             onPriority={handlePriority}
             onDelete={(task) => void deleteWorkspaceTask(task.id)}
+            onMoveNext={handleMoveNext}
             onAddMeeting={() => setDialog({ date })}
             onOpenMeeting={(meeting) => setDialog({ meeting })}
           />

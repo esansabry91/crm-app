@@ -9,7 +9,7 @@ export function priorityBand(priority: WorkspaceTaskPriority): 'low' | 'medium' 
   return 'low';
 }
 
-const BAND_COLOR: Record<'low' | 'medium' | 'high', string> = {
+export const BAND_COLOR: Record<'low' | 'medium' | 'high', string> = {
   low: '#2a78d6',
   medium: '#eda100',
   high: '#d03b3b',

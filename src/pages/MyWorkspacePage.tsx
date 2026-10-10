@@ -30,15 +30,15 @@ export default function MyWorkspacePage() {
       <header className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
         <h1 className="text-lg font-semibold text-slate-900">My Workspace</h1>
         <p className="text-sm text-slate-500 mt-1">Today's tasks, your weekly planner, and meetings — yours alone.</p>
-        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 mt-3">
+        <div className="flex items-center gap-6 mt-4 border-b border-slate-200">
           {(['today', 'week'] as const).map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => setTab(t)}
               className={clsx(
-                'px-4 py-1.5 text-sm font-medium rounded-md transition',
-                tab === t ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+                'pb-3 -mb-px text-sm font-medium border-b-2 transition',
+                tab === t ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'
               )}
             >
               {t === 'today' ? 'Today Tasks' : 'Weekly Planner'}
@@ -47,7 +47,7 @@ export default function MyWorkspacePage() {
         </div>
       </header>
 
-      <div className="p-6 max-w-5xl mx-auto">{tab === 'today' ? <TodayTasks /> : <Planner />}</div>
+      <div className="p-6 max-w-6xl mx-auto">{tab === 'today' ? <TodayTasks /> : <Planner />}</div>
     </div>
   );
 }

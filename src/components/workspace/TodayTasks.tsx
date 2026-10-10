@@ -4,6 +4,10 @@
  * section, today's meetings panel, and the Celebration trigger when the last open task is ticked
  * off. Self-contained (own Firestore subscriptions), mirroring how EmployeeFeedbackPage.tsx
  * subscribes directly rather than through a shared hook.
+ *
+ * Laid out as a two-column orientation (a big date-heading task card alongside a side "Today's
+ * meetings" panel) matching gdsb-portal's own Today Tasks screen, with a static priority-color
+ * legend next to the heading instead of repeating it on every row.
  */
 import { useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
@@ -11,14 +15,30 @@ import { useAuth } from '../../contexts/AuthContext';
 import { subscribeMyWorkspaceTasks, subscribeWorkspaceDay, addWorkspaceTask, confirmTodayPriorities, deleteWorkspaceTask, moveWorkspaceTaskToDate, renameWorkspaceTask, toggleWorkspaceTaskDone, updateWorkspaceTaskPriority } from '../../services/workspace';
 import { subscribeMyWorkspaceMeetings } from '../../services/workspaceMeetings';
 import { workspaceTaskPriorityLocked, type WorkspaceMeeting, type WorkspaceTask } from '../../types';
-import { dayLabel, formatDateDisplay, todayIso, tomorrowIso, weekdayIndex } from '../../utils/workspaceDates';
-import PriorityLights, { priorityBand, sortWorkspaceTasks } from './PriorityLights';
+import { formatDateDisplay, fullDayLabel, dayLabel, todayIso, tomorrowIso, weekdayIndex } from '../../utils/workspaceDates';
+import PriorityLights, { BAND_COLOR, priorityBand, sortWorkspaceTasks } from './PriorityLights';
 import { Celebration } from './Celebration';
+import MeetingDialog from './MeetingDialog';
 
 function ModeIcon({ mode }: { mode: WorkspaceMeeting['mode'] }) {
   if (mode === 'online') return <span aria-hidden>🔗</span>;
   if (mode === 'physical') return <span aria-hidden>📍</span>;
   return null;
+}
+
+/** Static red/amber/blue key next to the date heading — explains what the per-task priority dots
+ *  mean without repeating a legend on every single row. */
+function PriorityLegend() {
+  return (
+    <div className="flex items-center gap-3 text-xs text-slate-500 shrink-0">
+      {(['high', 'medium', 'low'] as const).map((band) => (
+        <span key={band} className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: BAND_COLOR[band] }} />
+          {band === 'high' ? 'High' : band === 'medium' ? 'Medium' : 'Low'}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function TaskRow({
@@ -83,6 +103,7 @@ export default function TodayTasks() {
   const [newTitle, setNewTitle] = useState('');
   const [celebrate, setCelebrate] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<{ date: string } | { meeting: WorkspaceMeeting } | null>(null);
 
   const today = todayIso();
   const tomorrow = tomorrowIso();
@@ -141,112 +162,147 @@ export default function TodayTasks() {
         <Celebration weekday={weekdayIndex(today)} dayLabel={dayLabel(today)} taskCount={todayTasks.length} onClose={() => setCelebrate(false)} />
       )}
 
-      {todayTasks.length > 0 && (
-        <div className={clsx('rounded-xl border p-4 flex items-center justify-between gap-3 flex-wrap', reviewed ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200')}>
-          <div>
-            <p className={clsx('text-sm font-medium', reviewed ? 'text-emerald-800' : 'text-amber-800')}>
-              {reviewed ? 'Priorities reviewed for today.' : "Review today's priorities before you start."}
-            </p>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {reviewed ? "They're locked in for the rest of today." : 'Once confirmed, today’s priorities lock for the day.'}
-            </p>
+      {dialog && (
+        <MeetingDialog
+          date={'date' in dialog ? dialog.date : dialog.meeting.date}
+          meeting={'meeting' in dialog ? dialog.meeting : null}
+          onClose={() => setDialog(null)}
+        />
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 items-start">
+        {/* Main column — date heading, legend, progress, today's tasks, carried-over box */}
+        <div className="space-y-4 min-w-0">
+          <div className="bg-white rounded-2xl border border-slate-200 p-5">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">Today</p>
+                <h2 className="text-2xl font-semibold text-slate-900 mt-0.5">{fullDayLabel(today)}</h2>
+              </div>
+              <PriorityLegend />
+            </div>
+
+            {todayTasks.length > 0 && (
+              <div className={clsx('rounded-xl border p-4 flex items-center justify-between gap-3 flex-wrap mt-4', reviewed ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200')}>
+                <div>
+                  <p className={clsx('text-sm font-medium', reviewed ? 'text-emerald-800' : 'text-amber-800')}>
+                    {reviewed ? 'Priorities reviewed for today.' : "Review today's priorities before you start."}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {reviewed ? "They're locked in for the rest of today." : 'Once confirmed, today’s priorities lock for the day.'}
+                  </p>
+                </div>
+                {!reviewed && (
+                  <button
+                    type="button"
+                    onClick={() => confirmTodayPriorities(profile.uid, today)}
+                    className="px-3 py-1.5 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg shrink-0"
+                  >
+                    Confirm priorities
+                  </button>
+                )}
+              </div>
+            )}
+
+            {todayTasks.length > 0 && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+                  <span>
+                    {doneCount} / {todayTasks.length} done
+                  </span>
+                  <span>{progress}%</span>
+                </div>
+                <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2 mt-4">
+              {todayTasks.map((task) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  locked={workspaceTaskPriorityLocked(task.date, today, tomorrow, reviewed)}
+                  onToggle={() => handleToggle(task)}
+                  onRename={(title) => renameWorkspaceTask(task.id, title)}
+                  onPriority={(p) => handlePriority(task, p)}
+                  onDelete={() => deleteWorkspaceTask(task.id)}
+                />
+              ))}
+              {todayTasks.length === 0 && <p className="text-sm text-slate-400">Nothing planned for today yet.</p>}
+              {error && <p className="text-sm text-rose-600">{error}</p>}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleAdd();
+                }}
+                className="flex gap-2"
+              >
+                <input
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  placeholder="Add a task for today…"
+                  className="input flex-1"
+                />
+                <button type="submit" className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shrink-0">
+                  Add
+                </button>
+              </form>
+            </div>
           </div>
-          {!reviewed && (
-            <button
-              type="button"
-              onClick={() => confirmTodayPriorities(profile.uid, today)}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg shrink-0"
-            >
-              Confirm priorities
-            </button>
+
+          {carriedOver.length > 0 && (
+            <div className="bg-amber-50/60 rounded-2xl border border-amber-100 p-4">
+              <h3 className="text-sm font-semibold text-amber-800 mb-2">Still open from earlier this week</h3>
+              <div className="space-y-2">
+                {carriedOver.map((task) => (
+                  <div key={task.id} className="flex items-center gap-3 bg-white rounded-xl border border-amber-100 px-3 py-2.5">
+                    <input type="checkbox" checked={task.done} onChange={() => handleToggle(task)} className="h-4 w-4 rounded border-slate-300 text-blue-600 shrink-0" />
+                    <span className="flex-1 min-w-0 text-sm text-slate-700 truncate">{task.title}</span>
+                    <span className="text-xs text-slate-400 shrink-0">{formatDateDisplay(task.date)}</span>
+                    <button
+                      type="button"
+                      onClick={() => moveWorkspaceTaskToDate(task.id, today, todayTasks)}
+                      className="text-xs font-medium text-blue-600 hover:text-blue-700 shrink-0"
+                    >
+                      Move to today
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
-      )}
 
-      {todayTasks.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-            <span>
-              {doneCount} / {todayTasks.length} done
-            </span>
-            <span>{progress}%</span>
+        {/* Side column — today's meetings */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 lg:sticky lg:top-20">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-slate-800">Today’s meetings</h3>
+            <button type="button" onClick={() => setDialog({ date: today })} className="text-xs font-medium text-blue-600 hover:text-blue-700 shrink-0">
+              + Meeting
+            </button>
           </div>
-          <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-            <div className="h-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
-          </div>
-        </div>
-      )}
-
-      {todayMeetings.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <h3 className="text-sm font-semibold text-slate-800 mb-2">Today’s meetings</h3>
           <div className="space-y-2">
             {todayMeetings.map((m) => (
-              <div key={m.id} className="flex items-center gap-2 text-sm">
-                <span className="text-slate-400 w-16 shrink-0">{m.startTime || 'All day'}</span>
-                <ModeIcon mode={m.mode} />
-                <span className="text-slate-800 truncate">{m.title}</span>
-                {m.organizerUid !== profile.uid && <span className="text-xs text-slate-400 shrink-0">with {m.organizerName}</span>}
-              </div>
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setDialog({ meeting: m })}
+                className="w-full text-left border-l-[3px] border-violet-500 bg-violet-50 hover:bg-violet-100 rounded-r-lg pl-3 pr-3 py-2"
+              >
+                <p className="text-xs font-medium text-violet-600">{m.startTime || 'All day'}</p>
+                <p className="text-sm text-violet-900 truncate flex items-center gap-1 mt-0.5">
+                  <ModeIcon mode={m.mode} />
+                  {m.title}
+                </p>
+                {m.organizerUid !== profile.uid && <p className="text-[11px] text-violet-500 mt-0.5">with {m.organizerName}</p>}
+              </button>
             ))}
+            {todayMeetings.length === 0 && <p className="text-xs text-slate-400">No meetings today.</p>}
           </div>
         </div>
-      )}
-
-      <div className="space-y-2">
-        {todayTasks.map((task) => (
-          <TaskRow
-            key={task.id}
-            task={task}
-            locked={workspaceTaskPriorityLocked(task.date, today, tomorrow, reviewed)}
-            onToggle={() => handleToggle(task)}
-            onRename={(title) => renameWorkspaceTask(task.id, title)}
-            onPriority={(p) => handlePriority(task, p)}
-            onDelete={() => deleteWorkspaceTask(task.id)}
-          />
-        ))}
-        {todayTasks.length === 0 && <p className="text-sm text-slate-400">Nothing planned for today yet.</p>}
-        {error && <p className="text-sm text-rose-600">{error}</p>}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void handleAdd();
-          }}
-          className="flex gap-2"
-        >
-          <input
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="Add a task for today…"
-            className="input flex-1"
-          />
-          <button type="submit" className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shrink-0">
-            Add
-          </button>
-        </form>
       </div>
-
-      {carriedOver.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-slate-800 mb-2">Carried over from earlier</h3>
-          <div className="space-y-2">
-            {carriedOver.map((task) => (
-              <div key={task.id} className="flex items-center gap-3 bg-slate-50 rounded-xl border border-slate-200 px-3 py-2.5">
-                <input type="checkbox" checked={task.done} onChange={() => handleToggle(task)} className="h-4 w-4 rounded border-slate-300 text-blue-600 shrink-0" />
-                <span className="flex-1 min-w-0 text-sm text-slate-700 truncate">{task.title}</span>
-                <span className="text-xs text-slate-400 shrink-0">{formatDateDisplay(task.date)}</span>
-                <button
-                  type="button"
-                  onClick={() => moveWorkspaceTaskToDate(task.id, today, todayTasks)}
-                  className="text-xs font-medium text-blue-600 hover:text-blue-700 shrink-0"
-                >
-                  Move to today
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

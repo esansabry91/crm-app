@@ -7,7 +7,22 @@
  */
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const WEEKDAY_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_FULL = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 
 /** Today as `YYYY-MM-DD` in Kuala Lumpur, whatever the device's own time zone is. */
 export function todayIso(): string {
@@ -55,6 +70,12 @@ export function weekDates(start: string): string[] {
 export function dayLabel(iso: string): string {
   const [, m, d] = iso.split('-').map(Number);
   return `${WEEKDAY_LABELS[weekdayIndex(iso)]} ${d} ${MONTH_LABELS[m - 1]}`;
+}
+
+/** `Friday, 10 October` — the big date heading on the Today Tasks card. */
+export function fullDayLabel(iso: string): string {
+  const [, m, d] = iso.split('-').map(Number);
+  return `${WEEKDAY_FULL[weekdayIndex(iso)]}, ${d} ${MONTH_FULL[m - 1]}`;
 }
 
 /** `13/10/2026` — for compact display. */
