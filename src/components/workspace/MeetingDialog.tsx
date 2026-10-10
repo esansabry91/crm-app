@@ -53,6 +53,7 @@ export default function MeetingDialog({ date, meeting, onClose }: { date: string
   const [location, setLocation] = useState(meeting?.location ?? '');
   const [directory, setDirectory] = useState<WorkspaceDirectoryEntry[]>([]);
   const [search, setSearch] = useState('');
+  const [attendeeDropdownOpen, setAttendeeDropdownOpen] = useState(false);
   const [selected, setSelected] = useState<Map<string, string>>(
     () => new Map(meeting ? Object.values(meeting.attendees).filter((a) => a.uid !== meeting.organizerUid).map((a) => [a.uid, a.name]) : [])
   );
@@ -67,24 +68,33 @@ export default function MeetingDialog({ date, meeting, onClose }: { date: string
     return subscribeOwnMeetingMinutes(meeting.id, profile.uid, setMinutes);
   }, [meeting?.id, profile?.uid]);
 
+  // Only suggests people not already added, and only once something's actually been typed — no
+  // standing list of every colleague to scroll through (see addAttendee()'s own doc comment).
   const candidates = useMemo(
     () =>
       directory
-        .filter((d) => d.active && d.uid !== profile?.uid)
-        .filter((d) => !search.trim() || d.name.toLowerCase().includes(search.trim().toLowerCase()))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [directory, search, profile?.uid]
+        .filter((d) => d.active && d.uid !== profile?.uid && !selected.has(d.uid))
+        .filter((d) => search.trim() && d.name.toLowerCase().includes(search.trim().toLowerCase()))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .slice(0, 8),
+    [directory, search, profile?.uid, selected]
   );
 
   function applyDuration(minutesLength: number) {
     setEndTime(toTime(toMin(startTime) + minutesLength));
   }
 
-  function toggleAttendee(entry: WorkspaceDirectoryEntry) {
+  /** Picking a suggestion from the dropdown adds them as a chip and clears the search box, ready
+   *  to type the next name — a type-ahead add, not a checklist to tick. */
+  function addAttendee(entry: WorkspaceDirectoryEntry) {
+    setSelected((prev) => new Map(prev).set(entry.uid, entry.name));
+    setSearch('');
+  }
+
+  function removeAttendee(uid: string) {
     setSelected((prev) => {
       const next = new Map(prev);
-      if (next.has(entry.uid)) next.delete(entry.uid);
-      else next.set(entry.uid, entry.name);
+      next.delete(uid);
       return next;
     });
   }
@@ -228,19 +238,50 @@ export default function MeetingDialog({ date, meeting, onClose }: { date: string
             </div>
             <div>
               <label className="text-xs font-medium text-slate-500">Invite attendees</label>
-              <input value={search} onChange={(e) => setSearch(e.target.value)} className="input mt-1" placeholder="Search colleagues…" />
-              <div className="mt-1.5 max-h-32 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
-                {candidates.map((c) => (
-                  <label key={c.uid} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer hover:bg-slate-50">
-                    <input type="checkbox" checked={selected.has(c.uid)} onChange={() => toggleAttendee(c)} className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600" />
-                    <span className="truncate">{c.name}</span>
-                    <span className="text-xs text-slate-400 ml-auto shrink-0">{c.department}</span>
-                  </label>
-                ))}
-                {candidates.length === 0 && <p className="text-xs text-slate-400 px-2 py-1.5">No matches.</p>}
+              <div className="relative mt-1">
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onFocus={() => setAttendeeDropdownOpen(true)}
+                  // Delayed so a dropdown row's onClick still fires — blur beats click otherwise.
+                  onBlur={() => setTimeout(() => setAttendeeDropdownOpen(false), 120)}
+                  className="input"
+                  placeholder="Type a colleague's name…"
+                />
+                {attendeeDropdownOpen && search.trim() && (
+                  <div className="absolute z-10 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg divide-y divide-slate-100">
+                    {candidates.map((c) => (
+                      <button
+                        key={c.uid}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => addAttendee(c)}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-left hover:bg-slate-50"
+                      >
+                        <span className="truncate">{c.name}</span>
+                        <span className="text-xs text-slate-400 ml-auto shrink-0">{c.department}</span>
+                      </button>
+                    ))}
+                    {candidates.length === 0 && <p className="text-xs text-slate-400 px-2 py-1.5">No matches.</p>}
+                  </div>
+                )}
               </div>
               {selected.size > 0 && (
-                <p className="text-xs text-slate-500 mt-1">{Array.from(selected.values()).join(', ')}</p>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {Array.from(selected, ([uid, name]) => (
+                    <span key={uid} className="inline-flex items-center gap-1 pl-2 pr-1 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-100 rounded-full">
+                      {name}
+                      <button
+                        type="button"
+                        onClick={() => removeAttendee(uid)}
+                        aria-label={`Remove ${name}`}
+                        className="text-blue-400 hover:text-blue-700 leading-none px-0.5"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
           </>
