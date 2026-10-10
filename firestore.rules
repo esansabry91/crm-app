@@ -833,16 +833,40 @@ service cloud.firestore {
     // A deliberately minimal name/department directory, NOT the /users collection itself (see
     // that match block's much narrower read rule above) — every active user can read this one,
     // so the Meeting attendee picker can show every colleague's name regardless of role/branch,
-    // without exposing anyone's email/role/account-active state. Each user may only ever write
-    // their OWN entry, and only mirroring what their own /users doc already says.
+    // without exposing anyone's email/role/account-active state. Each user creates and updates
+    // their OWN entry, mirroring what their own /users doc already says; an admin or the matching
+    // Branch Manager may additionally flip just `active` (see the update rule below), so this
+    // directory never lags behind a deactivation/removal they perform on someone else's account.
     match /workspaceDirectory/{uid} {
+      // A Branch Manager may flip `active` on an Operation Staff directory entry in their OWN
+      // branch, mirroring /users' own isOwnBranchOperationStaff() scoping — re-derived here from
+      // userDoc(uid) since role isn't itself a field on this minimal directory doc.
+      function isOwnBranchOperationStaffDirectory() {
+        return (userDoc(uid).data.role == 'dutyStaff' || userDoc(uid).data.role == 'operationAdmin')
+          && userDoc(uid).data.department == myDepartment();
+      }
       allow read: if isActiveUser();
-      allow write: if isSignedIn() && request.auth.uid == uid
+      allow create: if isSignedIn() && request.auth.uid == uid
         && request.resource.data.uid == uid
         && request.resource.data.name == userDoc(request.auth.uid).data.name
         && request.resource.data.department == userDoc(request.auth.uid).data.department
         && request.resource.data.active == (userDoc(request.auth.uid).data.active != false)
         && request.resource.data.keys().hasOnly(['uid', 'name', 'department', 'active']);
+      // Same self-write shape as create, PLUS: an admin, or a Branch Manager deactivating/removing
+      // their own branch's Operation Staff (see deactivateUser()/deleteUserProfile() in
+      // services/users.ts), may flip ONLY this doc's `active` field — never name/department — so a
+      // deactivated or removed account stops showing up as an invitable Meeting attendee right
+      // away, instead of waiting on that account's own next login, which it can never make again.
+      allow update: if (isSignedIn() && request.auth.uid == uid
+          && request.resource.data.uid == uid
+          && request.resource.data.name == userDoc(request.auth.uid).data.name
+          && request.resource.data.department == userDoc(request.auth.uid).data.department
+          && request.resource.data.active == (userDoc(request.auth.uid).data.active != false)
+          && request.resource.data.keys().hasOnly(['uid', 'name', 'department', 'active']))
+        || (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active']))
+        || (isBranchManager()
+            && isOwnBranchOperationStaffDirectory()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active']));
     }
 
     match /workspaceMeetings/{meetingId} {

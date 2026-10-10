@@ -19,6 +19,7 @@ import MyWorkspacePage from './pages/MyWorkspacePage';
 import NewTenderWatcher from './components/notifications/NewTenderWatcher';
 import TenderAssignedWatcher from './components/notifications/TenderAssignedWatcher';
 import DailyPriorityPrompt from './components/workspace/DailyPriorityPrompt';
+import WorkspaceDirectorySync from './components/workspace/WorkspaceDirectorySync';
 
 /** An "Operation Staff"/"Operation Admin", "Payroll", "HR", or "HR Manager" account can only ever
  *  reach Duty Roster, a "Finance" account can only ever reach Branch Collection; everyone else's
@@ -56,6 +57,10 @@ export default function App() {
         {/* My Workspace's own once-a-day priority-review popup — same "survive navigation"
             reasoning as the two watchers above. */}
         <DailyPriorityPrompt />
+        {/* Keeps every signed-in user's /workspaceDirectory entry current for the life of the
+            session, not just while My Workspace happens to be open — see that component's own
+            doc comment. */}
+        <WorkspaceDirectorySync />
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
           <Route

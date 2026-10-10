@@ -4,13 +4,15 @@
  * Tasks uses (today locked once reviewed, tomorrow always open, every other day fixed), and
  * meeting scheduling (via MeetingDialog).
  *
- * Laid out as a horizontal day-grid (wrapping responsively) matching gdsb-portal's own Weekly
- * planner screen: a header with week navigation, a done/meeting-count summary for the visible
- * week, and a header-level "+ Meeting" action; each day column carries a PAST / TODAY /
- * TOMORROW · SET PRIORITIES / WEEKEND status pill and a background to match — today blue,
- * tomorrow amber, any past day muted slate (a past weekend a shade darker still), and every other
- * weekend day (Saturday/Sunday) its own teal tint even when it's neither past, today, nor
- * tomorrow — a background rule of its own, independent of the past-day rule, per how this was
+ * Laid out as a fixed-width, horizontally-scrolling day strip — matching gdsb-portal's own
+ * side-scrolling 7-column Weekly planner, not a grid that wraps/squeezes at wider breakpoints
+ * (squeezing a 7th column that tight is what truncated day labels and pushed status pills past
+ * the page edge before this). A header carries week navigation, a done/meeting-count summary for
+ * the visible week, and a header-level "+ Meeting" action; each day column carries a PAST / TODAY
+ * / TOMORROW · SET PRIORITIES / WEEKEND status pill on its own line and a background to match —
+ * today blue, tomorrow amber, any past day muted slate (a past weekend a shade darker still), and
+ * every other weekend day (Saturday/Sunday) its own teal tint even when it's neither past, today,
+ * nor tomorrow — a background rule of its own, independent of the past-day rule, per how this was
  * asked for.
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -124,18 +126,16 @@ function DayColumn({
   const status = statusFor(date, today, tomorrow);
 
   return (
-    <div className={clsx('rounded-xl border p-3', cardClassFor(date, today, tomorrow))}>
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="min-w-0">
-          <p className={clsx('text-sm font-semibold truncate', isToday ? 'text-blue-700' : 'text-slate-800')}>{dayLabel(date)}</p>
-          <span className="text-xs text-slate-400">{formatDateDisplay(date)}</span>
-        </div>
-        {status && (
-          <span className={clsx('text-[9px] font-semibold px-1.5 py-0.5 rounded-full tracking-wide shrink-0 whitespace-nowrap', status.pillClass)}>
-            {status.label}
-          </span>
-        )}
+    <div className={clsx('rounded-xl border p-3 h-full', cardClassFor(date, today, tomorrow))}>
+      <div className="flex items-center justify-between gap-2">
+        <p className={clsx('text-sm font-semibold', isToday ? 'text-blue-700' : 'text-slate-800')}>{dayLabel(date)}</p>
+        <span className="text-xs text-slate-400 shrink-0">{formatDateDisplay(date)}</span>
       </div>
+      {status && (
+        <span className={clsx('inline-block mt-1.5 mb-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full tracking-wide', status.pillClass)}>
+          {status.label}
+        </span>
+      )}
 
       <div className="space-y-1.5">
         {sortWorkspaceTasks(tasks).map((task) => (
@@ -308,27 +308,30 @@ export default function Planner() {
 
       {error && <p className="text-sm text-rose-600">{error}</p>}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
-        {dates.map((date) => (
-          <DayColumn
-            key={date}
-            date={date}
-            tasks={tasksByDate.get(date) ?? []}
-            meetings={meetingsByDate.get(date) ?? []}
-            locked={workspaceTaskPriorityLocked(date, today, tomorrow, reviewedToday)}
-            myUid={profile.uid}
-            today={today}
-            tomorrow={tomorrow}
-            onAdd={(title) => void addWorkspaceTask({ uid: profile.uid, date, title, existingOnDate: tasksByDate.get(date) ?? [] })}
-            onToggle={(task) => void toggleWorkspaceTaskDone(task.id, !task.done)}
-            onRename={(task, title) => void renameWorkspaceTask(task.id, title)}
-            onPriority={handlePriority}
-            onDelete={(task) => void deleteWorkspaceTask(task.id)}
-            onMoveNext={handleMoveNext}
-            onAddMeeting={() => setDialog({ date })}
-            onOpenMeeting={(meeting) => setDialog({ meeting })}
-          />
-        ))}
+      <div className="overflow-x-auto -mx-1 px-1 pb-1">
+        <div className="flex items-stretch gap-3" style={{ width: 'max-content' }}>
+          {dates.map((date) => (
+            <div key={date} className="w-60 shrink-0">
+              <DayColumn
+                date={date}
+                tasks={tasksByDate.get(date) ?? []}
+                meetings={meetingsByDate.get(date) ?? []}
+                locked={workspaceTaskPriorityLocked(date, today, tomorrow, reviewedToday)}
+                myUid={profile.uid}
+                today={today}
+                tomorrow={tomorrow}
+                onAdd={(title) => void addWorkspaceTask({ uid: profile.uid, date, title, existingOnDate: tasksByDate.get(date) ?? [] })}
+                onToggle={(task) => void toggleWorkspaceTaskDone(task.id, !task.done)}
+                onRename={(task, title) => void renameWorkspaceTask(task.id, title)}
+                onPriority={handlePriority}
+                onDelete={(task) => void deleteWorkspaceTask(task.id)}
+                onMoveNext={handleMoveNext}
+                onAddMeeting={() => setDialog({ date })}
+                onOpenMeeting={(meeting) => setDialog({ meeting })}
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
       {dialog && (

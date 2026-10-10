@@ -1,5 +1,5 @@
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth';
-import { deleteDoc, doc, setDoc, updateDoc } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db, disposeSecondaryApp, getSecondaryAuth } from '../firebase';
 import type { Role } from '../types';
 
@@ -65,14 +65,37 @@ export async function updateUserProfile(
 }
 
 /**
+ * Flips this uid's /workspaceDirectory entry's `active` field to match, if they have one —
+ * see firestore.rules' /workspaceDirectory update rule, which now lets an admin or the matching
+ * Branch Manager make exactly this one-field change on someone else's entry. A no-op when the
+ * target never had a directory entry (never signed in since WorkspaceDirectorySync shipped):
+ * there's nothing to go stale, since no entry means they already don't show up as an invite
+ * candidate. Always called BEFORE any corresponding /users change below, while /users/{uid}
+ * still exists, since the update rule's Branch Manager branch re-derives role/department from it.
+ */
+async function mirrorWorkspaceDirectoryActive(uid: string, active: boolean) {
+  const ref = doc(db, 'workspaceDirectory', uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  await updateDoc(ref, { active });
+}
+
+/**
  * Deactivates a user's CRM profile so they can no longer sign in effectively (Firestore rules
  * check `active`). Does not delete the underlying Firebase Auth account — deleting arbitrary
  * Auth users requires the Admin SDK (a Cloud Function), which is outside this project's scope.
+ * Also mirrors `active: false` into their /workspaceDirectory entry (if any) so they stop
+ * appearing as an invitable Meeting attendee for everyone else immediately, rather than only
+ * once they next sign in — which, now deactivated, they no longer can.
  */
 export async function deactivateUser(uid: string) {
+  await mirrorWorkspaceDirectoryActive(uid, false);
   await updateDoc(doc(db, 'users', uid), { active: false });
 }
 
+/** Same /workspaceDirectory mirroring as deactivateUser() above, then removes the /users profile
+ *  itself — see that function's doc comment for why the mirror has to happen first. */
 export async function deleteUserProfile(uid: string) {
+  await mirrorWorkspaceDirectoryActive(uid, false);
   await deleteDoc(doc(db, 'users', uid));
 }

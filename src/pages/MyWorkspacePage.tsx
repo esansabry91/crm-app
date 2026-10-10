@@ -4,10 +4,9 @@
  * above WorkspaceTask in types.ts). Reachable by every role, exactly like Employee Feedback: each
  * person only ever sees their own tasks and the meetings they organize or are invited to.
  */
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import clsx from 'clsx';
 import { useAuth } from '../contexts/AuthContext';
-import { syncOwnWorkspaceDirectoryEntry } from '../services/workspaceDirectory';
 import TodayTasks from '../components/workspace/TodayTasks';
 import Planner from '../components/workspace/Planner';
 
@@ -17,11 +16,9 @@ export default function MyWorkspacePage() {
   const { profile } = useAuth();
   const [tab, setTab] = useState<Tab>('today');
 
-  // Keeps this user's /workspaceDirectory entry current the moment they open My Workspace — see
-  // that service's own doc comment for why a separate, minimal directory exists at all.
-  useEffect(() => {
-    if (profile) void syncOwnWorkspaceDirectoryEntry(profile);
-  }, [profile?.uid, profile?.name, profile?.department, profile?.active]);
+  // The /workspaceDirectory sync itself now lives in WorkspaceDirectorySync.tsx (mounted once in
+  // App.tsx for the whole session) so every signed-in user becomes an invitable Meeting attendee
+  // right away, not only once they happen to open this page.
 
   if (!profile) return null;
 
@@ -47,7 +44,7 @@ export default function MyWorkspacePage() {
         </div>
       </header>
 
-      <div className="p-6 max-w-6xl mx-auto">{tab === 'today' ? <TodayTasks /> : <Planner />}</div>
+      <div className="p-6 max-w-7xl mx-auto">{tab === 'today' ? <TodayTasks /> : <Planner />}</div>
     </div>
   );
 }
