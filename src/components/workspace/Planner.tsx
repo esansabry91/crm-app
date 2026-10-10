@@ -10,10 +10,10 @@
  * the page edge before this). A header carries week navigation, a done/meeting-count summary for
  * the visible week, and a header-level "+ Meeting" action; each day column carries a PAST / TODAY
  * / TOMORROW · SET PRIORITIES / WEEKEND status pill on its own line and a background to match —
- * today blue, tomorrow amber, any past day muted slate (a past weekend a shade darker still), and
- * every other weekend day (Saturday/Sunday) its own teal tint even when it's neither past, today,
- * nor tomorrow — a background rule of its own, independent of the past-day rule, per how this was
- * asked for.
+ * today blue, tomorrow amber, any past day a light grey (weekend or not — past wins outright),
+ * and every other weekend day (Saturday/Sunday) its own orange tint when it's neither past,
+ * today, nor tomorrow — a background rule of its own, independent of the past-day rule, per how
+ * this was asked for.
  */
 import { useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
@@ -45,25 +45,25 @@ interface DayStatus {
   pillClass: string;
 }
 
-/** PAST beats WEEKEND (a past Saturday is still "past" first), but TODAY/TOMORROW beat both —
- *  those two carry priority-lock consequences a plain weekend label doesn't. */
+/** PAST beats WEEKEND (once a day is past, it reads as past — grey — whether or not it was also
+ *  a weekend), but TODAY/TOMORROW beat both — those two carry priority-lock consequences a plain
+ *  past/weekend label doesn't. */
 function statusFor(date: string, today: string, tomorrow: string): DayStatus | null {
   if (date === today) return { label: 'TODAY', pillClass: 'bg-blue-600 text-white' };
   if (date === tomorrow) return { label: 'TOMORROW · SET PRIORITIES', pillClass: 'bg-amber-500 text-white' };
   if (date < today) return { label: 'PAST', pillClass: 'bg-slate-400 text-white' };
-  if (weekdayIndex(date) >= 5) return { label: 'WEEKEND', pillClass: 'bg-teal-500 text-white' };
+  if (weekdayIndex(date) >= 5) return { label: 'WEEKEND', pillClass: 'bg-orange-500 text-white' };
   return null;
 }
 
-/** The day-card background — today/tomorrow/past/weekend each get their own, and a day that's
- *  both past AND a weekend gets a visibly darker shade of the past treatment rather than losing
- *  the weekend distinction entirely. */
+/** The day-card background — today blue, tomorrow amber, any past day a light grey (regardless of
+ *  weekend — past wins outright, no darker/blended variant), and every other weekend day
+ *  (Saturday/Sunday) that ISN'T past/today/tomorrow its own orange tint. */
 function cardClassFor(date: string, today: string, tomorrow: string): string {
-  const isWeekend = weekdayIndex(date) >= 5;
   if (date === today) return 'bg-blue-50/70 border-blue-300 ring-1 ring-blue-100';
   if (date === tomorrow) return 'bg-amber-50/70 border-amber-200';
-  if (date < today) return isWeekend ? 'bg-slate-100/90 border-slate-200' : 'bg-slate-50 border-slate-200';
-  if (isWeekend) return 'bg-teal-50/60 border-teal-100';
+  if (date < today) return 'bg-slate-100 border-slate-200';
+  if (weekdayIndex(date) >= 5) return 'bg-orange-50 border-orange-200';
   return 'bg-white border-slate-200';
 }
 

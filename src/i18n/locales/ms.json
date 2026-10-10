@@ -2120,6 +2120,13 @@
       "deactivateAction": "Nyahaktifkan",
       "removingEllipsis": "Mengalih keluar…",
       "removeAction": "Alih keluar",
+      "syncDirectoryTitle": "Direktori Mesyuarat",
+      "syncDirectoryDescription": "Nama setiap orang perlu berada dalam direktori ini sebelum mereka boleh dicari dan dijemput ke mesyuarat dalam Ruang Kerja Saya. Akaun baharu (dan sesiapa yang log masuk sejak itu) ditambah secara automatik — guna ini untuk mengemas kini sesiapa yang belum log masuk baru-baru ini.",
+      "syncDirectoryButton": "Segerak direktori sekarang",
+      "syncingEllipsis": "Menyegerakkan…",
+      "syncDirectorySuccess_one": "{{count}} akaun diseragamkan — semua kini boleh dicari dan dijemput ke mesyuarat.",
+      "syncDirectorySuccess_other": "{{count}} akaun diseragamkan — semua kini boleh dicari dan dijemput ke mesyuarat.",
+      "syncDirectoryError": "Sesuatu tidak kena semasa menyegerakkan direktori. Sila cuba lagi.",
       "footerNoteDeactivateRest": "menyekat akses CRM serta-merta tetapi mengekalkan rekod mereka (berguna jika mereka hanya bercuti).",
       "footerNoteRemoveRest": "memadamkan profil CRM mereka sepenuhnya — mereka akan hilang daripada senarai kakitangan/pemilik, walaupun tender lepas mereka kekal dengan nama mereka masih terlekat. Kedua-duanya tidak memadamkan log masuk e-mel/kata laluan sebenar mereka — aplikasi ini berjalan pada pelan percuma Firebase tanpa persediaan tambahan yang diperlukan untuk berbuat demikian secara automatik, jadi untuk membatalkan sepenuhnya log masuk bekas kakitangan, padamkan akaun mereka secara manual dalam Firebase Console → Authentication → Users."
     },

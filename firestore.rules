@@ -846,12 +846,24 @@ service cloud.firestore {
           && userDoc(uid).data.department == myDepartment();
       }
       allow read: if isActiveUser();
-      allow create: if isSignedIn() && request.auth.uid == uid
-        && request.resource.data.uid == uid
-        && request.resource.data.name == userDoc(request.auth.uid).data.name
-        && request.resource.data.department == userDoc(request.auth.uid).data.department
-        && request.resource.data.active == (userDoc(request.auth.uid).data.active != false)
-        && request.resource.data.keys().hasOnly(['uid', 'name', 'department', 'active']);
+      // Self-create (the normal path, on every sign-in — see WorkspaceDirectorySync.tsx), OR an
+      // admin backfilling/correcting ANY uid's entry to exactly match that uid's own /users doc —
+      // see backfillWorkspaceDirectoryEntries() in services/workspaceDirectory.ts, UserManager.tsx's
+      // "Sync directory" action. Covers an account that signed in before this directory existed
+      // and hasn't signed in again since, without an admin being able to write anything that
+      // doesn't already match that account's real name/department/active value.
+      allow create: if (isSignedIn() && request.auth.uid == uid
+          && request.resource.data.uid == uid
+          && request.resource.data.name == userDoc(request.auth.uid).data.name
+          && request.resource.data.department == userDoc(request.auth.uid).data.department
+          && request.resource.data.active == (userDoc(request.auth.uid).data.active != false)
+          && request.resource.data.keys().hasOnly(['uid', 'name', 'department', 'active']))
+        || (isAdmin()
+            && request.resource.data.uid == uid
+            && request.resource.data.name == userDoc(uid).data.name
+            && request.resource.data.department == userDoc(uid).data.department
+            && request.resource.data.active == (userDoc(uid).data.active != false)
+            && request.resource.data.keys().hasOnly(['uid', 'name', 'department', 'active']));
       // Same self-write shape as create, PLUS: an admin, or a Branch Manager deactivating/removing
       // their own branch's Operation Staff (see deactivateUser()/deleteUserProfile() in
       // services/users.ts), may flip ONLY this doc's `active` field — never name/department — so a

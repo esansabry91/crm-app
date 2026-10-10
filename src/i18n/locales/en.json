@@ -2129,6 +2129,13 @@
       "deactivateAction": "Deactivate",
       "removingEllipsis": "Removing…",
       "removeAction": "Remove",
+      "syncDirectoryTitle": "Meeting Directory",
+      "syncDirectoryDescription": "Everyone's name has to be in this directory before they can be found and invited to a meeting in My Workspace. New accounts (and anyone signed in since) are added automatically — use this to backfill anyone who hasn't signed in recently.",
+      "syncDirectoryButton": "Sync directory now",
+      "syncingEllipsis": "Syncing…",
+      "syncDirectorySuccess_one": "Synced {{count}} account — everyone can now be found and invited to meetings.",
+      "syncDirectorySuccess_other": "Synced {{count}} accounts — everyone can now be found and invited to meetings.",
+      "syncDirectoryError": "Something went wrong syncing the directory. Please try again.",
       "footerNoteDeactivateRest": "blocks CRM access instantly but keeps their record (useful if they're just on leave).",
       "footerNoteRemoveRest": "deletes their CRM profile entirely — they'll vanish from staff/owner lists, though their past tenders stay put with their name attached. Neither one deletes their actual email/password sign-in — this app runs on Firebase's free plan without the extra setup needed to do that automatically, so to fully revoke a former staff member's login, delete their account manually in Firebase Console → Authentication → Users."
     },

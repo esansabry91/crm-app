@@ -5,6 +5,7 @@ import { useUsers } from '../../hooks/useUsers';
 import { useBranches } from '../../hooks/useBranches';
 import { useAuth } from '../../contexts/AuthContext';
 import { createStaffAccount, updateUserProfile, deactivateUser, deleteUserProfile } from '../../services/users';
+import { backfillWorkspaceDirectoryEntries } from '../../services/workspaceDirectory';
 import type { Role } from '../../types';
 
 // Translation keys for the confirmation prompts below — matches what each <option> shows,
@@ -52,6 +53,8 @@ export default function UserManager() {
   const [removingUid, setRemovingUid] = useState<string | null>(null);
   const [migrating, setMigrating] = useState(false);
   const [migrateMsg, setMigrateMsg] = useState<string | null>(null);
+  const [syncingDirectory, setSyncingDirectory] = useState(false);
+  const [syncDirectoryMsg, setSyncDirectoryMsg] = useState<string | null>(null);
 
   // One-time cleanup for accounts created before the role was renamed from "staff" to
   // "branchManager" — their Firestore `role` field still literally says "staff". Functionally
@@ -87,6 +90,20 @@ export default function UserManager() {
       console.error(err);
     } finally {
       setMigrating(false);
+    }
+  };
+
+  const handleSyncDirectory = async () => {
+    setSyncingDirectory(true);
+    setSyncDirectoryMsg(null);
+    try {
+      const count = await backfillWorkspaceDirectoryEntries(users);
+      setSyncDirectoryMsg(t('admin.userManager.syncDirectorySuccess', { count }));
+    } catch (err) {
+      setSyncDirectoryMsg(t('admin.userManager.syncDirectoryError'));
+      console.error(err);
+    } finally {
+      setSyncingDirectory(false);
     }
   };
 
@@ -355,6 +372,25 @@ export default function UserManager() {
           {t('admin.userManager.footerNoteRemoveRest')}
         </p>
       </div>
+
+      {!isBranchManagerRole && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">{t('admin.userManager.syncDirectoryTitle')}</h3>
+              <p className="text-xs text-slate-400 mt-0.5 max-w-xl">{t('admin.userManager.syncDirectoryDescription')}</p>
+              {syncDirectoryMsg && <p className="text-xs text-emerald-700 mt-1.5">{syncDirectoryMsg}</p>}
+            </div>
+            <button
+              onClick={handleSyncDirectory}
+              disabled={syncingDirectory}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-60 shrink-0"
+            >
+              {syncingDirectory ? t('admin.userManager.syncingEllipsis') : t('admin.userManager.syncDirectoryButton')}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
