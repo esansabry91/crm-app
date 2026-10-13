@@ -896,7 +896,10 @@ service cloud.firestore {
       function isAttendee(data) {
         return request.auth.uid in data.attendees;
       }
-      allow read: if isSignedIn() && (isOrganizer(resource.data) || isAttendee(resource.data));
+      // invitedUids too, so subscribeMyWorkspaceMeetings()'s `invitedUids array-contains me` LIST
+      // query is provable: Firestore can't prove a map-key check (isAttendee) from that query.
+      allow read: if isSignedIn()
+        && (isOrganizer(resource.data) || isAttendee(resource.data) || request.auth.uid in resource.data.invitedUids);
       allow create: if isActiveUser() && request.resource.data.organizerUid == request.auth.uid;
       // The organizer can change anything about their own meeting. An invited attendee may ONLY
       // flip their own attendees.{uid} entry to 'declined' and drop themselves from invitedUids —
