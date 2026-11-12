@@ -1,16 +1,30 @@
-import { Fragment, useMemo, useState, type FormEvent } from 'react';
+import { Fragment, useEffect, useMemo, useState, type FormEvent } from 'react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useTasks } from '../hooks/useTasks';
+import { useTaskTemplates } from '../hooks/useTaskTemplates';
 import { useUsers } from '../hooks/useUsers';
 import { useBranches } from '../hooks/useBranches';
 import StatCard from '../components/analytics/StatCard';
-import { addProgressUpdate, assignTask, closeTask, deleteTask, markTaskDone, reopenTask, updateTaskPriority } from '../services/tasks';
-import type { StaffTask, TaskPriority } from '../types';
+import {
+  addProgressUpdate,
+  assignTask,
+  closeTask,
+  createRecurringTaskTemplate,
+  deleteTask,
+  ensureRecurringTasksForCurrentMonth,
+  markTaskDone,
+  reopenTask,
+  stopRecurringTaskTemplate,
+  updateTaskDeadline,
+  updateTaskPriority,
+} from '../services/tasks';
+import type { StaffTask, TaskPriority, TaskTemplate } from '../types';
 import { isAdminRole } from '../types';
-import { formatDateTime } from '../utils/format';
+import { calendarDaysUntil } from '../utils/calendarDays';
+import { formatDate, formatDateTime } from '../utils/format';
 
 const ALL_BRANCHES = '__all__';
 const ALL_ASSIGNEES = '__all__';
@@ -50,10 +64,52 @@ function priorityLabel(priority: TaskPriority, t: TFunction): string {
   }
 }
 
+type DeadlineStatusKey = 'none' | 'ongoing' | 'dueSoon' | 'overdue';
+
+/** Color-coded deadline status for a task's `deadline` (yyyy-mm-dd), or `{key: 'none'}` when it
+ *  has none. More than 3 days out is "ongoing," 0-3 days out but not yet passed is "due soon,"
+ *  and a passed deadline is "overdue," with `days` counting whole days past it -- exactly the
+ *  thresholds the Branch Manager asked for. Only meaningful pre-close; callers only ever show
+ *  the badge this produces while `task.status !== 'closed'`. */
+function deadlineStatusFor(deadline: string | null): { key: DeadlineStatusKey; days: number } {
+  const daysUntil = calendarDaysUntil(deadline);
+  if (daysUntil === null) return { key: 'none', days: 0 };
+  if (daysUntil < 0) return { key: 'overdue', days: -daysUntil };
+  if (daysUntil <= 3) return { key: 'dueSoon', days: daysUntil };
+  return { key: 'ongoing', days: daysUntil };
+}
+
+function deadlineBadgeClass(key: DeadlineStatusKey): string {
+  switch (key) {
+    case 'overdue':
+      return 'bg-rose-50 text-rose-600';
+    case 'dueSoon':
+      return 'bg-amber-50 text-amber-600';
+    case 'ongoing':
+      return 'bg-emerald-50 text-emerald-600';
+    default:
+      return 'bg-slate-100 text-slate-400';
+  }
+}
+
+function deadlineBadgeLabel(status: { key: DeadlineStatusKey; days: number }, t: TFunction): string {
+  switch (status.key) {
+    case 'overdue':
+      return t('taskBoard.statusOverdueBy', { days: status.days });
+    case 'dueSoon':
+      return status.days === 0 ? t('taskBoard.statusDueToday') : t('taskBoard.statusDueInDays', { days: status.days });
+    case 'ongoing':
+      return t('taskBoard.statusOngoing');
+    default:
+      return t('taskBoard.statusNoDeadline');
+  }
+}
+
 export default function TaskBoardPage() {
   const { t } = useTranslation();
   const { profile } = useAuth();
   const { tasks, loading, error: loadError } = useTasks(profile);
+  const { templates } = useTaskTemplates(profile);
   const { users } = useUsers(profile);
   const { branches } = useBranches();
 
@@ -73,6 +129,12 @@ export default function TaskBoardPage() {
   const [assignDept, setAssignDept] = useState('');
   const [assigneeUid, setAssigneeUid] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('Medium');
+  // One-off deadline (yyyy-mm-dd, optional) and the "repeat this every month" path -- mutually
+  // exclusive: a recurring template gets its due date from `dueDay` each month instead (see
+  // handleAssign()), so `deadline` is only read when `isRecurring` is false.
+  const [deadline, setDeadline] = useState('');
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [dueDay, setDueDay] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -114,6 +176,26 @@ export default function TaskBoardPage() {
     () => (isAdmin && branchFilter !== ALL_BRANCHES ? tasks.filter((t) => t.department === branchFilter) : tasks),
     [tasks, isAdmin, branchFilter]
   );
+
+  // Same admin branch-filter scoping as visibleTasks, for the "Recurring Tasks" panel below the
+  // table. useTaskTemplates() already returns [] outright for anyone who isn't canManage, so
+  // this (and the generation effect right after it) are no-ops for a plain staff session.
+  const visibleTemplates = useMemo(
+    () => (isAdmin && branchFilter !== ALL_BRANCHES ? templates.filter((tpl) => tpl.department === branchFilter) : templates),
+    [templates, isAdmin, branchFilter]
+  );
+  const activeTemplates = useMemo(() => visibleTemplates.filter((tpl) => tpl.active), [visibleTemplates]);
+
+  // Generates this month's instance for any active template that doesn't have one yet (see
+  // ensureRecurringTasksForCurrentMonth()'s own doc comment in services/tasks.ts for why this is
+  // safe to call repeatedly / from multiple managers' sessions at once). Runs whenever a
+  // canManage session's own template list changes -- which includes once on mount, right after
+  // useTaskTemplates()'s first snapshot arrives -- so a manager only has to open Task Board after
+  // a new month begins for that month's tasks to reappear; nothing to click.
+  useEffect(() => {
+    if (!canManage || templates.length === 0) return;
+    void ensureRecurringTasksForCurrentMonth(templates);
+  }, [canManage, templates]);
 
   // "Open" never resets on its own — a task assigned last month and still not closed is exactly
   // as open today as it was then. Includes 'staffCompleted' (assignee says done, manager hasn't
@@ -194,6 +276,9 @@ export default function TaskBoardPage() {
     setAssignDept(isManager ? profile?.department || '' : '');
     setAssigneeUid('');
     setPriority('Medium');
+    setDeadline('');
+    setIsRecurring(false);
+    setDueDay('');
     setError(null);
   }
 
@@ -217,23 +302,48 @@ export default function TaskBoardPage() {
       setError(t('taskBoard.errorPickAssignee'));
       return;
     }
+    let parsedDueDay: number | undefined;
+    if (isRecurring && dueDay.trim()) {
+      const parsed = Number(dueDay);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 28) {
+        setError(t('taskBoard.errorInvalidDueDay'));
+        return;
+      }
+      parsedDueDay = parsed;
+    }
     setBusy(true);
     try {
-      await assignTask({
-        title: title.trim(),
-        description: description.trim(),
-        department: effectiveAssignDept,
-        assigneeUid: assignee.uid,
-        assigneeName: assignee.name,
-        priority,
-        createdByUid: profile.uid,
-        createdByName: profile.name,
-      });
-      flash(t('taskBoard.toastAssigned', { title: title.trim(), name: assignee.name }));
+      if (isRecurring) {
+        await createRecurringTaskTemplate({
+          title: title.trim(),
+          description: description.trim(),
+          department: effectiveAssignDept,
+          assigneeUid: assignee.uid,
+          assigneeName: assignee.name,
+          priority,
+          dueDay: parsedDueDay,
+          createdByUid: profile.uid,
+          createdByName: profile.name,
+        });
+        flash(t('taskBoard.toastRecurringCreated', { title: title.trim(), name: assignee.name }));
+      } else {
+        await assignTask({
+          title: title.trim(),
+          description: description.trim(),
+          department: effectiveAssignDept,
+          assigneeUid: assignee.uid,
+          assigneeName: assignee.name,
+          priority,
+          deadline: deadline || undefined,
+          createdByUid: profile.uid,
+          createdByName: profile.name,
+        });
+        flash(t('taskBoard.toastAssigned', { title: title.trim(), name: assignee.name }));
+      }
       resetForm();
       setFormOpen(false);
     } catch (err) {
-      setError(t('taskBoard.errorAssignFailed'));
+      setError(isRecurring ? t('taskBoard.errorRecurringCreateFailed') : t('taskBoard.errorAssignFailed'));
       console.error(err);
     } finally {
       setBusy(false);
@@ -286,6 +396,26 @@ export default function TaskBoardPage() {
     }
   }
 
+  async function handleDeadlineChange(task: StaffTask, next: string) {
+    const normalized = next || null;
+    if (normalized === task.deadline) return;
+    try {
+      await updateTaskDeadline(task.id, normalized);
+    } catch {
+      flash(t('taskBoard.errorDeadlineFailed'));
+    }
+  }
+
+  async function handleStopRecurring(template: TaskTemplate) {
+    if (!window.confirm(t('taskBoard.confirmStopRepeating', { title: template.title }))) return;
+    try {
+      await stopRecurringTaskTemplate(template.id);
+      flash(t('taskBoard.toastStoppedRepeating', { title: template.title }));
+    } catch {
+      flash(t('taskBoard.errorStopRepeatingFailed'));
+    }
+  }
+
   async function handleAddProgressUpdate(task: StaffTask) {
     if (!profile || !progressDraft.trim()) return;
     setProgressBusy(true);
@@ -301,10 +431,10 @@ export default function TaskBoardPage() {
   }
 
   const rows = view === 'open' ? filteredOpenTasks : filteredCompletedTasks;
-  // Task, Priority, Assigned Date, Close Date, Progress Update, Actions = 6 base columns,
-  // plus Assignee (hidden for a staff account viewing only their own tasks) and Confirmed
-  // (Completed view only).
-  const colCount = 6 + (!isStaff ? 1 : 0) + (view === 'completed' ? 1 : 0);
+  // Task, Priority, Deadline, Assigned Date, Close Date, Progress Update, Actions = 7 base
+  // columns, plus Assignee (hidden for a staff account viewing only their own tasks) and
+  // Confirmed (Completed view only).
+  const colCount = 7 + (!isStaff ? 1 : 0) + (view === 'completed' ? 1 : 0);
 
   if (loading) {
     return <div className="p-6 text-sm text-slate-400">{t('taskBoard.loadingEllipsis')}</div>;
@@ -433,6 +563,36 @@ export default function TaskBoardPage() {
                 <option value="Medium">{t('taskBoard.priorityMediumFull')}</option>
                 <option value="Low">{t('taskBoard.priorityLowFull')}</option>
               </select>
+              {!isRecurring && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">{t('taskBoard.deadlineLabel')}</label>
+                  <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="input" />
+                </div>
+              )}
+              <label className={clsx('flex items-center gap-2 text-sm text-slate-700', !isRecurring ? '' : 'sm:col-span-2')}>
+                <input
+                  type="checkbox"
+                  checked={isRecurring}
+                  onChange={(e) => setIsRecurring(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                />
+                {t('taskBoard.recurringCheckboxLabel')}
+              </label>
+              {isRecurring && (
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-slate-500 mb-1">{t('taskBoard.dueDayLabel')}</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={28}
+                    value={dueDay}
+                    onChange={(e) => setDueDay(e.target.value)}
+                    placeholder={t('taskBoard.dueDayPlaceholder')}
+                    className="input sm:max-w-[160px]"
+                  />
+                  <span className="block text-xs text-slate-400 mt-1">{t('taskBoard.recurringHint')}</span>
+                </div>
+              )}
               {error && <p className="sm:col-span-2 text-sm text-rose-600">{error}</p>}
               <button
                 type="submit"
@@ -516,6 +676,7 @@ export default function TaskBoardPage() {
                   <th className="py-2 pr-4 font-medium">{t('taskBoard.colTask')}</th>
                   {!isStaff && <th className="py-2 pr-4 font-medium">{t('taskBoard.colAssignee')}</th>}
                   <th className="py-2 pr-4 font-medium">{t('taskBoard.colPriority')}</th>
+                  <th className="py-2 pr-4 font-medium">{t('taskBoard.colDeadline')}</th>
                   <th className="py-2 pr-4 font-medium">{t('taskBoard.colAssignedDate')}</th>
                   <th className="py-2 pr-4 font-medium">{t('taskBoard.colCloseDate')}</th>
                   <th className="py-2 pr-4 font-medium">{t('taskBoard.colProgressUpdate')}</th>
@@ -528,7 +689,17 @@ export default function TaskBoardPage() {
                   <Fragment key={task.id}>
                     <tr className="border-b border-slate-50 last:border-0 align-top">
                       <td className="py-2.5 pr-4">
-                        <p className="font-medium text-slate-800">{task.title}</p>
+                        <p className="font-medium text-slate-800 flex items-center gap-1.5">
+                          {task.title}
+                          {task.templateId && (
+                            <span
+                              title={t('taskBoard.recurringBadgeTooltip')}
+                              className="text-[10px] font-medium text-indigo-500 bg-indigo-50 rounded-full px-1.5 py-0.5 shrink-0"
+                            >
+                              {t('taskBoard.recurringBadge')}
+                            </span>
+                          )}
+                        </p>
                         {task.description && <p className="text-xs text-slate-400 mt-0.5">{task.description}</p>}
                       </td>
                       {!isStaff && <td className="py-2.5 pr-4 text-slate-600">{task.assigneeName}</td>}
@@ -549,6 +720,28 @@ export default function TaskBoardPage() {
                         ) : (
                           <span className={clsx('text-xs rounded-full px-2 py-1 font-medium', priorityBadgeClass(task.priority))}>
                             {priorityLabel(task.priority, t)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 pr-4 whitespace-nowrap">
+                        {canManage && task.status !== 'closed' ? (
+                          <input
+                            type="date"
+                            value={task.deadline || ''}
+                            onChange={(e) => handleDeadlineChange(task, e.target.value)}
+                            className="input text-xs py-1 px-1.5 w-[132px]"
+                          />
+                        ) : (
+                          <span className="text-slate-500">{task.deadline ? formatDate(task.deadline) : '\u2014'}</span>
+                        )}
+                        {task.deadline && task.status !== 'closed' && (
+                          <span
+                            className={clsx(
+                              'block w-fit mt-1 text-[10px] font-medium rounded-full px-1.5 py-0.5',
+                              deadlineBadgeClass(deadlineStatusFor(task.deadline).key)
+                            )}
+                          >
+                            {deadlineBadgeLabel(deadlineStatusFor(task.deadline), t)}
                           </span>
                         )}
                       </td>
@@ -684,6 +877,48 @@ export default function TaskBoardPage() {
             </table>
           </div>
         </div>
+
+        {canManage && (
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <h3 className="text-sm font-semibold text-slate-800">{t('taskBoard.recurringSectionTitle')}</h3>
+            <p className="text-xs text-slate-400 mt-0.5">{t('taskBoard.recurringSectionSubtitle')}</p>
+            <div className="overflow-x-auto mt-3">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
+                    <th className="py-2 pr-4 font-medium">{t('taskBoard.colTask')}</th>
+                    <th className="py-2 pr-4 font-medium">{t('taskBoard.colAssignee')}</th>
+                    <th className="py-2 pr-4 font-medium">{t('taskBoard.colDueDay')}</th>
+                    <th className="py-2 font-medium text-right">{t('taskBoard.colActions')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeTemplates.map((tpl) => (
+                    <tr key={tpl.id} className="border-b border-slate-50 last:border-0">
+                      <td className="py-2.5 pr-4 font-medium text-slate-800">{tpl.title}</td>
+                      <td className="py-2.5 pr-4 text-slate-600">{tpl.assigneeName}</td>
+                      <td className="py-2.5 pr-4 text-slate-500">
+                        {tpl.dueDay ? t('taskBoard.dayOfMonth', { day: tpl.dueDay }) : '\u2014'}
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <button onClick={() => handleStopRecurring(tpl)} className="text-xs text-slate-400 hover:text-rose-600">
+                          {t('taskBoard.stopRepeatingButton')}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {activeTemplates.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-sm text-slate-400">
+                        {t('taskBoard.recurringSectionEmpty')}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -218,21 +218,22 @@ service cloud.firestore {
 
       // Five narrow, mutually exclusive write shapes — everything else about a task (title,
       // description, department, assignee) is frozen once created:
-      //   1. Manager/admin: change priority any time before the task is closed.
+      //   1. Manager/admin: change priority and/or deadline, together or separately, any time
+      //      before the task is closed.
       //   2. Manager/admin: confirm a staff-completed task ('staffCompleted' -> 'closed').
       //   3. Manager/admin: reopen a staff-completed task that wasn't actually done
       //      ('staffCompleted' -> 'open', clearing staffCompletedAt).
       //   4. The assignee themselves: mark their own open task done ('open' -> 'staffCompleted').
       //   5. Manager/admin OR the assignee: append one entry to progressUpdates (arrayUnion, so
       //      this can never remove/edit an existing entry, only add one) — any time before the
-      //      task is closed, same cutoff as priority above.
+      //      task is closed, same cutoff as priority/deadline above.
       allow update: if isSignedIn()
         && (
           (
             isAdmin() || isTaskManager(resource.data)
           ) && (
             (resource.data.status != 'closed'
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['priority']))
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['priority', 'deadline']))
             || (resource.data.status == 'staffCompleted'
                 && request.resource.data.status == 'closed'
                 && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'closedAt', 'closedByName']))
@@ -255,6 +256,48 @@ service cloud.firestore {
         );
 
       allow delete: if isAdmin() || isTaskManager(resource.data);
+    }
+
+    // ---- Recurring task templates (see TaskTemplate's doc comment in types.ts) ----
+    match /taskTemplates/{templateId} {
+      function isTemplateManager(data) {
+        return isBranchManager() && data.department == myDepartment();
+      }
+
+      allow read: if isSignedIn() && (isAdmin() || isTemplateManager(resource.data));
+
+      // Same assignee verification as /tasks' own create rule above — a manager can only point a
+      // recurring template at a real Operation Staff account in their OWN department.
+      allow create: if isSignedIn()
+        && request.resource.data.active == true
+        && request.resource.data.lastGeneratedMonth == null
+        && (
+          isAdmin()
+          || (
+            isBranchManager()
+            && request.resource.data.department == myDepartment()
+            && (
+              get(/databases/$(database)/documents/users/$(request.resource.data.assigneeUid)).data.role == 'dutyStaff'
+              || get(/databases/$(database)/documents/users/$(request.resource.data.assigneeUid)).data.role == 'operationAdmin'
+            )
+            && get(/databases/$(database)/documents/users/$(request.resource.data.assigneeUid)).data.department == myDepartment()
+          )
+        );
+
+      // Two narrow, mutually exclusive write shapes — title/description/department/assignee/
+      // priority/dueDay are all frozen once created, same "narrow mutable surface" pattern
+      // /tasks itself uses:
+      //   1. The owning manager/admin turns future generation off ("Stop Repeating").
+      //   2. ensureRecurringTasksForCurrentMonth()'s own transaction (services/tasks.ts) stamps
+      //      which month it last generated an instance for.
+      allow update: if isSignedIn()
+        && (isAdmin() || isTemplateManager(resource.data))
+        && (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active'])
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastGeneratedMonth'])
+        );
+
+      allow delete: if isAdmin() || isTemplateManager(resource.data);
     }
 
     // ---- Branches & brands (admin-editable lookup lists) ----

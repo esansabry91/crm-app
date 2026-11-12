@@ -922,6 +922,26 @@ export interface StaffTask {
   assigneeName: string;
   priority: TaskPriority;
   status: 'open' | 'staffCompleted' | 'closed';
+  /**
+   * ISO date (yyyy-mm-dd) this task is due, or null for no deadline — always optional (plenty of
+   * tasks are open-ended). Settable by the Branch Manager/admin at assignment and freely
+   * correctable afterwards any time before the task is closed, same "editable pre-close" lifecycle
+   * as `priority` (see updateTaskDeadline() in services/tasks.ts). Drives the color-coded status
+   * TaskBoardPage.tsx computes and shows next to it — see deadlineStatusFor() there: more than 3
+   * days out is "Ongoing", 0–3 days out is "Due Soon", and a passed deadline is "Overdue",
+   * counting whole days past it. A generated recurring-task instance (see TaskTemplate below)
+   * gets this computed automatically from the template's `dueDay`, clamped to the actual
+   * generation month's length.
+   */
+  deadline: string | null;
+  /**
+   * Set only on a task instance that was auto-generated from a recurring template (see
+   * TaskTemplate and ensureRecurringTasksForCurrentMonth() in services/tasks.ts) — absent on a
+   * plain one-off task. Purely informational (TaskBoardPage.tsx shows a small recurring badge
+   * next to the title); this instance is otherwise a completely ordinary, independent /tasks
+   * doc — stopping or deleting the template it came from never touches it.
+   */
+  templateId?: string;
   createdAt: number;
   createdByUid: string;
   createdByName: string;
@@ -939,6 +959,49 @@ export interface StaffTask {
   progressUpdates: TaskProgressUpdate[];
   /** Same meaning and lifecycle as Tender.isTestData — see its doc comment. */
   isTestData?: boolean;
+}
+
+/**
+ * A recurring task a Branch Manager (or admin) sets up ONCE — see TaskBoardPage.tsx's "Repeat
+ * this task every month" checkbox on the Assign Task form, and the "Recurring Tasks" panel below
+ * the table that lists/stops them. Every calendar month, ensureRecurringTasksForCurrentMonth()
+ * in services/tasks.ts generates exactly one fresh, completely ordinary StaffTask from this
+ * template (title/description/department/assignee/priority copied across, a brand-new
+ * createdAt, status 'open', and a deadline derived from `dueDay` if set) — the manager never has
+ * to come back and reassign it; it just reappears in the Open list each month on its own.
+ * This is a client-only app with no backend scheduler (same constraint as Tender.isTestData/
+ * isTenderArchived()), so generation is triggered the next time ANY manager/admin session loads
+ * Task Board after the month rolls over — see that function's own doc comment for why this is
+ * still safe even when two managers' browsers both trigger it at once.
+ */
+export interface TaskTemplate {
+  id: string;
+  title: string;
+  description?: string;
+  /** Same denormalization reasoning as StaffTask.department. */
+  department: string;
+  assigneeUid: string;
+  assigneeName: string;
+  priority: TaskPriority;
+  /**
+   * Day of the month (1–28) each generated instance is due — deliberately capped at 28 so it
+   * always exists regardless of which month it's generating for (see clampedMonthlyDueDate() in
+   * services/tasks.ts). Absent means generated instances get no deadline at all.
+   */
+  dueDay?: number;
+  /** Turned off by "Stop Repeating" — a deactivated template generates no further monthly
+   *  instances, but never touches whatever instance(s) it already generated. Templates are never
+   *  deleted on deactivation (only an admin/owning manager's explicit delete removes the doc
+   *  outright), so the history of what used to repeat stays visible. */
+  active: boolean;
+  createdAt: number;
+  createdByUid: string;
+  createdByName: string;
+  /** 'YYYY-MM' of the month an instance was last generated for this template — null before the
+   *  very first generation. ensureRecurringTasksForCurrentMonth() compares this against the
+   *  CURRENT month and only generates (and advances this) when they differ, which is what makes
+   *  generation idempotent — see that function's own doc comment. */
+  lastGeneratedMonth: string | null;
 }
 
 // ---- Employee Feedback (src/pages/EmployeeFeedbackPage.tsx) ----
