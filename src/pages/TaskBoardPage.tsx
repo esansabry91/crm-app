@@ -491,7 +491,7 @@ export default function TaskBoardPage() {
         </div>
       </header>
 
-      <div className="px-6 py-6 max-w-5xl space-y-6">
+      <div className="px-6 py-6 max-w-[1600px] space-y-6">
         {/* Surfaces useTasks()'s subscription error instead of just silently showing "no open
             tasks" — see useTasks.ts's doc comment on `error` for the incident (tasks/history
             going blank after a refresh with nothing in the UI to explain why) this exists to
